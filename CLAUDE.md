@@ -501,20 +501,42 @@ validated at build time rather than absolute ones that fail silently.
 
 ## MDX gotchas
 
-MDX parses `<` and `{` as JSX. `List<String>`, `Map<K,V>`, `<T extends
-Comparable<T>>`, and `N < 100` in bare prose all break the build. Backtick them.
-Run `pnpm build` after every file, not after every ten.
+MDX parses `<` and `{` as JSX, so `List<String>`, `Map<K,V>`, `<T extends
+Comparable<T>>`, `<2%` and `N < 100` in bare prose all break the build. Run
+`pnpm build` after every file, not after every ten.
 
-Check mechanically rather than by eye — extract the section and run:
+**There are two kinds of hit, and they take different fixes.** Choose by what
+the text *is*, not by what is convenient:
 
-```bash
-grep -n '[<{]' section.md
+| In the source | Fix | Why |
+|---|---|---|
+| A code identifier — `List<String>`, `Map<K,V>`, `<pid>` | backtick it | it *is* code; monospace is correct |
+| A comparison in prose — `<2%`, `N < 100` | write the `<` as `&lt;` | it is prose, not code; a backtick would restyle the author's sentence |
+
+`&lt;` renders as a literal `<` in ordinary prose, so the page reads exactly as
+the source does. Backticking a prose comparison changes how the sentence looks
+and quietly violates "structural only". Both fixes are formatting, so flag
+either in the commit message.
+
+Check mechanically rather than by eye, ignoring anything already fenced or
+backticked:
+
+```python
+import re
+fence = False
+for i, l in enumerate(lines, 1):
+    if l.lstrip().startswith('```'): fence = not fence; continue
+    if fence: continue
+    if re.search(r'[<{]', re.sub(r'`[^`]*`', '', l)): print(i, l)
 ```
 
-then confirm every hit is inside a fenced code block or already backticked. The
-concurrency section turned out to be entirely clean by this test (its `<pid>`
-and generics were all already ticked or fenced), so do not assume a section needs
-edits — or that it doesn't.
+Do not assume a section needs edits — or that it doesn't. Measured so far:
+
+- Concurrency (Q48–Q70) — **0** bare hits; every `<pid>` and generic was already
+  ticked or fenced.
+- JVM, Memory & GC (Q71–Q86) — **1**: `recovering <2% of heap` in Q77, fixed as
+  `&lt;2%`.
+- Modern Java (Q87–Q97) — **0**.
 
 ## Search
 
