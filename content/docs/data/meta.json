@@ -1,0 +1,14 @@
+{
+  "title": "Data & Messaging",
+  "description": "Reference Q&A — 145 questions.",
+  "pages": [
+    "modelling-indexing",
+    "query-performance",
+    "transactions-mvcc",
+    "scaling-operations",
+    "redis-caching",
+    "rabbitmq",
+    "kafka",
+    "cross-cutting"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "title": "Java",
+  "description": "Reference Q&A — 142 questions.",
+  "pages": [
+    "core-language",
+    "generics",
+    "collections",
+    "streams",
+    "concurrency",
+    "jvm-memory-gc",
+    "modern-java",
+    "spring",
+    "persistence",
+    "distributed-systems",
+    "testing-practice"
+  ]
+}

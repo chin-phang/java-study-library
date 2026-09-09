@@ -1,0 +1,16 @@
+{
+  "title": "Design & Architecture",
+  "description": "Reference Q&A — 120 questions.",
+  "pages": [
+    "oop-fundamentals",
+    "solid-principles",
+    "design-patterns",
+    "ddd",
+    "architecture-styles",
+    "microservices-boundaries",
+    "microservices-communication",
+    "microservices-data",
+    "operations-organisation",
+    "remaining-patterns"
+  ]
+}
