@@ -1,0 +1,277 @@
+---
+title: Distributed Systems, Microservices & Payments
+description: Idempotency, outbox and saga, retries, money, ledgers, rate limiting.
+questionRange: Q121–Q133
+tags: [java, distributed-systems, payments]
+---
+
+## Q121. How do you make a payment API idempotent? [#q121]
+
+<Question id="q121">
+
+**Answer.** The client sends an `Idempotency-Key` header (a UUID it generates per logical operation, reused across retries). Server side:
+
+1. Compute a fingerprint of the request body.
+2. Insert `(key, fingerprint, status=IN_PROGRESS)` into an idempotency table with a **unique constraint on the key**. The unique index — not an application-level check — is what makes this race-free.
+3. If the insert succeeds, you own the request: execute it, then store the response and mark `COMPLETED`, in the same transaction as the business change wherever possible.
+4. If the insert conflicts, look up the existing record. Same fingerprint + `COMPLETED` → return the stored response with the original status code. Same fingerprint + `IN_PROGRESS` → return 409 and let the client retry. Different fingerprint → 422; the client reused a key for a different request, which is a bug you must surface loudly.
+5. Expire records after a window (24h–7d) that exceeds any client's retry horizon.
+
+**Why it matters.** Every network call has three outcomes: success, failure, and *unknown*. Idempotency is what turns "unknown" into something safely retryable, and without it a timeout on an authorisation becomes a double charge. This is table-stakes in payments and Stripe's implementation is the reference design.
+
+<FollowUp q="Isn't a `GET`-before-`POST` check enough?">
+
+No — two concurrent retries both check, both see nothing, both proceed. The atomicity has to come from the database constraint.
+
+</FollowUp>
+
+<FollowUp q="What if the operation spans multiple services?">
+
+Propagate the idempotency key downstream (or derive a deterministic key per downstream call from it), so each hop is independently idempotent. Combine with a saga (Q123) for the multi-step case.
+
+</FollowUp>
+
+</Question>
+
+## Q122. At-least-once, at-most-once, exactly-once — what's actually achievable? [#q122]
+
+<Question id="q122">
+
+**Answer.** Exactly-once *delivery* is impossible in a distributed system with failures (it reduces to the Two Generals problem). What's achievable is **effectively-once processing**: at-least-once delivery plus idempotent consumers, or transactional processing where the offset commit and the side effect are atomic.
+
+So the practical design: producers retry (at-least-once), consumers deduplicate by a business key or message ID with a dedup store, and any side effect that isn't naturally idempotent is made so. Kafka's "exactly-once semantics" is real but scoped: it gives you atomic read-process-write *within Kafka* via transactions and idempotent producers. It doesn't extend to your database or a third-party HTTP call.
+
+<FollowUp q="What's the dual-write problem?">
+
+Writing to the database and publishing an event are two separate systems; a crash between them leaves them inconsistent — either a committed order with no event, or an event for an order that rolled back. You cannot fix this with try/catch, ordering, or a 2PC you don't control.
+
+</FollowUp>
+
+</Question>
+
+## Q123. Explain the transactional outbox and the saga pattern. [#q123]
+
+<Question id="q123">
+
+**Answer.** **Outbox** solves the dual-write problem: in the *same local transaction* as the business change, insert a row into an `outbox` table. A separate relay — either polling the table or tailing the database log with CDC (Debezium) — publishes those rows to the broker and marks them sent. One atomic commit, so the event can't be lost or orphaned. Delivery is at-least-once, so consumers must dedupe.
+
+**Saga** handles a business transaction spanning services without distributed locks. Each step is a local transaction that publishes an event triggering the next; if a step fails, you run **compensating** transactions in reverse. Choreography (services react to each other's events) is simple but the flow is implicit and hard to follow; orchestration (a coordinator holds the state machine) is explicit, observable, and my default beyond three steps.
+
+**Why it matters.** In payments the key insight is that compensation isn't rollback: you don't un-capture a payment, you issue a refund. That's a *new* business fact, visible to the customer, with its own failure modes. Designing compensations is a domain conversation, not a technical one.
+
+<FollowUp q="What about the money that's temporarily in a bad state?">
+
+That's why you model reservations/holds explicitly and reconcile. A saga always has intermediate states where the system is not consistent — you make them first-class in the model, give them timeouts, and report on them.
+
+</FollowUp>
+
+</Question>
+
+## Q124. Why not just use two-phase commit / XA? [#q124]
+
+<Question id="q124">
+
+**Answer.** 2PC gives atomic commit across resources, but the coordinator is a single point of failure at exactly the wrong moment: if it dies after prepare, participants hold locks indefinitely — the blocking problem. It requires all resources to support XA (most HTTP APIs and Kafka don't), it holds locks across network round trips (killing throughput), and it couples availability of all participants.
+
+In practice the trade is availability vs consistency, and most payment systems choose availability plus reconciliation. Where atomicity is non-negotiable — within a single ledger — I'd keep it inside one database transaction rather than spread it across services. That's an argument for putting the ledger in one service, not for XA.
+
+</Question>
+
+## Q125. Design a retry strategy that doesn't take down your own system. [#q125]
+
+<Question id="q125">
+
+**Answer.** Rules I'd apply:
+- **Only retry idempotent or idempotency-keyed operations.** Retrying a non-idempotent charge is worse than failing.
+- **Only retry retryable errors** — timeouts, 429, 502/503/504, connection resets. Never 400/401/403/422; those will fail identically forever.
+- **Exponential backoff with full jitter** — `sleep = random(0, min(cap, base × 2^attempt))`. Jitter is essential: without it, all clients that failed together retry together and you get a synchronised thundering herd on a recovering service.
+- **Bounded attempts and a total time budget.** The budget is more important than the count — a retry that lands after the caller has timed out is pure waste and load.
+- **Respect `Retry-After`.**
+- **Cap the aggregate retry rate** (a retry budget: e.g. retries may not exceed 10% of requests), which prevents retry amplification where each of three layers retries three times and the origin sees 27×.
+- **Combine with a circuit breaker** so a sustained failure stops generating retries at all.
+
+**Why it matters.** Retry storms are a top cause of outages *extending* rather than recovering. The senior instinct is that retries are load, and load is what broke the thing you're retrying.
+
+<FollowUp q="How do timeouts relate?">
+
+Every call needs one, and they must form a decreasing budget down the call chain — if your gateway times out at 2s, a downstream 5s timeout is meaningless work. Also distinguish connect, read, and total timeouts. A missing socket timeout on an HTTP client is one of the most common "the whole service hung" root causes.
+
+</FollowUp>
+
+</Question>
+
+## Q126. Explain circuit breakers and bulkheads. [#q126]
+
+<Question id="q126">
+
+**Answer.** A **circuit breaker** tracks the failure rate of calls to a dependency. Closed = normal. When failures exceed a threshold over a sliding window, it trips **Open** and fails immediately without calling — protecting both you (threads not consumed waiting) and the dependency (no load while it recovers). After a wait, it goes **Half-Open** and permits a few probe calls; success closes it, failure re-opens it.
+
+A **bulkhead** limits concurrent calls per dependency — a semaphore or a dedicated thread pool — so one slow dependency can consume at most N of your threads instead of all of them. Named after ship compartments: one flooded section doesn't sink the vessel.
+
+Together with timeouts, retries, rate limiting and fallbacks, that's the resilience toolkit (Resilience4j in Java; Hystrix is retired).
+
+<FollowUp q="What's the danger of a circuit breaker?">
+
+Bad configuration turns a partial degradation into a total outage: too-sensitive thresholds trip on normal error rates, or a shared breaker across unrelated endpoints trips because one endpoint is failing. Also, the fallback must be genuinely useful — returning a cached/degraded response is resilience; returning an error faster is just failing with extra steps. And in payments, never fall back to "assume approved".
+
+</FollowUp>
+
+</Question>
+
+## Q127. Kafka: how do you guarantee ordering and handle rebalancing? [#q127]
+
+<Question id="q127">
+
+**Answer.** Ordering is guaranteed only **within a partition**. So you pick a partition key that matches your ordering requirement — for payments, the account ID or the payment ID, so all events for one entity are ordered, while different entities process in parallel. Global ordering means one partition, which means no parallelism; almost always the wrong requirement, and worth pushing back on.
+
+Consumer groups assign each partition to exactly one consumer in the group. **Rebalancing** happens when a consumer joins, leaves, or is deemed dead — and during a stop-the-world rebalance, the whole group stops consuming. Causes of surprise rebalances: `max.poll.interval.ms` exceeded because processing a batch took too long (the fix is smaller `max.poll.records` or moving work off the poll thread), and `session.timeout.ms` with a stalled heartbeat. Cooperative incremental rebalancing (the default in modern Kafka) reduces the blast radius by only moving the affected partitions.
+
+<FollowUp q="How do you avoid reprocessing and data loss on commit?">
+
+`enable.auto.commit=false`, and commit offsets **after** the side effect succeeds — that gives at-least-once (a crash between effect and commit means reprocessing, hence idempotent consumers). Committing before processing gives at-most-once and loses messages. For effectively-once within Kafka, use transactions with `read_committed`.
+
+</FollowUp>
+
+<FollowUp q="What do you do with a poison message?">
+
+Bounded retries with backoff, then route to a dead-letter topic with the original headers, the error, and the trace ID; alert on DLQ depth. Never block the partition forever on one bad message, and never silently drop it — in payments, a lost message is a lost financial event.
+
+</FollowUp>
+
+</Question>
+
+## Q128. What's wrong with distributed locking via Redis? [#q128]
+
+<Question id="q128">
+
+**Answer.** The general problem is that a lock with a TTL is not a lock — it's a lease. If your process is paused (GC, hypervisor steal, network partition) past the TTL, the lock expires, another process acquires it, and now two processes believe they hold it. No amount of Redlock cleverness fixes this, because the client cannot detect its own pause.
+
+The correct fix, per Martin Kleppmann's critique, is **fencing tokens**: the lock service issues a monotonically increasing token with each grant, and the *protected resource* rejects any write carrying a token lower than one it has already seen. That makes the stale holder's write harmless. But it requires the resource to participate — which usually means you should have used the database's own concurrency control in the first place.
+
+So my ranking: (1) make the operation idempotent so double execution is harmless; (2) use a database constraint or conditional update — the database is already a consensus system; (3) use a real consensus store (etcd, ZooKeeper) with fencing if you need leader election; (4) Redis locks only for best-effort optimisation, like preventing duplicate work in a cron, where a rare double run is acceptable.
+
+**Why it matters.** In fintech, "a rare double run" might mean a duplicate payout. Knowing where a lock is an optimisation versus a correctness mechanism is the whole answer.
+
+</Question>
+
+## Q129. How do you represent money in Java? [#q129]
+
+<Question id="q129">
+
+**Answer.** Never `double` or `float` — binary floating point cannot represent 0.1, so `0.1 + 0.2 != 0.3` and errors compound across a ledger. Two acceptable representations:
+
+1. **Integer minor units** — store `long` cents/sen, with the currency alongside. Fast, exact, no rounding surprises, natural fit for most payment APIs and databases. My default.
+2. **`BigDecimal`** — exact decimal arithmetic with explicit scale and `RoundingMode`. Necessary when you need more than 2 decimals (FX rates, interest, per-unit pricing).
+
+Rules with `BigDecimal`: always use the `String` constructor (`new BigDecimal("0.1")`, never `new BigDecimal(0.1)` which captures the binary error); always specify a `RoundingMode` on `divide` or you get `ArithmeticException` for non-terminating results; and use `compareTo() == 0` for equality, because `equals` also compares scale, so `2.0` does not equal `2.00`.
+
+Always pair the amount with a currency in one value object, and never add two `Money` values of different currencies:
+
+```java
+public record Money(long minorUnits, Currency currency) {
+    public Money plus(Money o) {
+        if (!currency.equals(o.currency)) throw new CurrencyMismatchException(currency, o.currency);
+        return new Money(Math.addExact(minorUnits, o.minorUnits), currency);
+    }
+}
+```
+
+<FollowUp q="Where does rounding go?">
+
+Define it once, explicitly, per business rule — `HALF_EVEN` (banker's rounding) is standard for financial totals because it doesn't bias upward over many operations, but tax and interest calculations often have a legally mandated mode. And decide the rounding *point*: rounding each line item then summing gives a different total from summing then rounding, and the auditors will care which you chose.
+
+</FollowUp>
+
+<FollowUp q="What about currencies that aren't 2-decimal?">
+
+JPY and KRW have 0 decimals; BHD, KWD and JOD have 3. Never hardcode 100 — use `Currency.getDefaultFractionDigits()`, and note that some crypto and internal accounting currencies exceed anything `java.util.Currency` knows about.
+
+</FollowUp>
+
+</Question>
+
+## Q130. How would you design a ledger? [#q130]
+
+<Question id="q130">
+
+**Answer.** Double-entry, append-only. Every financial event produces at least two entries that sum to zero across accounts — a debit and a credit — so the ledger is self-checking: the sum of all entries in a currency must always be zero, and that's an invariant you can assert continuously.
+
+Properties I'd insist on:
+- **Immutable entries.** No UPDATE, no DELETE. A correction is a reversing entry plus a new one, preserving history for audit.
+- **A transaction/journal grouping** so the two legs commit atomically in one database transaction.
+- **Balances derived** from entries, with a materialised balance row updated in the same transaction (with a version or conditional update) for read performance, and a periodic recomputation job that verifies it matches the sum of entries.
+- **An idempotency key per journal entry** so the same business event never posts twice.
+- **Monotonic sequence and timestamps** — both business time (when it happened) and system time (when we recorded it); they differ, and reconciliation needs both.
+
+<FollowUp q="How do you handle reconciliation with an external processor?">
+
+Ingest their settlement file, match on your reference plus theirs, and classify every difference: missing on our side, missing on theirs, amount mismatch, status mismatch, timing difference. Automate the match, queue exceptions for human review, and track the unmatched count and age as a monitored metric — a growing unreconciled backlog is the earliest signal that something is broken.
+
+</FollowUp>
+
+<FollowUp q="What about hot accounts?">
+
+A single settlement account receiving every transaction becomes a write hot spot and a lock contention point. Standard mitigations: shard the account into N sub-balances and route by hash (sum them to read), or batch/aggregate postings, or use an append-only entries table with periodic rollup rather than a live balance row.
+
+</FollowUp>
+
+</Question>
+
+## Q131. How do you version a public API without breaking clients? [#q131]
+
+<Question id="q131">
+
+**Answer.** Prefer additive, backward-compatible evolution over versioning: adding optional fields and new endpoints breaks nobody, provided clients ignore unknown fields (which you should mandate in your API guidelines — Jackson's `FAIL_ON_UNKNOWN_PROPERTIES` false on the client). Breaking changes are removing or renaming a field, tightening validation, changing a type, changing semantics of an existing field, and adding a required field.
+
+When a breaking change is unavoidable: version in the URL path (`/v2/payments`) for coarse, visible versioning, or by media type for finer-grained. Run both versions concurrently, instrument usage per version and per client, publish a deprecation timeline with `Deprecation` and `Sunset` headers, and only remove when usage is zero. For internal service-to-service, schema registries with compatibility rules (Avro/Protobuf `BACKWARD` compatibility) enforce this at build time, which is much better than hoping.
+
+<FollowUp q="How does this interact with rolling deploys?">
+
+During a deploy, both versions of your *own* service run simultaneously against one database. So every change must be compatible with the previous version in both directions for one release cycle — same expand/contract discipline as schema migration (Q118).
+
+</FollowUp>
+
+</Question>
+
+## Q132. What security concerns are specific to a payments backend? [#q132]
+
+<Question id="q132">
+
+**Answer.**
+- **Don't hold what you don't need.** Tokenise card data so PANs never touch your systems; that shrinks PCI-DSS scope more than any control you can add. If you must handle them, encrypt with keys in an HSM/KMS, and never log them — enforce it with log scrubbing and tests, because it *will* be logged accidentally.
+- **Secrets management** — no credentials in code, images, or environment where avoidable; rotate; use short-lived credentials.
+- **Authorisation on every request, at the object level.** The most common real-world API vulnerability is IDOR/BOLA — an authenticated user requesting another user's payment ID. Authentication is not authorisation.
+- **Input validation and output encoding** — parameterised queries always (never string-concatenated SQL, even for an "internal" admin tool).
+- **Deserialization** — never deserialize untrusted Java serialized data; that's remote code execution via gadget chains. Use JSON with a schema, disable polymorphic type handling in Jackson (`enableDefaultTyping` is the CVE factory), and validate.
+- **Supply chain** — dependency scanning in CI, SBOM, pinned versions. Log4Shell was a dependency you didn't know you had, in a logging call you thought was inert.
+- **Audit trail** — immutable, complete, with actor, action, before/after, and correlation ID. In financial systems this is a regulatory requirement, not a nice-to-have.
+- **Rate limiting and anomaly detection** on authentication and payment endpoints — card testing attacks look like traffic, not like exploits.
+
+<FollowUp q="What is BOLA and how do you prevent it structurally?">
+
+Broken Object Level Authorization. Structurally: never accept a raw internal ID and trust it; scope every query by the authenticated principal (`WHERE id = ? AND customer_id = ?`) at the repository level so a developer can't forget, and add integration tests that assert cross-tenant access returns 404.
+
+</FollowUp>
+
+</Question>
+
+## Q133. Design a distributed rate limiter. [#q133]
+
+<Question id="q133">
+
+**Answer.** Choose the algorithm by the property you need:
+- **Fixed window** — a counter per key per window. Simple, but allows a 2× burst at the window boundary.
+- **Sliding window log** — exact, stores every timestamp. Accurate, memory-hungry.
+- **Sliding window counter** — weighted blend of current and previous window. Good accuracy/cost trade-off; what most CDNs use.
+- **Token bucket** — refill at rate R, capacity B. Allows controlled bursts, which is usually what you actually want for an API. My default.
+- **Leaky bucket** — smooths output to a constant rate; use when the downstream needs a steady rate.
+
+Distributed implementation: Redis with an atomic Lua script (read, refill, decide, write in one round trip — atomicity is the whole problem), keyed by client/API key/IP plus endpoint. Then the practical concerns: what happens if Redis is down (fail open for availability, fail closed for protection — a deliberate decision per endpoint); local per-instance limiting as a cheap first tier so you don't call Redis for obvious rejects; and returning `429` with `Retry-After`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` so well-behaved clients can self-regulate.
+
+<FollowUp q="How do you rate limit fairly across tenants?">
+
+Per-tenant buckets rather than a global one, so a noisy tenant can't consume everyone's quota — that's a bulkhead applied to quota. Add a global limit on top to protect the system itself.
+
+</FollowUp>
+
+</Question>
