@@ -1,0 +1,214 @@
+---
+title: Modern Java (8 → 21)
+description: Sealed types, pattern matching, records, ScopedValue, java.time, Java 21 defaults.
+questionRange: Q87–Q97
+tags: [java, modern-java, records, pattern-matching]
+---
+
+## Q87. What are sealed classes and what problem do they solve? [#q87]
+
+<Question id="q87">
+
+**Answer.** `sealed` (Java 17) lets a class or interface restrict which types may extend it, via a `permits` clause; each subtype must be `final`, `sealed`, or explicitly `non-sealed`. Permitted subtypes must be in the same module (or same package for the unnamed module).
+
+The point is expressing a closed set of alternatives — an algebraic data type. Combined with records and pattern matching, you get exhaustive matching with compile-time checking:
+
+```java
+sealed interface PaymentEvent permits Authorised, Captured, Refunded, Failed {}
+record Authorised(String id, Money amount) implements PaymentEvent {}
+record Failed(String id, String reason) implements PaymentEvent {}
+
+String describe(PaymentEvent e) {
+    return switch (e) {                        // no default needed — compiler checks exhaustiveness
+        case Authorised(var id, var amt) -> "auth " + id + " " + amt;
+        case Captured c -> "captured " + c.id();
+        case Refunded r -> "refunded " + r.id();
+        case Failed(var id, var reason) -> "failed " + id + ": " + reason;
+    };
+}
+```
+
+**Why it matters.** Add a fifth event type and every non-exhaustive switch fails to compile. That's the payoff — the compiler becomes your checklist for a domain model change. It's the answer to "how do I model a state machine safely in Java?"
+
+<FollowUp q="When would you use `non-sealed`?">
+
+When you want a controlled extension point: seal the top of the hierarchy, but designate one branch as open for third parties. It's a deliberate hole, and it disables exhaustiveness for that branch.
+
+</FollowUp>
+
+</Question>
+
+## Q88. Explain pattern matching for `switch` and record patterns. [#q88]
+
+<Question id="q88">
+
+**Answer.** Both finalised in Java 21. Type patterns let a `switch` match on type and bind a variable in one step. Record patterns destructure, and they nest:
+
+```java
+Object o = ...;
+switch (o) {
+    case Integer i when i > 100 -> big(i);          // guarded pattern
+    case Integer i             -> small(i);
+    case String s              -> text(s);
+    case Line(Product(var sku, var price), int qty) -> total(sku, price, qty); // nested destructuring
+    case null                  -> handleNull();     // null must be explicit
+    default                    -> other(o);
+}
+```
+
+Key semantics: order matters (patterns are tested top to bottom, and the compiler rejects a dominated case); `when` clauses add guards; `null` no longer throws NPE *if* you write a `case null`, otherwise it still throws; and for sealed hierarchies the compiler enforces exhaustiveness so you can drop `default` — which is what you want, because a `default` would silently swallow a new subtype.
+
+**Why it matters.** This is the biggest change to how idiomatic Java is written since lambdas. It replaces visitor-pattern boilerplate and long `instanceof` chains, and it makes the "data-oriented programming" style (sealed interfaces + records + switch) practical.
+
+<FollowUp q="Doesn't this violate OO polymorphism?">
+
+It's a different tool for a different shape of problem. Polymorphism is right when the *set of types* is open and the *set of operations* is fixed. Pattern matching is right when the set of types is closed and the operations keep growing — parsing, serialisation, event handling. That's the expression problem, and Java now supports both sides of it.
+
+</FollowUp>
+
+</Question>
+
+## Q89. Text blocks — what are the exact rules? [#q89]
+
+<Question id="q89">
+
+**Answer.** Java 15. Triple-quoted, and the compiler strips *incidental* whitespace: it computes the minimum indentation across all non-blank lines **and the closing delimiter line**, and removes that much from each. So the position of the closing `"""` controls the left margin. Trailing spaces are stripped (use `\s` to keep one). `\` at end of line suppresses the newline; `\n`, `\t` and unicode escapes still work.
+
+```java
+String json = """
+    {"amount": %s, "currency": "%s"}
+    """.formatted(amount, currency);
+```
+
+**Why it matters.** Mostly readability for SQL, JSON and HTML in tests. Note there's no interpolation — String Templates were previewed in Java 21 (JEP 430) but were later withdrawn and redesigned, so for 21 you use `formatted()` and you should not build production code on the preview syntax.
+
+</Question>
+
+## Q90. What did JPMS (modules) actually change, and do you use it? [#q90]
+
+<Question id="q90">
+
+**Answer.** Java 9's module system adds strong encapsulation (only `exports`ed packages are accessible, enforced at runtime), explicit dependencies (`requires`), and reliable configuration (no split packages, missing dependencies fail at startup rather than at first use). It also enabled `jlink` for stripped-down custom runtimes.
+
+Honest answer about adoption: the *JDK itself* is modularised, and that matters to everyone — it's why `--add-opens`/`--add-exports` flags exist and why reflective access to JDK internals broke. But most application code still runs on the classpath as unnamed modules, and the ecosystem largely settled on Spring Boot fat JARs + containers rather than jlink images. I use modules for libraries and for jlink-based CLI tools; for a typical Spring service, the cost/benefit is poor.
+
+<FollowUp q="What breaks when you migrate 8 → 17/21?">
+
+Strong encapsulation of JDK internals (`sun.misc.Unsafe` partially, `sun.*` reflection) — you'll need `--add-opens` as a bridge, not a solution; removed Java EE modules (JAXB, JAX-WS, `javax.annotation`) that must now be explicit dependencies; `javax.*` → `jakarta.*` in Spring Boot 3; `SecurityManager` deprecated; removed `CMS` collector (Java 14) and the flags for it, which will refuse to start; changed default GC and default locale/charset (UTF-8 by default since Java 18 — a real behaviour change for file I/O); and stricter `--illegal-access` defaults. The reflective-access breakages usually come from old bytecode-manipulation libraries, so the practical first step is upgrading Lombok, Mockito, cglib, ASM and Jackson.
+
+</FollowUp>
+
+</Question>
+
+## Q91. What is `ScopedValue` and how does it differ from `ThreadLocal`? [#q91]
+
+<Question id="q91">
+
+**Answer.** Preview in Java 21 (JEP 446). A `ScopedValue` is bound immutably for the dynamic extent of an operation:
+
+```java
+static final ScopedValue<Principal> USER = ScopedValue.newInstance();
+
+ScopedValue.where(USER, principal).run(() -> handleRequest());   // bound only inside
+// USER.get() throws outside the scope
+```
+
+Differences: immutable (no `set` from arbitrary code), automatically unbound at scope exit (no leaks, no need for `remove()` in a `finally`), cheaper because it's a stack-shaped lookup rather than a per-thread map, and it's inherited by structured-concurrency child threads without copying.
+
+**Why it matters.** It's the piece that makes virtual threads practical for context propagation: `InheritableThreadLocal` copies a map to every child, which is fine for 200 platform threads and disastrous for a million virtual ones.
+
+</Question>
+
+## Q92. Which deprecations and removals should a senior track? [#q92]
+
+<Question id="q92">
+
+**Answer.**
+- **`finalize()`** — deprecated for removal (JEP 421). Use `AutoCloseable`/`Cleaner`.
+- **`SecurityManager`** — deprecated for removal in 17 (JEP 411); it never really worked for its stated threat model and is being replaced by OS/container-level isolation.
+- **Applets, RMI activation, `Nashorn`, CMS GC, `Pack200`** — gone.
+- **Dynamic agent loading** — warns as of 21, moving to opt-in (`-XX:+EnableDynamicAgentLoading`), which affects profilers and mocking libraries that attach at runtime.
+- **`Thread.stop/suspend/resume`** — removed / throw.
+- **`Object.wait(long, int)` nuances, `Integer(int)` constructors** — deprecated for removal in favour of `valueOf`.
+- **`--illegal-access`** — no longer available; encapsulation is enforced.
+
+**Why it matters.** It signals you plan upgrades rather than being surprised by them. The practical framing: run with `-Xlint:removal`, `jdeprscan`, and `jdeps --jdk-internals` before an upgrade.
+
+</Question>
+
+## Q93. `java.time` — explain the type choices. [#q93]
+
+<Question id="q93">
+
+**Answer.** Pick the type by *what the value means*:
+- `Instant` — a point on the UTC timeline. Use for timestamps: created_at, event time, anything you'll compare or order across systems.
+- `LocalDate` / `LocalTime` / `LocalDateTime` — no timezone, no instant. Use for a birthday, a store's opening time, a contract date. `LocalDateTime` is *not* a timestamp and comparing two of them across zones is meaningless.
+- `ZonedDateTime` — an instant plus a zone with DST rules. Use for "9am next Tuesday in Kuala Lumpur", i.e. future scheduling where political time rules matter.
+- `OffsetDateTime` — instant plus a fixed offset, no DST rules. The right type for wire formats and database columns (`TIMESTAMP WITH TIME ZONE`).
+- `Duration` (machine time, seconds/nanos) vs `Period` (human time, years/months/days). Adding one month to Jan 31 is a `Period` operation with defined truncation; adding 30 days is a `Duration`-style operation. They're different answers.
+
+**Why it matters.** In payments, storing local times, or storing an `Instant` for a future scheduled payment, causes real incidents when a zone changes its DST rules. Rule of thumb: store `Instant`/UTC for things that happened; store local time + zone ID for things that will happen.
+
+<FollowUp q="Why was `java.util.Date` replaced?">
+
+Mutable, not thread-safe, months are 0-based, years offset from 1900, poor timezone modelling, and `SimpleDateFormat` is famously non-thread-safe (a top-5 production bug when stored in a static field). `java.time` is immutable, thread-safe, and domain-modelled.
+
+</FollowUp>
+
+<FollowUp q="How do you test time-dependent code?">
+
+Inject a `java.time.Clock`. `Clock.fixed()` and `Clock.offset()` make time deterministic in tests. Never call `Instant.now()` directly in domain code.
+
+</FollowUp>
+
+</Question>
+
+## Q94. Switch expressions and `yield`. [#q94]
+
+<Question id="q94">
+
+**Answer.** Java 14. `switch` can be an expression producing a value; the arrow form has no fall-through and no `break`; multiple labels are comma-separated; and when used as an expression it must be exhaustive. Use `yield` to return a value from a block-bodied case.
+
+```java
+int days = switch (month) {
+    case FEB -> isLeap ? 29 : 28;
+    case APR, JUN, SEP, NOV -> 30;
+    default -> { log.debug("31-day month"); yield 31; }
+};
+```
+
+**Why it matters.** Exhaustiveness plus no fall-through eliminates two whole classes of bug, and it composes with sealed types (Q87). The old colon form still exists and still falls through — flag it in review.
+
+</Question>
+
+## Q95. What's the state of Java's value types / Project Valhalla, and why do you care? [#q95]
+
+<Question id="q95">
+
+**Answer.** Valhalla aims to add value classes (identity-free, inlinable, "codes like a class, works like an int") and eventually generic specialisation over primitives. Not delivered in 21; still incubating.
+
+Why it matters today: it's the reason boxing costs exist, and it shapes how you write performance-sensitive code now — primitive arrays instead of `List<Integer>`, `record` for data so it can become a value class later with minimal change, and avoiding reliance on object identity (`==`, `synchronized` on a data object) for types you'd want to be values.
+
+</Question>
+
+## Q96. What is the Foreign Function & Memory API replacing? [#q96]
+
+<Question id="q96">
+
+**Answer.** JNI and `sun.misc.Unsafe`. FFM (incubating/preview through 21, `java.lang.foreign`) gives you `MemorySegment` for off-heap memory with bounds and lifetime checking via `Arena`, and `Linker`/`MethodHandle` for calling native functions without writing C glue. `jextract` generates bindings from headers.
+
+Why a senior cares: it's the safe path for native interop and off-heap data structures, it's deterministic (an `Arena` closes and frees, no `Cleaner` guesswork), and it's how libraries will stop depending on `Unsafe` before it's removed.
+
+</Question>
+
+## Q97. If you were starting a new backend service on Java 21 today, what would you use? [#q97]
+
+<Question id="q97">
+
+**Answer.** Records for DTOs and value objects; sealed interfaces + pattern matching for domain events and result types; `Optional` at return boundaries only; virtual threads with thread-per-request rather than reactive, unless there's a streaming requirement; structured concurrency (accepting it's preview) or plain executors for fan-out; `java.time` with an injected `Clock`; text blocks for SQL; and ZGC generational if latency matters, otherwise G1.
+
+I'd deliberately *not* adopt: preview features in production code paths (string templates were withdrawn — a good lesson), JPMS for the application, or `var` in public API-shaped code where the type isn't obvious.
+
+**Why it matters.** This question is really "have you formed judgement, or do you just know features?" Naming what you'd skip is as important as what you'd adopt.
+
+</Question>
