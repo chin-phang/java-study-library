@@ -1,0 +1,252 @@
+---
+title: Spring & Frameworks
+description: Injection, bean lifecycle, the proxy boundary, transactions, auto-configuration.
+questionRange: Q98–Q110
+tags: [java, spring, frameworks]
+---
+
+## Q98. Why constructor injection over field injection? [#q98]
+
+<Question id="q98">
+
+**Answer.** Four reasons. The object is fully initialised and valid the moment it exists, so fields can be `final` and the class is immutable and thread-safe. It's testable without a container or reflection — `new OrderService(repo, gateway)` in a plain unit test. It makes dependencies explicit, so a constructor with 9 parameters is honest feedback that the class does too much (field injection hides that). And it fails fast on unresolvable circular dependencies at startup rather than producing a half-wired object.
+
+Spring makes the constructor `@Autowired` implicit for a single constructor, so there's no annotation cost.
+
+<FollowUp q="When is setter injection legitimate?">
+
+Genuinely optional dependencies, and reconfigurable ones. That's rare. `@Lazy` or an `ObjectProvider<T>` usually expresses "optional" better.
+
+</FollowUp>
+
+<FollowUp q="What's wrong with `@Autowired` on fields, specifically?">
+
+It requires reflection to set in tests, hides the dependency count, prevents `final`, and permits circular dependencies to silently "work" via proxying — which usually means the design is wrong.
+
+</FollowUp>
+
+</Question>
+
+## Q99. Walk through the Spring bean lifecycle. [#q99]
+
+<Question id="q99">
+
+**Answer.** Instantiate → populate properties/dependencies → `BeanNameAware`/`BeanFactoryAware`/`ApplicationContextAware` callbacks → `BeanPostProcessor.postProcessBeforeInitialization` → `@PostConstruct` → `InitializingBean.afterPropertiesSet` → custom `init-method` → `BeanPostProcessor.postProcessAfterInitialization` (**this is where AOP proxies are created**) → bean is in use → `@PreDestroy` → `DisposableBean.destroy` → custom destroy method.
+
+Before all of that, `BeanFactoryPostProcessor`s (like `PropertySourcesPlaceholderConfigurer`) run against the bean *definitions*.
+
+**Why it matters.** The proxy creation step explains the two most common Spring surprises: `@Transactional` and `@Async` don't work in `@PostConstruct` (the proxy doesn't exist yet from the target's perspective), and self-invocation bypasses the proxy entirely (Q101).
+
+<FollowUp q="What are the scopes?">
+
+`singleton` (default, one per container — **not** a JVM singleton), `prototype` (new instance per lookup; note Spring does *not* call destroy callbacks on prototypes — you own their cleanup), plus web scopes `request`, `session`, `application`, `websocket`.
+
+</FollowUp>
+
+<FollowUp q="How do you inject a prototype into a singleton?">
+
+Not by field injection — you'd get one instance forever. Use `ObjectProvider<T>`/`ObjectFactory<T>`, a `@Lookup` method, or `@Scope(proxyMode = TARGET_CLASS)` so each call resolves a fresh instance.
+
+</FollowUp>
+
+</Question>
+
+## Q100. How does Spring AOP work, and what are its limits? [#q100]
+
+<Question id="q100">
+
+**Answer.** Spring AOP is *proxy-based*, not bytecode weaving. At bean post-processing, Spring wraps the bean in either a JDK dynamic proxy (if it implements interfaces, proxying the interface) or a CGLIB subclass proxy (otherwise — the default in Spring Boot). Calls that go *through the proxy* get the advice; calls that don't, don't.
+
+Limits that follow directly from that: `final` classes and `final` methods can't be proxied by CGLIB; `private` methods are never advised; **self-invocation** (`this.method()`) bypasses the proxy; only Spring-managed beans are advised; and only method execution join points are supported (no field access, no constructor interception) — for those you'd need AspectJ with load-time or compile-time weaving.
+
+<FollowUp q="JDK proxy vs CGLIB — practical differences?">
+
+JDK proxies only expose interface methods, so injecting the concrete class fails with a `ClassCastException`-style error unless you inject the interface. CGLIB subclasses the target, so it needs a non-final class, and (before Spring 6/objenesis) required a default constructor and called it twice. Spring Boot defaults to CGLIB (`proxyTargetClass=true`) to avoid the interface-injection surprise.
+
+</FollowUp>
+
+</Question>
+
+## Q101. Why doesn't `@Transactional` work when calling a method from within the same class? [#q101]
+
+<Question id="q101">
+
+**Answer.** Because the annotation is implemented by a proxy that wraps the bean. An internal `this.doWork()` call goes straight to the target object and never crosses the proxy boundary, so no transaction interceptor runs. The method appears to be transactional and silently isn't — which in a payments system means writes that should have rolled back are committed.
+
+Fixes, in order of preference: (1) move the method to a separate bean so the call goes through a proxy — usually the right refactoring, because it reveals a genuine responsibility boundary; (2) inject a self-reference (`@Lazy MyService self`) and call `self.doWork()` — works but ugly; (3) use `TransactionTemplate` programmatically, which makes the boundary explicit and is my preference for nuanced cases; (4) AspectJ load-time weaving, which advises the real method — powerful and rarely worth the build complexity.
+
+**Why it matters.** This is the single most common Spring bug I'd expect a senior to have found and explained to a team. The same reasoning applies to `@Async`, `@Cacheable`, `@Retryable`, `@PreAuthorize`.
+
+<FollowUp q="What else silently disables `@Transactional`?">
+
+Applying it to a `private`, `final`, or `static` method; the class not being a Spring bean; a checked exception being thrown (by default only unchecked exceptions roll back — use `rollbackFor`); catching an exception inside the method so nothing propagates; and calling it from a `@PostConstruct`.
+
+</FollowUp>
+
+</Question>
+
+## Q102. Explain transaction propagation. [#q102]
+
+<Question id="q102">
+
+**Answer.**
+- `REQUIRED` (default) — join the existing transaction, or start one. Note: an exception anywhere marks the whole thing rollback-only.
+- `REQUIRES_NEW` — suspend the outer transaction and start an independent one, with its own connection. Use for audit logs or outbox writes that must survive a business rollback. Costs a second connection — deadlock risk if your pool is small and both are held.
+- `NESTED` — a savepoint within the current transaction; rolling back the inner part doesn't kill the outer. JDBC-only, not supported by all JPA setups.
+- `SUPPORTS` — join if one exists, else run non-transactionally.
+- `NOT_SUPPORTED` — suspend and run without a transaction.
+- `MANDATORY` — throw if there's no existing transaction. Great for enforcing that a repository is only called inside a service transaction.
+- `NEVER` — throw if there is one.
+
+<FollowUp q="What's the `rollback-only` trap?">
+
+Inner `REQUIRED` method throws, you catch it in the caller and continue, then commit — and get `UnexpectedRollbackException`, because the inner call already marked the shared transaction rollback-only. Fix: use `REQUIRES_NEW` for the part you intend to isolate, or don't swallow.
+
+</FollowUp>
+
+</Question>
+
+## Q103. Explain isolation levels and the anomalies they prevent. [#q103]
+
+<Question id="q103">
+
+**Answer.**
+- `READ_UNCOMMITTED` — dirty reads possible. Essentially never appropriate.
+- `READ_COMMITTED` — no dirty reads; non-repeatable reads and phantoms possible. Default for PostgreSQL, Oracle, SQL Server.
+- `REPEATABLE_READ` — same row reads consistently; phantoms possible in theory (MySQL InnoDB prevents them with gap locks). Default for MySQL.
+- `SERIALIZABLE` — as if transactions ran one at a time. Implemented either by locking (blocking) or by SSI in PostgreSQL (optimistic, aborts with a serialization failure you must retry).
+
+The anomalies: **dirty read** (see uncommitted data), **non-repeatable read** (same row, different value on re-read), **phantom read** (same query, new rows appear), and **lost update** (two read-modify-writes, one overwrites the other — not prevented by `READ_COMMITTED`, which is why you need `SELECT ... FOR UPDATE` or optimistic versioning).
+
+**Why it matters.** In payments, the lost-update case is the money bug: two concurrent balance updates under `READ_COMMITTED` will happily lose one. The correct answers are a version column with optimistic locking plus retry, a `FOR UPDATE` pessimistic lock, or an atomic `UPDATE balance = balance - ?` with a `WHERE balance >= ?` guard and a row-count check.
+
+<FollowUp q="Does higher isolation always mean more locking?">
+
+No — MVCC databases give `READ_COMMITTED` and `REPEATABLE_READ` from snapshots without read locks. PostgreSQL's `SERIALIZABLE` is optimistic, so the cost is aborts rather than blocking. You must design for retry.
+
+</FollowUp>
+
+</Question>
+
+## Q104. How does Spring Boot auto-configuration work? [#q104]
+
+<Question id="q104">
+
+**Answer.** `@SpringBootApplication` includes `@EnableAutoConfiguration`, which uses the `AutoConfigurationImportSelector` to read auto-configuration class names from `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` (previously `spring.factories`) on the classpath. Each is a `@Configuration` class guarded by conditions: `@ConditionalOnClass`, `@ConditionalOnMissingBean`, `@ConditionalOnProperty`, `@ConditionalOnWebApplication`, and ordering hints (`@AutoConfigureAfter`).
+
+`@ConditionalOnMissingBean` is the mechanism that makes it feel magical but overridable: define your own `DataSource` bean and Boot's backs off.
+
+<FollowUp q="How do you debug why a bean isn't what you expect?">
+
+Run with `--debug` or `-Ddebug` to get the auto-configuration report showing positive and negative matches with reasons. Also `/actuator/beans` and `/actuator/conditions`. That report answers 90% of "why is Spring doing this" questions.
+
+</FollowUp>
+
+<FollowUp q="What's the property resolution order?">
+
+Roughly: command-line args > `SPRING_APPLICATION_JSON` > OS environment variables > profile-specific external config > profile-specific packaged config > external `application.properties` > packaged > `@PropertySource` > defaults. Environment variables map with relaxed binding (`SPRING_DATASOURCE_URL` → `spring.datasource.url`), which is what makes 12-factor container config work.
+
+</FollowUp>
+
+</Question>
+
+## Q105. How does Spring handle circular dependencies, and should you rely on it? [#q105]
+
+<Question id="q105">
+
+**Answer.** For field/setter injection, Spring uses a three-level cache of early bean references: it exposes a raw, not-yet-fully-initialised singleton so the other bean can hold a reference, then finishes wiring. For **constructor** injection it cannot do this — the object can't exist before its dependencies — so it fails with `BeanCurrentlyInCreationException`. Spring Boot 2.6+ disables circular references by default (`spring.main.allow-circular-references`).
+
+Should you rely on it? No. A cycle means the responsibilities are wrong. Fix it by extracting the shared behaviour into a third bean, inverting one direction with an event or a callback interface, or using `ApplicationEventPublisher` to decouple. `@Lazy` on one side is a workaround, not a fix — and it leaves you with a proxy that fails later.
+
+</Question>
+
+## Q106. How do you structure configuration for multiple environments? [#q106]
+
+<Question id="q106">
+
+**Answer.** `@ConfigurationProperties` classes over scattered `@Value`, because they're type-safe, validatable with `@Validated` + JSR-380, bindable as immutable records/constructor binding, documented via metadata, and testable. Profiles (`application-prod.yml`) for structural differences only; everything environment-specific (URLs, credentials, limits) comes from the environment or a secret manager, never from a committed file.
+
+Secrets: never in Git, never in the image, never in an env var if you can avoid it (they leak into logs, crash dumps, and `/proc`). Vault/AWS Secrets Manager/Kubernetes secrets mounted as files, with rotation.
+
+<FollowUp q="How do you validate config at startup?">
+
+`@Validated` on the properties class with `@NotBlank`, `@Min`, custom validators — the app then refuses to start on bad config rather than failing at 3am on the first request that touches it. Fail fast is a config strategy.
+
+</FollowUp>
+
+</Question>
+
+## Q107. Explain the Spring Security filter chain. [#q107]
+
+<Question id="q107">
+
+**Answer.** Security is a servlet `Filter` (`DelegatingFilterProxy` → `FilterChainProxy`) that delegates to an ordered chain of `SecurityFilterChain`s, each matched by a request matcher. Within a chain, filters run in a defined order: exception translation, context persistence (`SecurityContextHolderFilter`), CSRF, authentication filters (form login, Basic, bearer token), then authorisation (`AuthorizationFilter`) last.
+
+Authentication produces an `Authentication` stored in the `SecurityContext` (a `ThreadLocal` by default — which matters for async and for virtual threads/`@Async` propagation). Authorisation happens both at the URL level in the chain and at the method level via `@PreAuthorize`, which is AOP and therefore subject to the same proxy limitations as `@Transactional`.
+
+<FollowUp q="When do you need CSRF protection?">
+
+When the browser automatically attaches credentials — cookie-based sessions. A stateless API using an `Authorization: Bearer` header is not CSRF-vulnerable in the same way, because the token isn't sent automatically. Disabling CSRF for a cookie-session app is a real vulnerability, not a convenience.
+
+</FollowUp>
+
+<FollowUp q="JWT pitfalls?">
+
+Accepting the `alg` header from the token (the `alg: none` attack) — pin the algorithm server-side. No revocation: a stolen token is valid until expiry, so keep lifetimes short and maintain a denylist or use opaque tokens with introspection for high-value operations. Putting sensitive data in the payload (it's base64, not encrypted). Not validating `iss`, `aud`, and `exp`. And storing them in `localStorage`, where XSS can read them.
+
+</FollowUp>
+
+</Question>
+
+## Q108. How do you make a Spring service observable? [#q108]
+
+<Question id="q108">
+
+**Answer.** Three pillars, plus the fourth thing people forget.
+- **Metrics**: Micrometer → Prometheus. RED metrics per endpoint (rate, errors, duration as histograms so you get real percentiles, not averages), plus resource gauges (connection pool usage, queue depth, thread counts) and business metrics (payments authorised/declined by reason code).
+- **Tracing**: Micrometer Tracing / OpenTelemetry with W3C `traceparent` propagation across services and into async boundaries and message headers — the last part is where most implementations break.
+- **Logging**: structured JSON, with trace and span IDs in the MDC so a log line joins a trace. Never log PANs, CVVs, tokens, or full request bodies in a payments system.
+- **The fourth thing**: correlate them. A dashboard where you can go alert → trace → log line in two clicks is worth more than any individual signal.
+
+<FollowUp q="Why histograms and not averages?">
+
+Averages hide the tail. A 50 ms average with a 3 s p99 means 1 in 100 users has a bad time, and that's usually the group that matters. Use `percentiles-histogram` so percentiles are aggregatable across instances — client-side percentiles cannot be averaged.
+
+</FollowUp>
+
+</Question>
+
+## Q109. Spring MVC vs WebFlux vs virtual threads. [#q109]
+
+<Question id="q109">
+
+**Answer.** MVC is thread-per-request on a servlet container. WebFlux is event-loop based with Reactor, scaling to high concurrency on few threads but requiring the whole call chain to be non-blocking. Spring Boot 3.2+ on Java 21 offers a third option: MVC with `spring.threads.virtual.enabled=true`, running each request on a virtual thread.
+
+My default for a typical service: MVC on virtual threads. You get WebFlux-level concurrency for I/O-bound work with none of the cognitive cost, plus normal debugging and normal stack traces. WebFlux earns its place when you need streaming with backpressure (SSE, websockets, large data pipelines) or you're already invested in Reactor.
+
+<FollowUp q="What must you check before enabling virtual threads?">
+
+Blocking inside `synchronized` (pinning — Q62), JDBC driver and connection pool behaviour, `ThreadLocal`-heavy libraries, and anything that pools by thread identity. Also: your database connection pool is still your real concurrency limit, so add a semaphore or keep the pool as the bulkhead — otherwise you just move the queue.
+
+</FollowUp>
+
+</Question>
+
+## Q110. How do you test a Spring application without a 10-minute build? [#q110]
+
+<Question id="q110">
+
+**Answer.** Layered, with most tests not using Spring at all:
+- **Plain unit tests** for domain logic — no container, milliseconds. This should be the bulk.
+- **Slice tests** — `@WebMvcTest` (controller + JSON + validation, mocked service), `@DataJpaTest` (repositories against a real DB via Testcontainers), `@JsonTest`. Fast because they load a fraction of the context.
+- **Full `@SpringBootTest`** — a handful, for wiring and critical happy paths.
+
+Key performance point: **context caching**. Spring caches application contexts by configuration key, so every distinct combination of `@MockBean`, properties and profiles creates a *new* context. A build with 40 unique configurations pays 40 startups. Standardise on a small number of test configurations and use `@MockBean` sparingly (each one dirties the context key).
+
+<FollowUp q="Testcontainers vs H2?">
+
+Testcontainers, essentially always. H2 in "PostgreSQL mode" doesn't have PostgreSQL's SQL, types, locking behaviour, or constraint semantics, so it gives you false confidence — you find the difference in production. Use a singleton container pattern or reusable containers to keep it fast.
+
+</FollowUp>
+
+</Question>
