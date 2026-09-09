@@ -102,27 +102,27 @@ All in `_source/`, excluded from the build.
 | Core Language & OOP | Q1–14 | `java/core-language.mdx` |
 | Generics | Q15–21 | `java/generics.mdx` |
 | Collections | Q22–36 | `java/collections.mdx` |
-| Streams & Functional | Q37–47 | `java/streams.mdx` |
+| Streams & Functional Java | Q37–47 | `java/streams.mdx` |
 | Concurrency | Q48–70 | `java/concurrency.mdx` |
-| JVM, Memory & GC | Q71–86 | `java/jvm-memory-gc.mdx` |
-| Modern Java 8→21 | Q87–97 | `java/modern-java.mdx` |
+| JVM, Memory & Garbage Collection | Q71–86 | `java/jvm-memory-gc.mdx` |
+| Modern Java (8 → 21) | Q87–97 | `java/modern-java.mdx` |
 | Spring & Frameworks | Q98–110 | `java/spring.mdx` |
 | Persistence & JPA | Q111–120 | `java/persistence.mdx` |
-| Distributed Systems & Payments | Q121–133 | `java/distributed-systems.mdx` |
-| Testing & Practice | Q134–142 | `java/testing-practice.mdx` |
+| Distributed Systems, Microservices & Payments | Q121–133 | `java/distributed-systems.mdx` |
+| Testing, Debugging & Engineering Practice | Q134–142 | `java/testing-practice.mdx` |
 
 ### `senior-data-messaging-interview-questions.md` — 145 questions, ~30k words
 
 | Section | Range | Target file |
 |---|---|---|
 | Data Modelling & Indexing | Q1–15 | `data/modelling-indexing.mdx` |
-| Query Performance & Plans | Q16–30 | `data/query-performance.mdx` |
-| Transactions & MVCC | Q31–45 | `data/transactions-mvcc.mdx` |
-| Scaling & Operations | Q46–60 | `data/scaling-operations.mdx` |
+| Query Performance & Execution Plans | Q16–30 | `data/query-performance.mdx` |
+| Transactions, Concurrency & MVCC | Q31–45 | `data/transactions-mvcc.mdx` |
+| Scaling, Replication & Operations | Q46–60 | `data/scaling-operations.mdx` |
 | Redis & Caching | Q61–85 | `data/redis-caching.mdx` |
 | RabbitMQ | Q86–105 | `data/rabbitmq.mdx` |
 | Kafka | Q106–135 | `data/kafka.mdx` |
-| Cross-Cutting Design | Q136–145 | `data/cross-cutting.mdx` |
+| Cross-Cutting Design Questions | Q136–145 | `data/cross-cutting.mdx` |
 
 ### `senior-design-architecture-interview-questions.md` — 120 questions, ~24k words
 
@@ -132,15 +132,20 @@ All in `_source/`, excluded from the build.
 | SOLID & Design Principles | Q15–26 | `design/solid-principles.mdx` |
 | Design Patterns | Q27–45 | `design/design-patterns.mdx` |
 | Domain-Driven Design | Q46–52 | `design/ddd.mdx` |
-| Architectural Styles | Q53–60 | `design/architecture-styles.mdx` |
-| Microservices: Boundaries | Q61–78 | `design/microservices-boundaries.mdx` |
-| Microservices: Communication | Q79–88 | `design/microservices-communication.mdx` |
-| Microservices: Data | Q89–95 | `design/microservices-data.mdx` |
-| Operations & Organisation | Q96–107 | `design/operations-organisation.mdx` |
+| Architectural Styles & Structure | Q53–60 | `design/architecture-styles.mdx` |
+| Microservices: Decomposition & Boundaries | Q61–78 | `design/microservices-boundaries.mdx` |
+| Microservices: Communication & Integration | Q79–88 | `design/microservices-communication.mdx` |
+| Microservices: Data & Consistency | Q89–95 | `design/microservices-data.mdx` |
+| Operations, Testing & Organisation | Q96–107 | `design/operations-organisation.mdx` |
 | Remaining Patterns & Topics | Q108–120 | `design/remaining-patterns.mdx` |
 
 **Note:** question numbering restarts per file. Anchor IDs must therefore be
 scoped by file (`/design/ddd#q46`, not a global `#q46`).
+
+**The Section column is the source heading verbatim, minus its `N. ` prefix.**
+Find a section with `grep -n '^## [0-9]' <bank>`, and take the frontmatter
+`title` from that heading with the prefix stripped. These names were previously
+paraphrased here and did not match the file — do not paraphrase them again.
 
 Every question in every source follows the same shape:
 
