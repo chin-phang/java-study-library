@@ -1,0 +1,141 @@
+---
+title: Generics
+description: Type erasure, PECS, generic arrays, bridge methods, inference.
+questionRange: Q15–Q21
+tags: [java, generics, types]
+---
+
+## Q15. What is type erasure and what are its practical consequences? [#q15]
+
+<Question id="q15">
+
+**Answer.** Generics are compile-time only. The compiler checks types, inserts casts, and then erases type parameters to their bound (`Object` for unbounded). At runtime `List<String>` and `List<Integer>` are the same class.
+
+Consequences: you can't do `new T()`, `T[]`, `instanceof List<String>`, or `catch (MyException<T> e)`. You can't overload on `List<String>` and `List<Integer>` — same erasure. Static fields are shared across all parameterisations. And generics can't use primitives, hence boxing costs.
+
+**Why it matters.** Erasure was chosen for migration compatibility: Java 5 generic code had to interoperate with Java 1.4 collections, which is also why raw types still compile with a warning. C# reified generics instead and broke compatibility.
+
+<FollowUp q="How do you get the type at runtime if you need it?">
+
+Pass a `Class<T>` token explicitly (`Foo(Class<T> type)`), which is what Spring, Jackson and JPA do. Or use the super-type token trick: an anonymous subclass captures its generic superclass signature in the class file, readable via `getGenericSuperclass()` — that's how Jackson's `TypeReference` and Guice's `TypeLiteral` work. Class-level generic signatures *are* retained in metadata; it's only the runtime instance that loses them.
+
+</FollowUp>
+
+<FollowUp q="Does Project Valhalla change this?">
+
+It's aiming at generic specialisation over value types, which would let `List<int>` avoid boxing. Not shipped as of Java 21; value classes are still in preview/incubation.
+
+</FollowUp>
+
+</Question>
+
+## Q16. Explain PECS and when you'd use each wildcard. [#q16]
+
+<Question id="q16">
+
+**Answer.** Producer Extends, Consumer Super. `? extends T` when the structure only produces T (you read from it), `? super T` when it only consumes T (you write to it), and an exact type when it does both.
+
+```java
+public static <T> void copy(List<? super T> dest, List<? extends T> src) { ... }
+```
+
+You can't add anything but `null` to a `List<? extends T>`, because the compiler can't know whether the actual type is `List<Dog>` or `List<Cat>`. You can add T and its subtypes to a `List<? super T>`, but reading gives you `Object`.
+
+**Why it matters.** This is really about variance. Java arrays are covariant and therefore unsound — `Object[] a = new String[1]; a[0] = 1;` compiles and throws `ArrayStoreException` at runtime. Generics chose invariance for soundness, and wildcards give back the flexibility explicitly.
+
+<FollowUp q="Why is `Comparator<? super T>` used everywhere in the JDK?">
+
+So a `Comparator<Animal>` can sort a `List<Dog>`. The comparator consumes T, so `super` is correct by PECS. Look at `Collections.sort`, `Stream.sorted`, `TreeMap`'s constructor.
+
+</FollowUp>
+
+<FollowUp q="When should a public API use a wildcard vs a type parameter?">
+
+Rule of thumb: if a type parameter appears only once in the signature, replace it with a wildcard — it's simpler for callers. If it appears in more than one place and the relationship matters, you need a named type parameter.
+
+</FollowUp>
+
+</Question>
+
+## Q17. Why can't you create a generic array, and how do you work around it? [#q17]
+
+<Question id="q17">
+
+**Answer.** `new T[10]` is illegal because arrays are reified — they check their component type at runtime — while T is erased, so the check would be meaningless and heap pollution would go undetected. The workaround is `(T[]) new Object[10]` with `@SuppressWarnings("unchecked")`, kept strictly private so the array never escapes as `T[]` (that would throw `ClassCastException` at the caller's cast). This is exactly what `ArrayList` does internally.
+
+The alternative, used by `toArray(T[])` and `Arrays.copyOf`, is to take a `Class<T>` or an array instance and use `java.lang.reflect.Array.newInstance`.
+
+<FollowUp q="Why does `list.toArray(new String[0])` outperform `new String[list.size()]`?">
+
+Counter-intuitively, the zero-length version is typically faster on modern JITs: allocating a zero-length array is nearly free and JIT intrinsics handle the internal allocation without zeroing it twice. It's also immune to a race where the list shrinks between `size()` and the copy.
+
+</FollowUp>
+
+</Question>
+
+## Q18. What is heap pollution and what does `@SafeVarargs` do? [#q18]
+
+<Question id="q18">
+
+**Answer.** Heap pollution is when a variable of parameterised type refers to an object that isn't of that type — possible because of erasure and unchecked casts. Generic varargs are the common source: `void f(List<String>... lists)` creates a `List<String>[]`, which can't truly exist, so the compiler warns at every call site.
+
+`@SafeVarargs` suppresses that warning and asserts that the method doesn't store anything into the array or let it escape. It's allowed only on static, final, or private methods (and constructors) — i.e. methods that can't be overridden by something unsafe.
+
+<FollowUp q="Show a violation.">
+
+```java
+@SafeVarargs // a lie
+static <T> T[] toArray(T... args) { return args; }
+static <T> T[] pick(T a, T b) { return toArray(a, b); } // creates Object[] at runtime
+String[] s = pick("x", "y"); // ClassCastException
+```
+The lesson: never return or store the varargs array.
+
+</FollowUp>
+
+</Question>
+
+## Q19. What are bridge methods? [#q19]
+
+<Question id="q19">
+
+**Answer.** Synthetic methods the compiler generates to preserve polymorphism after erasure. If `Child implements Comparable<Child>` with `compareTo(Child)`, the erased interface method is `compareTo(Object)`, so the compiler emits a bridge `compareTo(Object)` that casts and delegates. Same for covariant return types.
+
+**Why it matters.** They show up in stack traces, they confuse reflection (`getDeclaredMethods` returns them — check `Method.isBridge()` or `isSynthetic()`), and they're the reason a `ClassCastException` sometimes appears in a method you never wrote.
+
+</Question>
+
+## Q20. Explain recursive generic bounds — `<T extends Comparable<T>>`. [#q20]
+
+<Question id="q20">
+
+**Answer.** A self-referential bound constrains T to be comparable to itself, which is how you express "must be orderable against its own type". You see it in `Collections.max` and in the enum declaration `Enum<E extends Enum<E>>`.
+
+The more general use is the self-typed builder pattern, so fluent methods return the subclass type:
+
+```java
+abstract class Builder<T extends Builder<T>> {
+    T name(String n) { this.n = n; return self(); }
+    protected abstract T self();
+}
+```
+
+**Why it matters.** The JDK actually declares `<T extends Comparable<? super T>>` — the `super` matters so that a `Timestamp extends Date` can be sorted using `Date`'s comparison. Being able to explain that extra `? super` is a strong senior signal.
+
+</Question>
+
+## Q21. How does type inference work for generic methods, and where does it fail? [#q21]
+
+<Question id="q21">
+
+**Answer.** Java infers type arguments from the arguments, the target type of the assignment (poly expressions, since Java 8), and the bounds. Java 8's improved target typing is why `List<String> l = Collections.emptyList();` compiles but `foo(Collections.emptyList())` may still need an explicit witness `Collections.<String>emptyList()` when the parameter is overloaded.
+
+Failure cases: chained generic calls where an intermediate result has no target type; conditional expressions mixing types (which infer an lub like `Object & Serializable & Comparable<?>`); and `var` combined with diamond, where `var x = new ArrayList<>();` infers `ArrayList<Object>` — almost never what you meant.
+
+<FollowUp q="What's your rule on `var`?">
+
+Use it when the right-hand side makes the type obvious (`var repo = new CustomerRepository()`, or a loop over a well-named collection). Avoid it when the RHS is a factory or generic method whose return type isn't visible at the call site, and never let it hide a raw or `Object` inference.
+
+</FollowUp>
+
+</Question>
