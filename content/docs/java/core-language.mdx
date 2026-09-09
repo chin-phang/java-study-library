@@ -1,0 +1,330 @@
+---
+title: Core Language & OOP
+description: equals and hashCode, immutability, dispatch, exceptions, records.
+questionRange: Q1–Q14
+tags: [java, oop, core-language]
+---
+
+## Q1. Explain the `equals`/`hashCode` contract and what breaks when you violate it. [#q1]
+
+<Question id="q1">
+
+**Answer.** The contract has three parts. If `a.equals(b)` then `a.hashCode() == b.hashCode()`. Equal hash codes do *not* imply equality (collisions are legal). And `equals` must be reflexive, symmetric, transitive, consistent, and `x.equals(null)` must be false.
+
+Violating the hash side breaks every hash-based collection: you put an object into a `HashMap` and lookups miss it, because the map computes a bucket from the hash and never even reaches your `equals`. Violating symmetry or transitivity typically happens when you subclass and add a field to `equals` — `parent.equals(child)` returns true but `child.equals(parent)` returns false, which silently corrupts `List.contains`, `Set` deduplication and JPA collections.
+
+**Why it matters.** The classic senior trap is mutability: if you mutate a field that participates in `hashCode` after inserting into a `HashSet`, the object is stranded in the wrong bucket. It's in the set, but `contains` says no, and it will never be garbage collected via that set. Use immutable value objects as keys, or exclude mutable fields from the hash.
+
+<FollowUp q="How do you write `equals` for a class hierarchy?">
+
+Either use `getClass() != o.getClass()` (breaks Liskov, but preserves symmetry) or `instanceof` plus a `canEqual`-style check as in Scala. In practice the honest senior answer is: favour composition over inheritance for value types, and use `record` in modern Java so the compiler generates a correct implementation.
+
+</FollowUp>
+
+<FollowUp q="Is `Objects.hash(...)` a good default?">
+
+It's correct and readable, but it allocates a varargs array and boxes primitives, so on a very hot path (millions of map lookups per second) hand-roll the `31 * result + field` form. Measure before you do this — it's usually noise.
+
+</FollowUp>
+
+</Question>
+
+## Q2. `==` vs `equals`, and how does the string pool complicate it? [#q2]
+
+<Question id="q2">
+
+**Answer.** `==` compares references for objects and values for primitives. `equals` compares logical state. For strings, compile-time constants are interned into the string pool, so `"abc" == "abc"` is true, but `new String("abc") == "abc"` is false, and `("ab" + someVar) == "abc"` is false because runtime concatenation produces a new object.
+
+**Why it matters.** Since Java 7 the string pool lives in the heap (not PermGen), so interned strings are collectible and the pool is sized by `-XX:StringTableSize`. `String.intern()` is occasionally useful for deduplicating a huge number of repeated strings read from a database or a message queue, but it's a native call into a fixed-size hash table and can become a bottleneck. The modern alternative is `-XX:+UseStringDeduplication` (G1/ZGC), which deduplicates the backing `byte[]` during GC without changing identity.
+
+<FollowUp q="Why does `Integer` behave oddly with `==`?">
+
+`Integer.valueOf` caches −128 to 127 by default, so `Integer a = 127, b = 127; a == b` is true, but at 128 it's false. Autoboxing in comparisons is a real production bug source — always use `equals` or unbox explicitly. The cache upper bound is tunable via `-XX:AutoBoxCacheMax`.
+
+</FollowUp>
+
+</Question>
+
+## Q3. Why is `String` immutable, and what does that buy the JVM? [#q3]
+
+<Question id="q3">
+
+**Answer.** Immutability enables safe sharing: the string pool can hand the same instance to unrelated code, hash codes can be cached (`String` caches `hash` lazily), strings are inherently thread-safe with no synchronisation, and they're safe as `HashMap` keys. It's also a security property — a `String` passed as a file path or SQL fragment can't be mutated by another thread between the security check and the use (a TOCTOU attack).
+
+**Why it matters.** The cost is garbage: every transformation allocates. That's why `StringBuilder` exists, and why Java 9 introduced compact strings (`byte[]` with a coder flag instead of `char[]`), halving memory for Latin-1 content — a big win because strings are typically 20–30% of a server heap.
+
+<FollowUp q="Why store passwords in `char[]` rather than `String`?">
+
+Because you can zero a `char[]` immediately after use. A `String` stays in the heap until GC and will appear in any heap dump taken in between. In practice modern advice is to use a purpose-built type and clear it, and to accept that this is defence-in-depth, not a guarantee.
+
+</FollowUp>
+
+</Question>
+
+## Q4. `String` concatenation, `StringBuilder`, `StringBuffer` — what actually happens at runtime? [#q4]
+
+<Question id="q4">
+
+**Answer.** Simple concatenation in one expression is compiled away. Since Java 9, `javac` emits an `invokedynamic` to `StringConcatFactory`, which generates an optimised method handle chain at runtime — often faster than a hand-written `StringBuilder` because it can size the buffer exactly. Concatenation *inside a loop*, however, still creates a new builder per iteration and is O(n²); that's the case where you hoist a `StringBuilder` out of the loop.
+
+`StringBuffer` is the legacy synchronised version. Use it essentially never — the synchronisation is uncontended in practice and just adds noise; if you truly need to share a mutable buffer across threads, you need coarser locking anyway.
+
+**Why it matters.** Interviewers want to hear "I know the compiler optimises the simple case" rather than a rote "always use StringBuilder", which is a mid-level answer.
+
+<FollowUp q="How would you pre-size a `StringBuilder`?">
+
+Estimate the final length and pass it to the constructor. The default is 16 chars, and each growth is a `Arrays.copyOf` at roughly 2n+2. For a serializer producing 10KB payloads, pre-sizing removes ~10 array copies per call.
+
+</FollowUp>
+
+</Question>
+
+## Q5. How do you design a properly immutable class? [#q5]
+
+<Question id="q5">
+
+**Answer.** Five rules: make the class `final` (or all constructors private with static factories) so no one subclasses and adds mutability; make all fields `private final`; don't expose setters; defensively copy mutable inputs in the constructor; and defensively copy mutable state on the way out of getters.
+
+```java
+public final class Order {
+    private final String id;
+    private final List<Line> lines;
+    private final Date placedAt; // legacy API, mutable
+
+    public Order(String id, List<Line> lines, Date placedAt) {
+        this.id = Objects.requireNonNull(id);
+        this.lines = List.copyOf(lines);          // defensive copy + unmodifiable
+        this.placedAt = new Date(placedAt.getTime()); // defensive copy
+    }
+    public List<Line> lines() { return lines; }   // already unmodifiable
+    public Date placedAt() { return new Date(placedAt.getTime()); }
+}
+```
+
+**Why it matters.** Immutability gives you free thread safety and safe publication via final field semantics — the JMM guarantees that a thread which sees a reference to a correctly constructed object sees its final fields fully initialised, without synchronisation.
+
+<FollowUp q="Does `record` give you all of this?">
+
+No. Records give you final fields and generated accessors, but they don't deep-copy. A `record Order(List<Line> lines)` still exposes the caller's mutable list. Add a compact constructor that copies: `Order { lines = List.copyOf(lines); }`.
+
+</FollowUp>
+
+<FollowUp q="What if the object is huge and copying is expensive?">
+
+Use persistent/structural-sharing data structures, or a copy-on-write builder, or accept a documented "caller must not mutate" contract at a trusted internal boundary. Never at a public API boundary.
+
+</FollowUp>
+
+</Question>
+
+## Q6. Overloading vs overriding — and what is dispatched when? [#q6]
+
+<Question id="q6">
+
+**Answer.** Overloading is resolved statically at compile time based on the *declared* types of the arguments. Overriding is resolved dynamically at runtime based on the actual object type via the vtable. So:
+
+```java
+void f(Object o) { print("Object"); }
+void f(String s) { print("String"); }
+
+Object o = "hello";
+f(o); // prints "Object" — chosen at compile time
+```
+
+**Why it matters.** This is where subtle bugs live, especially with `null` (the most specific applicable overload wins, so `f(null)` picks `String`), with autoboxing (widening beats boxing beats varargs), and with `remove(int)` vs `remove(Object)` on `List<Integer>` — a genuine production bug I'd expect a senior to have hit.
+
+<FollowUp q="Can you override a static method?">
+
+No — you hide it. The call is bound to the compile-time class, so `Parent p = new Child(); p.staticMethod()` runs the parent's version. Same for private methods and fields (fields are never polymorphic).
+
+</FollowUp>
+
+<FollowUp q="Can you narrow the return type when overriding?">
+
+Yes, covariant return types are allowed since Java 5. You may also widen access, and you may throw fewer or narrower checked exceptions, but never broader ones.
+
+</FollowUp>
+
+</Question>
+
+## Q7. Abstract class vs interface in modern Java — when do you choose which? [#q7]
+
+<Question id="q7">
+
+**Answer.** Since Java 8, interfaces can have `default` and `static` methods, and since Java 9 `private` methods, so the capability gap has narrowed. What remains: abstract classes can hold mutable instance state, non-public constructors, and protected members, and give you single inheritance. Interfaces give multiple inheritance of *type* and *behaviour* but not state.
+
+My rule: an interface defines a *role* or capability, so it should be the default for public API boundaries. An abstract class is an implementation-sharing device — use it when subclasses genuinely share state and construction logic, and prefer to make it package-private.
+
+**Why it matters.** `default` methods were added to allow interface evolution without breaking implementors (that's how `Collection.stream()` shipped). They were not intended as a general mixin mechanism, and using them for stateful behaviour is a smell.
+
+<FollowUp q="How does Java resolve the diamond problem with default methods?">
+
+Three rules: (1) class wins over interface; (2) the most specific interface wins; (3) if it's still ambiguous, the code doesn't compile and you must disambiguate with `Interface.super.method()`. Java deliberately refuses to guess.
+
+</FollowUp>
+
+</Question>
+
+## Q8. What is the class initialisation order, and when is a class actually initialised? [#q8]
+
+<Question id="q8">
+
+**Answer.** Loading → linking (verify, prepare, resolve) → initialisation. Initialisation runs static initialisers and static field assignments *in source order*, and happens lazily at the first "active use": creating an instance, calling a static method, assigning or reading a non-constant static field, or reflection. Reading a `static final` compile-time constant does *not* trigger initialisation — it's inlined at the call site.
+
+For instances: super constructor → instance initialiser blocks and field initialisers in source order → constructor body.
+
+**Why it matters.** Two traps. First, calling an overridable method from a constructor executes the subclass override before the subclass fields are initialised, so you see nulls and zeros. Second, `static final` constant inlining means if you change a constant in library A and don't recompile consumer B, B keeps the old value.
+
+<FollowUp q="How does class initialisation interact with deadlocks?">
+
+The JVM holds a per-class initialisation lock. If two threads initialise two classes whose static initialisers reference each other, you get a genuine deadlock that no thread dump will explain nicely (you'll see threads parked in `<clinit>`). Keep static initialisers trivial.
+
+</FollowUp>
+
+</Question>
+
+## Q9. `finalize()` is deprecated — what replaces it? [#q9]
+
+<Question id="q9">
+
+**Answer.** `finalize` was deprecated for removal in Java 9/18. It was unpredictable (no ordering, no timing guarantee, may never run), it resurrects objects, it adds a GC pass, and an exception inside it is swallowed. The replacements are: `try-with-resources` with `AutoCloseable` for deterministic cleanup — this is the right answer 95% of the time — and `java.lang.ref.Cleaner` for a safety-net for native resources.
+
+```java
+public class NativeBuffer implements AutoCloseable {
+    private static final Cleaner CLEANER = Cleaner.create();
+    private final Cleaner.Cleanable cleanable;
+    NativeBuffer(long addr) {
+        // NOTE: state must NOT reference the outer object, or it never becomes unreachable
+        cleanable = CLEANER.register(this, new State(addr));
+    }
+    public void close() { cleanable.clean(); }
+    private record State(long addr) implements Runnable {
+        public void run() { free(addr); }
+    }
+}
+```
+
+**Why it matters.** The comment in the code is the whole point — the classic mistake is capturing `this` in the cleanup action, which keeps the object permanently reachable.
+
+<FollowUp q="What's a `PhantomReference` used for here?">
+
+`Cleaner` is built on phantom references. A phantom reference's `get()` always returns null, so it can't resurrect the object; it's enqueued *after* the object is finalisable, which makes it the correct primitive for post-mortem cleanup.
+
+</FollowUp>
+
+</Question>
+
+## Q10. Checked vs unchecked exceptions — what's your position? [#q10]
+
+<Question id="q10">
+
+**Answer.** Checked exceptions were designed to force callers to handle recoverable conditions. In practice they compose badly: they leak implementation details up through abstractions, they interact painfully with lambdas and streams (functional interfaces don't declare them), and they lead to `catch (Exception e) { throw new RuntimeException(e); }` noise.
+
+My position: use unchecked exceptions for programming errors and for anything the immediate caller cannot meaningfully recover from — which is most things in a service. Use checked exceptions sparingly at true boundaries where the caller has a real alternative action. Whatever you choose, define a small domain exception hierarchy rather than throwing raw `RuntimeException`.
+
+**Why it matters.** Interviewers want to see you've formed a view and can defend it, and that you know Kotlin, Scala and Spring all went unchecked. Note the honest counterargument: unchecked exceptions make it possible to silently forget an error path, so you compensate with a global handler and good observability.
+
+<FollowUp q="How do you handle checked exceptions inside a stream?">
+
+Either wrap in a helper that converts to unchecked, or use a `Try`/`Either` result type, or use `mapMulti`/loops for genuinely error-prone stages. Never swallow.
+
+</FollowUp>
+
+<FollowUp q="What's wrong with catching `Throwable`?">
+
+It catches `Error` — `OutOfMemoryError`, `StackOverflowError`, `LinkageError` — which you cannot recover from and which you'll now hide. Catching `InterruptedException` and ignoring it is the other cardinal sin (see Q68).
+
+</FollowUp>
+
+</Question>
+
+## Q11. Explain try-with-resources and suppressed exceptions. [#q11]
+
+<Question id="q11">
+
+**Answer.** Any `AutoCloseable` declared in the resource clause is closed in reverse order of declaration, and closing happens *before* any `catch`/`finally` block runs. If the body throws and `close()` also throws, the body's exception propagates and the close exception is attached via `addSuppressed`, retrievable through `getSuppressed()`.
+
+That's the key improvement over the old pattern, where a failing `close()` in a `finally` block would mask the original exception — the actual cause of the outage would vanish from your logs.
+
+**Why it matters.** Since Java 9 you can reference an existing effectively-final variable directly: `try (conn) { ... }`.
+
+<FollowUp q="What if `close()` is idempotent-unsafe?">
+
+`AutoCloseable` explicitly does not require idempotency, but `Closeable` does. Always make your own `close()` idempotent — frameworks and try-with-resources nesting will call it twice eventually.
+
+</FollowUp>
+
+</Question>
+
+## Q12. Cloning: `Cloneable`, copy constructors, serialization round-trips. [#q12]
+
+<Question id="q12">
+
+**Answer.** `Cloneable` is a broken design: it's a marker interface with no `clone()` method, `Object.clone()` is protected and native, it bypasses constructors (so final fields and invariants are not enforced), and the default is a shallow copy. Josh Bloch's advice — which I follow — is to prefer a copy constructor or a static factory `Foo.copyOf(foo)`.
+
+For deep copies, the options are: hand-written recursive copy (fastest, most maintainable), serialization round-trip (slow, fragile, and a security risk with untrusted data), or a mapping library. In practice, designing for immutability removes most of the need for copies at all.
+
+<FollowUp q="How do you deep copy a collection of mutable objects cheaply?">
+
+Usually you don't — you make the elements immutable so a shallow copy is a correct deep copy. That's the senior move: change the design instead of writing a copier.
+
+</FollowUp>
+
+</Question>
+
+## Q13. What are records and what are their exact semantics? [#q13]
+
+<Question id="q13">
+
+**Answer.** A `record` is a transparent carrier for immutable data. The compiler generates: a canonical constructor, private final fields, accessors named after components (no `get` prefix), plus `equals`, `hashCode` and `toString` derived from all components. Records are implicitly final, cannot extend a class (they extend `java.lang.Record`), but can implement interfaces and have static members and additional constructors.
+
+Validation and normalisation go in a compact constructor:
+
+```java
+public record Money(BigDecimal amount, Currency currency) {
+    public Money {
+        Objects.requireNonNull(currency);
+        if (amount.scale() > currency.getDefaultFractionDigits())
+            throw new IllegalArgumentException("too many decimals");
+        amount = amount.stripTrailingZeros(); // reassigning the parameter is allowed here
+    }
+}
+```
+
+**Why it matters.** Records shine as DTOs, value objects, map keys, and — combined with sealed interfaces — as algebraic data types for pattern matching.
+
+<FollowUp q="When is a record the wrong choice?">
+
+When you need mutability, when you need to hide or derive representation (the accessors expose your components as API forever), when you need JPA entities (which need a no-arg constructor and mutable identity), or when component-based `equals` is semantically wrong — e.g. a domain entity whose identity is its ID alone.
+
+</FollowUp>
+
+<FollowUp q="Can you customise a record's accessor?">
+
+Yes, you can override any generated member. A common use is returning a defensive copy: `public List<Line> lines() { return List.copyOf(lines); }`.
+
+</FollowUp>
+
+</Question>
+
+## Q14. Explain the `static` keyword's four uses and the gotchas of each. [#q14]
+
+<Question id="q14">
+
+**Answer.** Static fields (one per class, per classloader), static methods (no dispatch, no `this`), static nested classes (no implicit outer reference), and static initialiser blocks.
+
+The gotchas: static mutable state is a global variable — it breaks testability, creates hidden coupling, and is a thread-safety hazard. Non-static inner classes hold an implicit reference to the outer instance, which is a classic memory leak (an inner-class `Runnable` submitted to a long-lived executor pins its outer object). And "one per class per classloader" matters in application servers and plugin systems, where the same class loaded twice has two independent statics.
+
+<FollowUp q="How do you make a thread-safe lazy singleton?">
+
+The holder idiom, which uses the JVM's class initialisation lock:
+
+```java
+private static class Holder { static final Config INSTANCE = load(); }
+public static Config get() { return Holder.INSTANCE; }
+```
+Or just an `enum` singleton, which is also serialization-safe. In a Spring application, let the container manage it and inject it — that's testable, which a static singleton isn't.
+
+</FollowUp>
+
+</Question>
