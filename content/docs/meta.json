@@ -3,7 +3,6 @@
   "root": true,
   "pages": [
     "index",
-    "scratch-acceptance",
     "---Concepts---",
     "concepts",
     "---Reference---",
