@@ -2,6 +2,7 @@
   "name": "java-study-library",
   "version": "0.0.26",
   "private": true,
+  "packageManager": "pnpm@12.3.4",
   "scripts": {
     "build": "next build",
     "dev": "next dev",

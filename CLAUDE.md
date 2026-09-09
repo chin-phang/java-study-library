@@ -327,6 +327,84 @@ Requirements:
   assumed. If it isn't, the fix is to restructure the component so answer prose
   sits at the MDX top level rather than as JSX children.
 
+## Conversion rules
+
+These apply to every one of the 29 reference sections. Getting them wrong once
+means getting them wrong 29 times.
+
+### Drop the source's own headings
+
+Fumadocs renders the page `<h1>` from the frontmatter `title`. It does not read
+the body for a heading. A heading in the body that repeats the title renders
+twice.
+
+Each source bank is one document containing many sections:
+
+```
+# Senior Java Interview Question Bank      <- document title, line 1
+**142 questions with model answers...**    <- document blurb
+## Contents                                 <- document TOC
+1. [Core Language & OOP](#1-core-language--oop) (Q1-Q14)
+...
+## 5. Concurrency                           <- the section being converted
+### Q48. Explain the Java Memory Model...
+```
+
+Converting section 5 to `content/docs/java/concurrency.mdx`, **do not copy**:
+
+- the `# Senior Java Interview Question Bank` H1 — it belongs to the document
+- the document blurb and the `## Contents` list — its anchors point at a
+  document that no longer exists, and Fumadocs generates a ToC automatically
+- the `## 5. Concurrency` line itself — it becomes the frontmatter `title`,
+  with the numeric prefix stripped (`Concurrency`, not `5. Concurrency`)
+
+So the file begins:
+
+```mdx
+---
+title: Concurrency
+description: Java Memory Model, locks, executors, virtual threads.
+questionRange: Q48-Q70
+tags: [java, concurrency, jvm]
+---
+
+<Question id="q48" title="Explain the Java Memory Model and happens-before.">
+...
+```
+
+The first body content is the first `<Question>`. Nothing above it.
+
+The `### QN.` headings are not affected — they become `<Question>` components and
+stop being markdown headings.
+
+The same rule applied to `content/docs/concepts/jmm.mdx`: its source began with
+`# The Java Memory Model` under a frontmatter title of the same name, and the H1
+was removed during conversion.
+
+### Prefix every internal link with `/docs`
+
+`src/lib/source.ts` sets `baseUrl: docsRoute` (`/docs`). So
+`content/docs/java/concurrency.mdx` is served at `/docs/java/concurrency`.
+
+Any link written without the prefix 404s:
+
+```
+[Q48](/java/concurrency#q48)         WRONG
+[Q48](/docs/java/concurrency#q48)    correct
+```
+
+The reference banks currently contain no markdown links — cross-references are
+plain prose ("the outbox pattern (Q136 in the data bank)"). Converting those to
+real links is desirable, but every one needs the prefix.
+
+Anchors come from the `<Question>` `id`, which is lowercase: `#q48`, not `#Q48`.
+Question numbering restarts per bank, so `#q48` exists in all three — the path
+disambiguates, and it must be correct.
+
+Consider `createRelativeLink` from `fumadocs-ui/mdx` (already imported in
+`src/app/docs/[[...slug]]/page.tsx`) if you prefer relative paths that are
+validated at build time rather than absolute ones that fail silently.
+
 ## MDX gotchas
 
 MDX parses `<` and `{` as JSX. `List<String>`, `Map<K,V>`, `<T extends
