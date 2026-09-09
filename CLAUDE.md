@@ -24,8 +24,25 @@ examples show `source.config.ts`; ignore them. See
 https://fumadocs.dev/docs/mdx/macro. Search is a route handler at
 `src/app/api/search/route.ts`.
 
-This project is on Next.js 16, so request middleware is `proxy.ts` at the root,
-not `middleware.ts`.
+**Verified stack** (record changes here when you upgrade):
+
+| Package | Version |
+|---|---|
+| next | 16.3.4 |
+| react | 19.2.8 |
+| fumadocs-core | 16.15.8 |
+| fumadocs-mdx | 15.4.0 |
+| fumadocs-ui | `npm:@fumadocs/base-ui@16.15.8` |
+| typescript | ^7.0.2 |
+
+Notes: `fumadocs-ui` is aliased to the Base UI variant, but imports remain
+`fumadocs-ui/*`. Next.js 16 means request middleware is `proxy.ts` at the root,
+not `middleware.ts`. OG image generation **is** enabled — `getPageImageUrl()` in
+`src/lib/source.ts` depends on the `og/docs` route, so do not remove it.
+
+**Verification command: `pnpm types:check`** (`next typegen && tsc --noEmit`).
+Run this after every file — it is faster and stricter than `next build`. Run
+`pnpm build` before each commit.
 
 ## The two content types
 
@@ -227,15 +244,30 @@ scaffolding. Every path below assumes this.
 
 ```
 CLAUDE.md
-_source/                     # raw markdown, excluded from build
+LICENSE                      # MIT — code
+LICENSE-CONTENT              # CC BY-NC-SA 4.0 — content
+_source/                     # raw markdown, committed, excluded from the build
 content/docs/                # MDX — NOT under src/
-source.config.ts
+  meta.json                  # navigation (root: true)
+  index.mdx
+  concepts/ java/ data/ design/ leading/
+proxy.ts                     # Next 16 middleware
 src/
   app/
-  components/                # Question.tsx, FollowUp.tsx, Mermaid.tsx
-  lib/                       # source.ts
-  mdx-components.tsx
+    docs/[[...slug]]/        # the library
+    api/search/route.ts      # search index
+    og/docs/[...slug]/       # OG images (enabled)
+    llms.txt/ llms-full.txt/ # LLM-readable exports
+  components/
+    mdx.tsx                  # getMDXComponents() — register components HERE
+    Question.tsx FollowUp.tsx Mermaid.tsx
+  lib/
+    source.ts                # defineDocs macro + loader()
+    shared.ts layout.shared.tsx cn.ts
 ```
+
+There is no `source.config.ts` and no `src/mdx-components.tsx`. If a tutorial
+mentions either, it predates this version.
 
 Content stays at the root because Fumadocs' defaults and examples assume
 `content/docs`; moving it under `src/` means overriding paths for no benefit.
@@ -262,8 +294,13 @@ The target filenames in the source tables above are relative to this root.
 ## The Question component
 
 Build `src/components/Question.tsx` and `src/components/FollowUp.tsx` before
-converting any content, and register them in `src/mdx-components.tsx` so MDX
-files need no imports.
+converting any content, and register them in **`src/components/mdx.tsx`** — the
+scaffold's `getMDXComponents()` function — so MDX files need no imports.
+
+There is **no `src/mdx-components.tsx`** in this project. Do not create one; it
+would not be imported by anything. `src/app/docs/[[...slug]]/page.tsx` imports
+`getMDXComponents` from `@/components/mdx` and passes it to `<MDXContent>`.
+Adding a component means adding it to the object returned by that function.
 
 ```mdx
 <Question id="q48" title="Explain the Java Memory Model and happens-before.">
@@ -316,8 +353,8 @@ is suspect.
 
 Fumadocs does **not** render Mermaid natively — unlike Nextra. Add the `mermaid`
 package and a client component that renders a fenced ```mermaid block, then map
-it in `mdx-components.tsx`. Build this once, in session 1, and verify it renders
-before writing 19 diagrams against it.
+it in `src/components/mdx.tsx`. Build this once, in session 1, and verify it
+renders before writing 19 diagrams against it.
 
 Mermaid renders client-side, so a syntax error is a broken diagram, not a failed
 build — check each in the browser. Keep them phone-readable: top-to-bottom flow,
@@ -363,7 +400,8 @@ Out of scope: accounts, sync, spaced-repetition scheduling, a backend.
 - Every concept page must have a runnable lab. If you cannot devise one, say so
   rather than inventing a fake exercise.
 - Prefer primary sources in "go deeper": specifications, JEPs, named authors.
-- Run `pnpm build` before every commit. One commit per page.
+- Run `pnpm types:check` after every file and `pnpm build` before every commit.
+  One commit per page.
 - Commit format: `content(java): convert concurrency section`.
 - Ask before adding any dependency beyond pagefind and what the template ships.
 - Flag uncertainty explicitly. A page that confidently states something wrong is

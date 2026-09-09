@@ -1,13 +1,31 @@
 ---
-title: Hello World
-description: Your first document
+title: Java Study Library
+description: Backend Java, data systems and software design — built for depth, not recall.
 ---
 
-Welcome to the docs! You can start writing documents in `/content/docs`.
+Two kinds of material, used differently.
 
-## What is Next?
+**Concept pages** build the model. Each opens with a failure you can reproduce,
+explains why the mechanism was designed that way, and ends with a lab you run and
+self-check questions you can't answer from memory alone. Start here.
+
+**Reference questions** test recall once the model is built. Question, model
+answer, why it matters, follow-ups. Use them to self-test, not to learn from
+cold.
+
+## Start here
 
 <Cards>
-  <Card title="Learn more about Next.js" href="https://nextjs.org/docs" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.dev" />
+  <Card title="The Java Memory Model" href="/docs/concepts/jmm"
+        description="Foundational. Explains volatile, safe publication, double-checked locking and final field semantics." />
 </Cards>
+
+## Reference banks
+
+| Area | Questions |
+|---|---|
+| Java — language, collections, concurrency, JVM, Spring, JPA | 142 |
+| Data & messaging — PostgreSQL, Redis, RabbitMQ, Kafka | 145 |
+| Design & architecture — OOP, SOLID, patterns, DDD, microservices | 120 |
+
+Conversion from `_source/` is in progress; sections appear as they land.
