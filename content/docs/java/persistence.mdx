@@ -1,0 +1,181 @@
+---
+title: Persistence & JPA
+description: Persistence context, lazy loading, N+1, locking, pooling, migrations.
+questionRange: Q111–Q120
+tags: [java, jpa, persistence]
+---
+
+## Q111. Explain the persistence context and entity lifecycle. [#q111]
+
+<Question id="q111">
+
+**Answer.** The persistence context is a first-level cache and unit of work scoped to the `EntityManager` (usually the transaction). Entity states: **transient** (new, no ID, not managed), **managed** (attached — changes are tracked and flushed automatically), **detached** (was managed, context closed), **removed** (scheduled for deletion).
+
+Managed entities get **dirty checking**: at flush, Hibernate compares each entity against a snapshot taken at load and issues UPDATEs for what changed. You never call `save()` on a managed entity — mutating it inside a transaction is enough, which surprises people coming from other ORMs.
+
+<FollowUp q="`merge` vs `persist` vs `save`?">
+
+`persist` makes a transient entity managed (and throws if it has an ID that already exists). `merge` copies the state of a detached entity onto a managed instance and **returns that instance** — the passed object stays detached, which is the number one `merge` bug: `em.merge(order); order.setX(...)` does nothing. Spring Data's `save()` picks between them based on whether the entity is new (by ID or `Persistable.isNew()`), which is convenient and occasionally does a surprise SELECT before every insert.
+
+</FollowUp>
+
+</Question>
+
+## Q112. What causes `LazyInitializationException`, and what's the right fix? [#q112]
+
+<Question id="q112">
+
+**Answer.** Accessing a lazy association after the persistence context is closed — typically in a controller or a serializer, after the transactional service method returned. The proxy has no session to load from.
+
+The wrong fixes: making everything `EAGER` (now every query drags the object graph), and enabling `spring.jpa.open-in-view` (on by default in Boot, and I turn it off) — it holds the database connection for the entire request including view rendering, hides N+1 queries behind lazy loads scattered through the presentation layer, and makes connection pool exhaustion a mystery.
+
+The right fixes: fetch exactly what you need inside the transaction, using a `JOIN FETCH`, an `@EntityGraph`, or — best — a projection/DTO query that returns precisely the fields the caller needs. Map to DTOs at the transaction boundary so entities never escape.
+
+</Question>
+
+## Q113. Explain the N+1 problem and all the ways to fix it. [#q113]
+
+<Question id="q113">
+
+**Answer.** You load N orders with one query, then touch `order.getCustomer()` on each, producing N more queries. It's invisible in development with 5 rows and fatal in production with 5,000.
+
+Fixes:
+- `JOIN FETCH` in JPQL — one query, but be careful: fetching two collections in one query gives a cartesian product, and combining `JOIN FETCH` with pagination makes Hibernate paginate **in memory** (it warns `firstResult/maxResults specified with collection fetch; applying in memory`) — a guaranteed OOM at scale.
+- `@EntityGraph` — declarative fetch plan on a Spring Data repository method, cleaner than JPQL for this.
+- `@BatchSize(size = 50)` or `hibernate.default_batch_fetch_size` — turns N queries into N/50 `IN (...)` queries. Excellent default, low effort, works with pagination.
+- `Subselect` fetch mode — one extra query re-running the original as a subquery.
+- **DTO projection** — the best answer for read paths: a constructor expression or interface projection selecting exactly the columns needed, no entities, no lazy loading, no dirty checking overhead.
+
+<FollowUp q="How do you *detect* N+1 before production?">
+
+Turn on `hibernate.generate_statistics` and assert query counts in integration tests, or use a tool that fails the test when a single request exceeds a query threshold. Log SQL in development with `spring.jpa.show-sql` / `logging.level.org.hibernate.SQL=DEBUG`. Detection has to be automated — code review won't catch it.
+
+</FollowUp>
+
+</Question>
+
+## Q114. Optimistic vs pessimistic locking. [#q114]
+
+<Question id="q114">
+
+**Answer.** **Optimistic** uses a `@Version` column: the UPDATE carries `WHERE version = ?` and increments it; zero rows updated means someone else won, and you get `OptimisticLockException`. No locks held, great under low contention, and the caller must be prepared to retry.
+
+**Pessimistic** takes a database lock at read time: `PESSIMISTIC_READ` (shared), `PESSIMISTIC_WRITE` (exclusive, `SELECT ... FOR UPDATE`), `PESSIMISTIC_FORCE_INCREMENT`. Correct under high contention on the same row, but it holds a lock for the duration of the transaction — so it serialises, risks deadlocks, and requires a lock timeout so a stuck transaction doesn't stall everything.
+
+**Which for payments?** For a balance update, I'd prefer an atomic conditional UPDATE at the SQL level (`UPDATE accounts SET balance = balance - :amt WHERE id = :id AND balance >= :amt`) and check the affected row count — no read-modify-write window at all. Where that's not expressible, optimistic with bounded retry and jittered backoff, and pessimistic only for genuinely contended hot rows.
+
+<FollowUp q="What's the retry policy for an optimistic failure?">
+
+Bounded retries (3–5), exponential backoff with jitter, and the whole transaction re-executed from the start — retrying just the commit is meaningless because your in-memory state is stale. And the operation must be idempotent, or the retry becomes a double payment.
+
+</FollowUp>
+
+</Question>
+
+## Q115. How do first-level and second-level caches differ, and when do you use L2? [#q115]
+
+<Question id="q115">
+
+**Answer.** L1 is the persistence context — always on, transaction-scoped, guarantees identity (`em.find` twice returns the same instance). L2 is a shared, cross-session, cross-transaction cache (Ehcache, Infinispan, Hazelcast) configured per entity, plus an optional query cache.
+
+L2 is worth it for reference data: currency tables, country codes, fee schedules, product catalogues — read-heavy, rarely changed, small. It's dangerous for mutable transactional data, because any write path that bypasses Hibernate (a batch job, another service, a DBA's SQL) leaves the cache stale with no way to know.
+
+The query cache is usually a trap: it caches IDs, then re-fetches entities, and it's invalidated by *any* write to the involved tables, so on a write-active table its hit rate approaches zero while it still costs you.
+
+<FollowUp q="How do you decide between L2 and an application-level cache?">
+
+An application cache (Caffeine, Redis) at the service layer caches the *result of a use case*, which is usually what you actually want, and it's explicit about invalidation. L2 caches entities transparently, which is convenient but couples caching to your ORM and makes staleness harder to reason about. I lean towards explicit application caching for anything I'd page someone about.
+
+</FollowUp>
+
+</Question>
+
+## Q116. How do you write `equals`/`hashCode` for JPA entities? [#q116]
+
+<Question id="q116">
+
+**Answer.** The requirement is that identity is stable across all four entity states, including before the ID is assigned. Options:
+
+1. **Business key** — a natural unique immutable key (order reference, IBAN). Best when one exists.
+2. **Client-assigned UUID** — generate the ID in the application before persist, so it never changes. My preferred default for new systems; it also decouples you from database sequences and makes distributed inserts easier.
+3. **Database ID with a constant `hashCode`** — `hashCode()` returns a constant (e.g. `getClass().hashCode()`) and `equals` compares IDs with a null check. Correct, but every entity lands in the same hash bucket, so collections degrade to linear scan. Acceptable for small collections.
+
+Never: default `Object` identity (breaks after detach/merge), and never a mutable field.
+
+<FollowUp q="Why do records not work as entities?">
+
+JPA requires a no-arg constructor and mutable fields for proxying and dirty checking. Records are final and immutable. Use records for DTOs/projections and classes for entities — which is a healthy separation anyway.
+
+</FollowUp>
+
+</Question>
+
+## Q117. How do you size a HikariCP connection pool? [#q117]
+
+<Question id="q117">
+
+**Answer.** Small. The counterintuitive result — from HikariCP's own docs and PostgreSQL benchmarking — is that a pool of ~10 often outperforms a pool of 100, because the database has a limited number of cores and disks; more concurrent connections mean more context switching and lock contention, not more throughput. A common starting formula is `connections = ((core_count × 2) + effective_spindle_count)`, then measure.
+
+The other constraints: total connections across *all* application instances must stay under the database's `max_connections` (and leave headroom for admin and migration tools). And `connectionTimeout` should be short enough that a saturated pool produces a fast failure you can shed, not a 30-second hang that fills your request threads.
+
+**Why it matters.** Pool exhaustion is one of the top production incidents in a service: a slow query holds connections, requests queue on `getConnection()`, the thread pool fills, health checks fail, and the orchestrator restarts you into the same wall. Instrument `hikaricp_connections_pending` and alert on it.
+
+<FollowUp q="What causes connection leaks?">
+
+Not closing (rare with Spring's template management), `REQUIRES_NEW` nesting holding two connections per request, a transaction spanning an HTTP call to another service (never do this), and `open-in-view` holding a connection through view rendering. `leakDetectionThreshold` logs a stack trace for connections held too long — enable it in staging.
+
+</FollowUp>
+
+</Question>
+
+## Q118. How do you do zero-downtime schema migrations? [#q118]
+
+<Question id="q118">
+
+**Answer.** Expand/contract, in separate deploys:
+1. **Expand** — add the new nullable column / new table. Old code ignores it, new code can use it. Never rename or drop in the same step.
+2. **Backfill** — populate in batches, throttled, idempotent and resumable. Not in a single transaction over 50 million rows.
+3. **Migrate reads** — deploy code that writes both and reads new (or reads new with fallback).
+4. **Contract** — after the old code is fully out of production and you're confident, drop the old column.
+
+Tooling: Flyway or Liquibase with versioned, immutable, checked-in migrations run at startup or by a separate job (I prefer a separate job/init container so ten replicas don't race, and so a migration failure isn't a rolling-restart failure). Every migration must be backward compatible with the *previous* application version, because during a rolling deploy both versions are live simultaneously.
+
+<FollowUp q="What about a long-running `ALTER TABLE`?">
+
+On PostgreSQL, adding a nullable column is instant, adding a `NOT NULL` with a default is instant in modern versions, but adding an index locks writes unless you use `CREATE INDEX CONCURRENTLY`. On MySQL, check the online DDL support for your version, or use gh-ost/pt-online-schema-change. Always test the migration against a production-sized copy, timed.
+
+</FollowUp>
+
+</Question>
+
+## Q119. When would you not use JPA? [#q119]
+
+<Question id="q119">
+
+**Answer.** JPA is optimised for entity-graph CRUD with a rich domain model. It's a poor fit for: read-heavy reporting and analytics (use a projection query, jOOQ, or plain SQL); bulk operations (JPA's `update`/`delete` bypass the persistence context and leave it stale — batch SQL is clearer); complex, tuned SQL with window functions or CTEs; and high-throughput write paths where dirty checking and flush overhead matter.
+
+My usual architecture is CQRS-lite: JPA for the transactional write model where invariants live, and jOOQ or Spring's `JdbcClient` for reads and reports. That gets you the safety where you need it and full SQL where you need that.
+
+<FollowUp q="What's the argument for jOOQ?">
+
+Type-safe SQL generated from the actual schema, so a column rename breaks the build rather than production. You keep SQL as SQL — no fighting an abstraction to express a `LATERAL` join — and there's no hidden lazy loading or flush ordering. The cost is a code-generation step and no free change tracking.
+
+</FollowUp>
+
+</Question>
+
+## Q120. How does Hibernate decide when to flush, and why does that matter? [#q120]
+
+<Question id="q120">
+
+**Answer.** Default `FlushMode.AUTO`: before a query whose result could be affected by pending changes, and always at commit. `COMMIT` mode flushes only at commit. `MANUAL` never flushes automatically.
+
+It matters because flush ordering isn't your statement ordering. Hibernate orders operations by type (inserts, then updates, then collection operations, then deletes), which is why "delete then insert the same unique key" fails with a constraint violation unless you flush explicitly between them. It's also why an unexpected SELECT can trigger a cascade of UPDATEs at a surprising moment, and why exceptions surface at commit rather than at the line that caused them.
+
+<FollowUp q="How do you batch inserts efficiently?">
+
+Set `hibernate.jdbc.batch_size`, enable `order_inserts` and `order_updates`, use a sequence-based or table-based ID generator (`IDENTITY` disables batching entirely, because Hibernate must execute each insert to get the ID), and periodically `flush()` + `clear()` to keep the persistence context from growing unbounded. For a truly large load, drop to `JdbcTemplate` batch updates or the database's bulk-load tool.
+
+</FollowUp>
+
+</Question>
