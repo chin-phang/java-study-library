@@ -13,6 +13,19 @@ tags: [java, jvm, gc, memory]
 
 Outside all of that: **code cache** (JIT-compiled native code — exhausting it silently disables the JIT and tanks performance), **direct/native memory** (`DirectByteBuffer`, Netty, memory-mapped files), GC's own structures (G1's remembered sets can be gigabytes), thread stacks, and the JVM's own C++ heap.
 
+```mermaid
+flowchart TD
+  P["JVM process memory (RSS)"] --> H["Heap — bounded by -Xmx"]
+  P --> U
+  subgraph U ["Native memory — NOT bounded by -Xmx"]
+    direction TB
+    M["Metaspace: class metadata"] ~~~ S["Thread stacks: -Xss each"]
+    S ~~~ C["Code cache: JIT output"]
+    C ~~~ D["Direct buffers: DirectByteBuffer, Netty"]
+    D ~~~ G["GC structures: G1 remembered sets"]
+  end
+```
+
 **Why it matters.** The senior point: `-Xmx` bounds the *heap*, not the process. A container OOM-killed at 2 GB with `-Xmx1500m` is almost always native memory — thread stacks, Metaspace, direct buffers, or a leaking native library. Use `-XX:NativeMemoryTracking=summary` and `jcmd VM.native_memory` to attribute it.
 
 <FollowUp q="How should you size a JVM in a container?">
@@ -70,6 +83,16 @@ Most objects die young. So collecting a small young region and copying only surv
 **Answer.** The heap is split into 1–32 MB regions, each dynamically labelled Eden, Survivor, Old, or Humongous. Allocation goes into Eden regions. A **young collection** is STW: it evacuates live objects out of Eden and Survivor into new Survivor/Old regions, so it compacts by construction.
 
 Concurrently, G1 runs a marking cycle (initial mark piggybacked on a young GC, concurrent mark, remark, cleanup) to identify which old regions have the most garbage. Then **mixed collections** evacuate young regions plus a selection of the highest-garbage old regions — "garbage first". G1 uses remembered sets and a card table to track cross-region references so it can collect a region without tracing the whole heap, and a SATB (snapshot-at-the-beginning) write barrier to keep concurrent marking correct.
+
+```mermaid
+flowchart TD
+  A["Heap split into 1-32 MB regions"] --> B["Each labelled Eden, Survivor, Old or Humongous"]
+  B --> C["Young GC, stop-the-world: evacuate Eden and Survivor"]
+  C --> D["Concurrent marking: initial mark, mark, remark, cleanup"]
+  D --> E["Old regions ranked by how much garbage they hold"]
+  E --> F["Mixed GC: young regions plus the worst old regions"]
+  F --> C
+```
 
 **Tuning knobs that actually matter:** `-XX:MaxGCPauseMillis` (a goal, not a guarantee — G1 adapts young size to meet it), `-XX:G1HeapRegionSize`, `-XX:InitiatingHeapOccupancyPercent` (when to start marking; too late → concurrent mode failure → full GC), `-XX:G1NewSizePercent`. Do **not** set `-Xmn` with G1 — it disables the adaptive sizing that makes G1 work.
 

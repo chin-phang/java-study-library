@@ -13,6 +13,13 @@ tags: [java, concurrency, jvm]
 
 The edges that matter: program order within a thread; unlocking a monitor happens-before any subsequent lock of the same monitor; a write to a `volatile` happens-before every subsequent read of it; `Thread.start()` happens-before anything in that thread; anything in a thread happens-before another thread's successful `join()`; and the transitivity of all of the above. Plus final field semantics: a correctly constructed object's final fields are visible without synchronisation.
 
+```mermaid
+flowchart TD
+  A["Thread 1: data = 42"] --> B["Thread 1: volatile ready = true"]
+  B -.->|happens-before| C["Thread 2: reads ready, sees true"]
+  C --> D["Thread 2: reads data, sees 42"]
+```
+
 **Why it matters.** The senior insight is that "thread safety" is two problems, not one: mutual exclusion (atomicity) *and* visibility. Locks give you both. `volatile` gives you visibility and ordering but not atomicity. People who only think about races miss the visibility half, which produces bugs that vanish under a debugger.
 
 <FollowUp q="Give an example of a data race with no lock.">
@@ -115,6 +122,17 @@ But that formula is the beginning, not the end. In practice I'd bound the pool b
 <FollowUp q="Explain the `ThreadPoolExecutor` core/max/queue interaction.">
 
 This trips up nearly everyone: the executor creates threads up to `corePoolSize`, then **queues**, and only creates threads beyond core when the queue is *full*. So with an unbounded `LinkedBlockingQueue`, `maximumPoolSize` is never reached — it's dead configuration. `Executors.newFixedThreadPool` has exactly this shape. If you want elastic growth, you need a bounded queue (or a `SynchronousQueue`, as `newCachedThreadPool` uses — which then grows without limit).
+
+```mermaid
+flowchart TD
+  A["submit task"] --> B{"below corePoolSize?"}
+  B -->|yes| C["start a core thread"]
+  B -->|no| D{"queue has room?"}
+  D -->|yes| E["enqueue, wait for a thread"]
+  D -->|no| F{"below maximumPoolSize?"}
+  F -->|yes| G["start a new thread"]
+  F -->|no| H["RejectedExecutionHandler"]
+```
 
 </FollowUp>
 
@@ -319,6 +337,16 @@ Empirically. A common heuristic is to target roughly 10× the parallelism in lea
 <Question id="q62">
 
 **Answer.** Virtual threads (JEP 444) are lightweight threads scheduled by the JVM onto a small pool of platform carrier threads (a dedicated `ForkJoinPool`, sized to `availableProcessors` by default). When a virtual thread blocks on most JDK blocking operations — sockets, `BlockingQueue`, `Thread.sleep`, locks — the JVM *unmounts* its continuation from the carrier and frees it for another virtual thread. Stacks live on the heap and grow as needed, so a few kilobytes each rather than a 1 MB reserved stack.
+
+```mermaid
+flowchart TD
+  A["virtual thread mounted on a carrier"] --> B{"what blocks it?"}
+  B -->|"JDK blocking call: socket, sleep, queue"| C["continuation unmounts, stack parked on heap"]
+  C --> D["carrier freed for another virtual thread"]
+  D --> E["remounts on any carrier when ready"]
+  B -->|"synchronized block or native call"| F["pinned: cannot unmount"]
+  F --> G["carrier stays blocked; pin them all and the app deadlocks"]
+```
 
 The consequence is that the thread-per-request model becomes viable again at high concurrency: you write straightforward blocking code, get real stack traces, working debuggers, and working thread dumps, and the JVM handles the multiplexing that reactive frameworks were invented to do manually.
 

@@ -73,6 +73,15 @@ JDK proxies only expose interface methods, so injecting the concrete class fails
 
 **Answer.** Because the annotation is implemented by a proxy that wraps the bean. An internal `this.doWork()` call goes straight to the target object and never crosses the proxy boundary, so no transaction interceptor runs. The method appears to be transactional and silently isn't — which in a payments system means writes that should have rolled back are committed.
 
+```mermaid
+flowchart TD
+  A["caller"] --> B["proxy: transaction interceptor"]
+  B --> C["target bean: outer method"]
+  C --> D["this.doWork() — internal call"]
+  D --> E["target bean: doWork body runs"]
+  E --> F["proxy never crossed, so no transaction"]
+```
+
 Fixes, in order of preference: (1) move the method to a separate bean so the call goes through a proxy — usually the right refactoring, because it reveals a genuine responsibility boundary; (2) inject a self-reference (`@Lazy MyService self`) and call `self.doWork()` — works but ugly; (3) use `TransactionTemplate` programmatically, which makes the boundary explicit and is my preference for nuanced cases; (4) AspectJ load-time weaving, which advises the real method — powerful and rarely worth the build complexity.
 
 **Why it matters.** This is the single most common Spring bug I'd expect a senior to have found and explained to a team. The same reasoning applies to `@Async`, `@Cacheable`, `@Retryable`, `@PreAuthorize`.
