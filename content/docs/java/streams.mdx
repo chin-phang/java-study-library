@@ -1,0 +1,211 @@
+---
+title: Streams & Functional Java
+description: Pipeline execution, collectors, parallel streams, Optional, lambdas.
+questionRange: Q37–Q47
+tags: [java, streams, functional]
+---
+
+## Q37. How does a stream pipeline actually execute? [#q37]
+
+<Question id="q37">
+
+**Answer.** Lazily. Intermediate operations (`map`, `filter`, `sorted`) just build a linked chain of stages; nothing runs until a terminal operation (`collect`, `forEach`, `reduce`, `findFirst`) is invoked. Then the pipeline pulls elements from the spliterator and pushes each one through the whole chain — element-at-a-time, not stage-at-a-time — which means one pass over the source and no intermediate collections.
+
+Some operations are *stateful barriers*: `sorted` and `distinct` must buffer, and `sorted` must consume everything before emitting anything. Short-circuiting operations (`limit`, `anyMatch`, `findFirst`) stop early, which is why `Stream.iterate(1, i -> i+1).filter(...).findFirst()` terminates on an infinite stream.
+
+**Why it matters.** The element-at-a-time model explains why `list.stream().filter(...).map(...)` isn't two passes, and why side effects in a `map` are unpredictable in order.
+
+<FollowUp q="What happens if you reuse a stream?">
+
+`IllegalStateException: stream has already been operated upon or closed`. Streams are single-use. If you need to consume twice, either collect once and stream the collection twice, or use a `Supplier<Stream<T>>`.
+
+</FollowUp>
+
+<FollowUp q="When does a stream need closing?">
+
+Only when it's backed by an I/O resource — `Files.lines`, `Files.walk`, `DirectoryStream`. Those must be in a try-with-resources or you leak file handles, which is a genuinely common production bug.
+
+</FollowUp>
+
+</Question>
+
+## Q38. `map` vs `flatMap` vs `mapMulti`. [#q38]
+
+<Question id="q38">
+
+**Answer.** `map` is 1→1. `flatMap` is 1→N: it takes a function returning a stream, and flattens. `mapMulti` (Java 16) is also 1→N but push-based — you get a `Consumer` and call it however many times you like, which avoids allocating a `Stream` object per element. It's a performance option for cases where most elements produce zero or one result.
+
+```java
+orders.stream().flatMap(o -> o.lines().stream()).mapToLong(Line::amountMinor).sum();
+```
+
+<FollowUp q="How do you flatten an `Optional<Optional<T>>` or a stream of Optionals?">
+
+`Optional.flatMap` for the former; `stream.flatMap(Optional::stream)` (Java 9) for the latter — cleaner than `.filter(Optional::isPresent).map(Optional::get)`.
+
+</FollowUp>
+
+</Question>
+
+## Q39. Show me a non-trivial `Collectors` usage. [#q39]
+
+<Question id="q39">
+
+**Answer.** Downstream collectors are the powerful part:
+
+```java
+Map<Currency, BigDecimal> totals = payments.stream()
+    .collect(groupingBy(Payment::currency,
+             mapping(Payment::amount,
+             reducing(BigDecimal.ZERO, BigDecimal::add))));
+
+Map<Boolean, Long> byStatus = payments.stream()
+    .collect(partitioningBy(Payment::isSettled, counting()));
+
+record Stats(long count, BigDecimal total) {}
+Stats s = payments.stream().collect(teeing(
+    counting(),
+    mapping(Payment::amount, reducing(BigDecimal.ZERO, BigDecimal::add)),
+    Stats::new));
+```
+
+`teeing` (Java 12) runs two collectors in one pass and merges — useful when you'd otherwise iterate twice.
+
+<FollowUp q="`groupingBy` vs `toMap` — when do they blow up?">
+
+`toMap` throws `IllegalStateException` on duplicate keys unless you supply a merge function, and it NPEs on null values (because it uses `Map.merge`). `groupingBy` returns an empty-list-free map — a key with no matches simply isn't present, which surprises people expecting zeros. Specify the map supplier (`TreeMap::new`, `LinkedHashMap::new`) when ordering matters.
+
+</FollowUp>
+
+</Question>
+
+## Q40. When are parallel streams a good idea — and when are they a disaster? [#q40]
+
+<Question id="q40">
+
+**Answer.** They're worth it when you have: a large data set (rule of thumb, at least tens of thousands of elements times a non-trivial per-element cost), a source that splits well (arrays, `ArrayList`, `IntStream.range`, `HashMap` — not `LinkedList`, `Files.lines`, `Stream.iterate`), no shared mutable state, and a cheap merge step.
+
+They're a disaster when: the work is I/O-bound or blocking, because parallel streams use the *shared* `ForkJoinPool.commonPool` and one slow blocking task starves every other user of that pool in the whole JVM — including other libraries and, in some containers, the framework itself. Also when the operation is order-sensitive (`forEachOrdered` serialises anyway), when the merge is expensive (`Collectors.toList` into a shared structure), or when you're already running on many concurrent request threads — you don't have spare cores to parallelise into.
+
+**Why it matters.** The common pool defaults to `availableProcessors() - 1` threads. In a container with a CPU limit but no `-XX:ActiveProcessorCount`, older JVMs saw the host's core count and created a wildly oversized pool.
+
+<FollowUp q="Can you use a custom pool?">
+
+Yes, by submitting the terminal operation inside a `ForkJoinPool` task: `myPool.submit(() -> stream.parallel().collect(...)).get()`. It works because the pipeline runs on the current FJ pool, but it's an undocumented implementation detail. With Java 21, a clearer answer for I/O-bound fan-out is virtual threads plus structured concurrency, not parallel streams.
+
+</FollowUp>
+
+</Question>
+
+## Q41. `reduce` vs `collect` — what are the requirements on the reducer? [#q41]
+
+<Question id="q41">
+
+**Answer.** `reduce` is for immutable accumulation and requires the accumulator to be associative, and the identity to satisfy `f(identity, x) == x`. The three-arg form additionally requires the combiner to be compatible with the accumulator. `collect` is mutable reduction — a supplier, accumulator, and combiner working on a mutable container — which avoids allocating a new object per element.
+
+So `reduce(0, Integer::sum)` is fine; `reduce("", String::concat)` is O(n²) and should be `collect(joining())`.
+
+**Why it matters.** Associativity isn't optional in parallel mode: subtraction and non-commutative folds give different results depending on split boundaries, and the bug only appears when the data gets big enough to split.
+
+<FollowUp q="Write a custom collector.">
+
+```java
+Collector.of(
+    StringBuilder::new,                       // supplier
+    (sb, s) -> sb.append(s).append(';'),      // accumulator
+    (a, b) -> a.append(b),                    // combiner
+    StringBuilder::toString);                 // finisher
+```
+Add `Collector.Characteristics.CONCURRENT`/`UNORDERED`/`IDENTITY_FINISH` only when genuinely true — `CONCURRENT` means one shared container across threads, so the accumulator must be thread-safe.
+
+</FollowUp>
+
+</Question>
+
+## Q42. What's wrong with side effects in stream operations? [#q42]
+
+<Question id="q42">
+
+**Answer.** `list.stream().map(x -> { results.add(f(x)); return x; })` is wrong for several reasons: it may not run at all (no terminal op), the order isn't guaranteed, and in parallel it races. The `forEach` terminal operation explicitly makes no ordering guarantee — use `forEachOrdered` if you need it, though at that point a loop is clearer.
+
+Behavioural parameters should be non-interfering (don't modify the source — that's a CME or worse) and stateless. If your lambda has state, you probably want a `collect` or a plain loop.
+
+<FollowUp q="When is a plain `for` loop better than a stream?">
+
+When you need early exit with complex conditions, when you need indices, when you're mutating, when the operation is on a hot path and you've measured allocation pressure from the pipeline, and — importantly — when the loop is simply more readable. Streams are a readability tool first.
+
+</FollowUp>
+
+</Question>
+
+## Q43. `Optional` — what are the rules you enforce in code review? [#q43]
+
+<Question id="q43">
+
+**Answer.** `Optional` was designed as a *return type* for methods that may have no result. So: don't use it for fields (it isn't `Serializable`, it adds an allocation per object), don't use it as a method parameter (overload or accept null instead), don't use it for collections (return an empty collection), and never call `get()` without `isPresent()` — use `orElseThrow()`, which self-documents.
+
+Prefer the functional forms: `map`, `flatMap`, `filter`, `or`, `ifPresentOrElse`, `stream`. Use `orElseGet` rather than `orElse` when the default is expensive, because `orElse`'s argument is evaluated eagerly even when the value is present — a real bug when the default is a database call.
+
+<FollowUp q="Does `Optional` fix NPEs?">
+
+Only where you use it. It makes absence explicit in a signature, which is the value. A senior answer also mentions `@Nullable` annotations with static analysis, and Kotlin's compile-time null safety as the stronger solution.
+
+</FollowUp>
+
+</Question>
+
+## Q44. What are `takeWhile`, `dropWhile`, `iterate` with a predicate, and `Stream.ofNullable`? [#q44]
+
+<Question id="q44">
+
+**Answer.** Java 9 additions. `takeWhile(p)` takes the longest prefix satisfying p and stops — unlike `filter`, which scans everything. `dropWhile(p)` drops the prefix. The three-arg `Stream.iterate(seed, hasNext, next)` is a for-loop as a stream, which finally makes bounded generated streams readable. `Stream.ofNullable(x)` gives a 0- or 1-element stream, useful inside `flatMap` to skip nulls.
+
+**Why it matters.** `takeWhile` on an *unordered* stream takes an arbitrary prefix — it's only meaningful on ordered ones. That's a subtlety worth knowing.
+
+</Question>
+
+## Q45. Explain lambdas at the bytecode level. [#q45]
+
+<Question id="q45">
+
+**Answer.** A lambda is not an anonymous class. `javac` compiles the body into a private synthetic method and emits an `invokedynamic` instruction pointing at `LambdaMetafactory`. At first execution, the bootstrap method spins up an implementation class and returns a `CallSite`; subsequent calls go straight through. Non-capturing lambdas are cached as a singleton; capturing lambdas allocate per invocation.
+
+**Why it matters.** It means lambdas cost nothing at class-load time (no extra class file per lambda, unlike anonymous classes) but have a first-call linkage cost — one contributor to slow JVM startup, which is what CDS and AOT work targets. It also explains why lambda stack traces look so strange (`lambda$method$0`).
+
+<FollowUp q={"What is \"effectively final\" and why is it required?"}>
+
+Captured locals are copied into the lambda instance. If the local could change afterwards, the lambda would see a stale copy — Java forbids that ambiguity rather than implementing closures over mutable locals like JavaScript. The workaround (an `AtomicInteger` or a 1-element array) is legal but usually signals you want a reduction instead.
+
+</FollowUp>
+
+</Question>
+
+## Q46. What's the difference between `Function`, `BiFunction`, `Supplier`, `Consumer`, `Predicate`, `UnaryOperator` — and why so many primitive variants? [#q46]
+
+<Question id="q46">
+
+**Answer.** They're just shapes: n arguments, returns a value or not, returns boolean. `UnaryOperator<T>` is `Function<T,T>`. The primitive variants (`IntFunction`, `ToLongFunction`, `IntPredicate`, `ObjIntConsumer`...) exist because generics can't hold primitives, so a `Function<Integer,Integer>` boxes on every call. In a stream over ten million ints, that's ten million allocations.
+
+<FollowUp q="How do you write your own functional interface?">
+
+Any interface with a single abstract method qualifies; add `@FunctionalInterface` so the compiler enforces it. Do this when the JDK shape exists but the *name* obscures intent, or when you need to declare a checked exception.
+
+</FollowUp>
+
+</Question>
+
+## Q47. Are streams slower than loops? [#q47]
+
+<Question id="q47">
+
+**Answer.** For simple operations over small collections, yes — measurably. The pipeline sets up spliterators, sinks, and megamorphic call sites; a `for` loop over an array JITs to something close to optimal. For `IntStream` over arrays the JIT often closes the gap entirely; for boxed streams and complex pipelines the overhead is real but usually a few nanoseconds per element.
+
+My position: this virtually never matters. Write for clarity, and when a profiler shows a stream pipeline in your top frames on a hot path, rewrite that specific loop. The pitfalls that actually cost you are boxing, `sorted`/`distinct` buffering, and accidental parallelism — not the stream abstraction itself.
+
+<FollowUp q="How would you prove it?">
+
+JMH with proper warmup, blackholes to prevent dead-code elimination, and `@State`-scoped inputs. Anything measured with `System.nanoTime()` around a loop is measuring the JIT warming up.
+
+</FollowUp>
+
+</Question>
