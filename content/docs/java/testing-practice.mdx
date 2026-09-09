@@ -1,0 +1,153 @@
+---
+title: Testing, Debugging & Engineering Practice
+description: Test pyramid, mocks, flaky tests, incident response, review and mentoring.
+questionRange: Q134–Q142
+tags: [java, testing, practice]
+---
+
+## Q134. What does the test pyramid look like on a real service you've built? [#q134]
+
+<Question id="q134">
+
+**Answer.** Broad base of fast unit tests on domain logic with no framework, no I/O, no mocks of things I own. A middle layer of integration tests against real infrastructure via Testcontainers — the database, the broker — because that's where the interesting bugs are (SQL, transactions, serialisation, migrations). A thin layer of end-to-end tests covering critical user journeys only, because they're slow, flaky, and expensive to maintain.
+
+Plus two things people leave off the pyramid: **contract tests** between services (Pact or schema-registry compatibility checks), which catch integration breakage without a full environment, and **production verification** — synthetic transactions, canary deploys, and good alerting, because you cannot test your way to certainty about production.
+
+<FollowUp q="What's the ice cream cone anti-pattern?">
+
+The inverted pyramid: a handful of unit tests, and mostly slow UI/E2E tests. Symptoms are a 90-minute CI pipeline, a "flaky test" retry culture, and nobody trusting a red build — which is worse than having no tests, because a distrusted signal is a disabled signal.
+
+</FollowUp>
+
+</Question>
+
+## Q135. When do mocks make tests worse? [#q135]
+
+<Question id="q135">
+
+**Answer.** When you mock things you own, you end up asserting your own implementation back at yourself: the test knows the exact call sequence, so any refactoring breaks it even though behaviour is unchanged. That's the opposite of what tests are for. Over-mocked tests also pass while the real integration is broken, because the mock encodes your *assumption* about the collaborator, and the assumption is what's wrong.
+
+My rules: mock at architectural boundaries you don't control (third-party HTTP APIs, payment processors, time, randomness). Use real objects for your own domain collaborators. Use a real database via Testcontainers rather than mocking a repository. Prefer fakes (a simple in-memory implementation of the interface) over mocks — they're reusable, they enforce the contract, and they don't couple to call order. And prefer state-based assertions over `verify()` interaction assertions unless the interaction *is* the requirement (e.g. "we must call the processor exactly once").
+
+<FollowUp q="How do you test a third-party integration you've mocked away?">
+
+Contract tests plus a recorded-response layer (WireMock with real captured payloads), plus a periodic test against their sandbox that runs outside the main pipeline so it can be slow and occasionally down.
+
+</FollowUp>
+
+</Question>
+
+## Q136. How do you deal with flaky tests? [#q136]
+
+<Question id="q136">
+
+**Answer.** Treat a flaky test as a production bug, not a nuisance. Quarantine it immediately so it stops eroding trust in the build, but file it with an owner and a deadline — quarantine without a deadline is deletion with extra steps.
+
+Then find the cause, which is almost always one of: shared mutable state between tests (static fields, a shared database not reset, test ordering dependence); real time (`Thread.sleep`, timeouts tuned to a fast laptop); real concurrency (racing assertions against async work); non-deterministic collections (asserting on `HashMap` iteration order); external dependencies; or resource leaks that only bite when tests run in a particular order.
+
+Fixes: inject a `Clock`; use Awaitility with an explicit polling condition instead of `sleep`; make each test create its own data with unique keys rather than relying on a fixture; and run the suite in random order in CI to surface ordering dependence deliberately.
+
+<FollowUp q="Is retrying flaky tests in CI acceptable?">
+
+As a temporary measure with visibility (track and report retry counts), never as policy. Automatic retries hide real race conditions in your *product*, not just your tests — the same race is happening in production, you just aren't looking.
+
+</FollowUp>
+
+</Question>
+
+## Q137. What is mutation testing and would you use it? [#q137]
+
+<Question id="q137">
+
+**Answer.** A tool (PIT for Java) mutates your bytecode — flips a conditional, removes a method call, changes a return value — and re-runs the tests. If the tests still pass, the mutant "survived", meaning that line is covered but not actually *verified*. It measures assertion quality, whereas line coverage only measures execution.
+
+I'd use it selectively: on core domain logic — pricing, fee calculation, limit checks, the ledger — where correctness has monetary consequences, not across a whole codebase (it's slow and produces noise on trivial code). It's also a good one-off audit to find out whether an 85%-coverage codebase actually tests anything.
+
+<FollowUp q="What's your view on coverage targets?">
+
+Coverage is a useful *floor* and a terrible *target*. A mandated 80% produces tests written to hit lines, often with no meaningful assertions. I'd rather look at whether critical paths have behaviour-level tests and whether the last five production incidents each got a regression test.
+
+</FollowUp>
+
+</Question>
+
+## Q138. A production incident: latency has tripled since this morning's deploy. Walk me through it. [#q138]
+
+<Question id="q138">
+
+**Answer.** Mitigate first, diagnose second. If the deploy correlates, roll back — you can investigate a rolled-back binary calmly. Every minute spent debugging while customers are affected is a choice.
+
+Then, in parallel with mitigation, narrow it down:
+1. **Is it us or downstream?** Compare our internal service time against total request time; check dependency latency panels. A trace of one slow request usually answers this in seconds.
+2. **Is it GC?** GC log and heap-after-collection trend. A deploy that added a cache or increased object retention shows up here.
+3. **Is it the database?** Slow query log, `pg_stat_statements`, connection pool wait time. A new query without an index is the single most common cause of "the deploy made it slow".
+4. **Is it saturation?** Thread pool queue depth, connection pool pending count, CPU. A latency increase with flat throughput and rising queue depth is a capacity/blocking problem, not a code problem.
+5. **Is it a specific endpoint or all of them?** Per-endpoint percentiles narrow the diff.
+6. **What actually changed?** Not just code — config, feature flags, a dependency's deploy, data volume crossing a threshold, a partner's behaviour.
+
+Afterwards: a blameless postmortem with a timeline, contributing factors, and *action items with owners*. The valuable output isn't the root cause, it's the improved detection — the alert that should have fired 20 minutes earlier.
+
+<FollowUp q="What if rolling back isn't possible (a schema migration ran)?">
+
+That's why migrations are expand-only and backward compatible (Q118) — the ability to roll back is a design property you build in beforehand, not an option you have in the moment. If it's genuinely one-way, you fix forward, which is why one-way migrations get much more review.
+
+</FollowUp>
+
+</Question>
+
+## Q139. How do you approach a code review as a senior engineer? [#q139]
+
+<Question id="q139">
+
+**Answer.** I prioritise: correctness and edge cases first; then security and data handling; then design and whether this makes the codebase easier or harder to change; then tests; and style last (and ideally not at all — a formatter and a linter should own style, so review time goes to things humans are good at).
+
+How I write comments matters as much as what I catch. I distinguish blocking concerns from suggestions explicitly ("nit:" / "non-blocking:"), ask questions rather than issue instructions when I might be missing context, and explain the *why* so the review teaches rather than just gates. If a review has more than about ten comments, I stop typing and have a conversation — that's a design disagreement, not a review.
+
+I also review my own reviews: if I'm the bottleneck for the team, that's my problem to fix, and a same-day review of a small PR is worth more than a perfect review three days later.
+
+<FollowUp q="How do you handle disagreement with a strong opinion from a colleague?">
+
+Separate reversible from irreversible decisions. For a reversible one, disagree, state why once, and commit — then revisit with data. For an irreversible one (a data model, a public API, a choice of persistence), it's worth escalating to a written design doc and a wider decision, because the cost of being wrong is much higher than the cost of the argument.
+
+</FollowUp>
+
+</Question>
+
+## Q140. How do you make a technical decision the team will still respect in two years? [#q140]
+
+<Question id="q140">
+
+**Answer.** Write it down as an ADR: the context and constraints, the options considered, the decision, and — the part people skip — the consequences we're accepting. Two years later, the value isn't the decision, it's the record of *what we knew at the time*, which stops a future engineer from assuming the previous team was foolish and re-litigating from scratch.
+
+I also try to distinguish one-way from two-way doors, spend decision effort proportionally, and be explicit about what would make us change our minds — "we'll revisit if throughput exceeds X" turns a decision into a hypothesis with a test.
+
+</Question>
+
+## Q141. How do you mentor and grow the engineers around you? [#q141]
+
+<Question id="q141">
+
+**Answer.** Concretely: pair on hard problems rather than taking them over; in review, explain reasoning rather than just prescribing; hand over work that is slightly beyond someone's current level with a safety net rather than delegating only what's safe; and make my own thinking visible — including when I'm wrong or uncertain, because juniors mostly see seniors' polished conclusions and conclude that seniors don't struggle.
+
+The measure I use: is the team's throughput and quality less dependent on me over time? If I'm the only person who can debug the payment reconciliation job, I've failed at the senior part of the job regardless of how well I debug it.
+
+</Question>
+
+## Q142. What questions should *you* ask the interviewer? [#q142]
+
+<Question id="q142">
+
+**Answer.** Ask things whose answers would actually change your decision:
+
+- What does the deploy pipeline look like, and how long from merge to production?
+- How did the last significant incident go, and what changed afterwards?
+- What's the balance of new development versus maintenance on this team right now?
+- Where is the codebase's technical debt, and is there budget to address it?
+- How are technical decisions made — who decides, and how are they recorded?
+- What does the on-call rotation look like, and how often does it wake someone?
+- What would you want this person to have accomplished in six months?
+- What's the hardest part of working here that isn't on the job description?
+
+**Why it matters.** Interviewers read these as signals about seniority. Asking about incident response and decision-making says you've operated systems and worked in teams; asking only about technology stack says you haven't yet.
+
+</Question>
