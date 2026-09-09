@@ -1,0 +1,336 @@
+---
+title: The Java Memory Model
+concept: jmm
+tier: foundational
+prerequisites: [threads-and-scheduling]
+unlocks: [volatile, safe-publication, double-checked-locking, final-field-semantics, atomics-and-cas, immutability]
+questions: [java/concurrency#q48, java/concurrency#q49, java/concurrency#q57, java/concurrency#q58, java/concurrency#q69]
+estimatedStudyTime: 3h
+---
+
+# The Java Memory Model
+
+> **Recall layer.** If you only want the interview answer, it's in
+> [Q48](/java/concurrency#q48). This page is for building the model that
+> generates that answer.
+
+## 1. The problem it exists to solve
+
+Write this and run it:
+
+```java
+class Stopper {
+    private boolean running = true;          // deliberately not volatile
+
+    void loop()  { while (running) { /* spin */ } System.out.println("stopped"); }
+    void stop()  { running = false; }
+}
+```
+
+Start `loop()` on one thread, sleep a second, call `stop()` from another. On a
+server JVM with C2 compilation, it frequently never prints. The write happened.
+The variable is `false`. The loop keeps running.
+
+Nothing is broken. Every layer behaved as specified:
+
+- **The compiler** may hoist a non-volatile read out of a loop, because within a
+  single thread the transformation is unobservable. `javac` doesn't do this;
+  C2 does, once the loop is hot.
+- **The CPU** may keep the value in a register or a store buffer rather than
+  making it visible to other cores immediately.
+- **The cache coherence protocol** guarantees cores eventually agree on a value,
+  but "eventually" is not a schedule you can rely on, and the hoisted read never
+  consults cache at all.
+
+This is the actual problem. It is not a bug in your code in the ordinary sense —
+there is no line you can point at. The code is *underspecified*: it never told
+the JVM that this variable is shared, so the JVM optimised it as if it weren't.
+
+**The insight to carry away:** without explicit synchronisation, the JVM is only
+obliged to preserve the behaviour a *single* thread would observe. That is called
+*as-if-serial* semantics, and it is an enormous licence. Every reordering,
+caching and elimination optimisation lives inside it.
+
+## 2. What the JMM actually is
+
+The JMM is not a description of hardware. It's a **contract**, defined in
+JLS §17.4, between you and every possible JVM implementation. It says: if you
+establish these relationships, these guarantees hold; otherwise, all bets are off.
+
+The contract is deliberately *weak*. A strong model — "every thread sees every
+write immediately" — would be trivially easy to reason about and would forbid
+almost every optimisation that makes the JVM fast. The JMM is the negotiated
+settlement: weak enough to permit aggressive optimisation, strong enough that
+correctly synchronised programs behave sequentially consistently.
+
+That last clause is the whole design, and it's worth stating precisely:
+
+> **If a program is correctly synchronised (data-race-free), it will appear to
+> execute sequentially consistently.**
+
+So the JMM's promise is conditional. You get simple, intuitive semantics *in
+exchange for* declaring your sharing. The `while (running)` loop above declared
+nothing and therefore got nothing.
+
+### Why this design and not another
+
+Java was the first mainstream language to specify a memory model at all. C and
+C++ had no formal concurrency semantics until C++11 — concurrent code was
+defined by what your compiler happened to do. Java specified one in 1995 because
+"write once, run anywhere" is meaningless if a correct program on x86 breaks on
+SPARC or ARM, whose memory ordering is much weaker.
+
+The original 1995 model was broken — it made final fields unsafe, permitted
+some reorderings that broke immutability, and made double-checked locking
+unfixable. **JSR-133**, shipped in Java 5, replaced it. Almost every piece of
+concurrency advice that predates 2004 is either wrong or reasoning from the old
+model. This matters when reading old Stack Overflow answers.
+
+## 3. Happens-before
+
+The contract is expressed through one relation. If action A *happens-before*
+action B, then A's effects are visible to B, and A appears to occur first from
+B's perspective.
+
+The relation is:
+- **Transitive** — A hb B and B hb C implies A hb C. This is what makes it
+  compose, and it's the source of most of its practical power.
+- **Not symmetric** — and not a claim about wall-clock time. Two actions with no
+  happens-before edge between them are *concurrent*, regardless of when they
+  actually happened.
+
+### The edges, and what each really means
+
+| Edge | Rule |
+|---|---|
+| Program order | Within one thread, each action hb every later action *in program order* |
+| Monitor | Unlocking a monitor hb every subsequent lock of *that same* monitor |
+| Volatile | A write to a volatile field hb every subsequent read of that field |
+| Thread start | `t.start()` hb every action in thread `t` |
+| Thread join | Every action in `t` hb a successful `t.join()` |
+| Interruption | `t.interrupt()` hb the point where `t` detects the interrupt |
+| Finalizer | The end of a constructor hb the start of that object's finalizer |
+
+Two of these are subtler than they look.
+
+**Program order does not mean execution order.** It means the *ordering
+guarantee* is in program order. The JVM may still execute actions out of order,
+as long as no other thread has an edge that would let it observe the difference.
+Program order constrains what other threads may see, not what the CPU does.
+
+**"That same monitor" is load-bearing.** Two threads synchronising on *different*
+locks have no edge between them. This is the most common way people write code
+that looks synchronised and isn't — a `synchronized` method on two different
+instances protects nothing shared.
+
+### The piggyback effect
+
+This is the part that turns happens-before from trivia into a tool. Because the
+relation is transitive, a single volatile write publishes *everything written
+before it*:
+
+```java
+class Config {
+    private int   timeout;                       // plain
+    private String url;                          // plain
+    private volatile boolean initialised;        // volatile
+
+    void init() {
+        timeout = 5000;                          // 1
+        url = "https://api.example.com";         // 2
+        initialised = true;                      // 3 — volatile write
+    }
+
+    boolean use() {
+        if (initialised) {                       // 4 — volatile read
+            connect(url, timeout);               // 5 — sees BOTH, guaranteed
+            return true;
+        }
+        return false;
+    }
+}
+```
+
+Trace it: 1 hb 3 (program order), 3 hb 4 (volatile rule), 4 hb 5 (program order).
+By transitivity, 1 hb 5. The reader is guaranteed to see the *plain* fields,
+even though they carry no synchronisation of their own.
+
+This is called **piggybacking**, and it is why "make everything volatile" is the
+wrong instinct. One correctly placed volatile write can publish an arbitrarily
+large object graph.
+
+**But note the fragility:** reverse lines 2 and 3 and the guarantee evaporates.
+The edge only publishes what was written *before* the volatile write in program
+order. This is exactly the bug in unsafe publication, and exactly why
+double-checked locking needs `volatile` on the reference — see
+[Q57](/java/concurrency#q57).
+
+## 4. What this does *not* give you
+
+Visibility and atomicity are different problems, and conflating them is the most
+common misunderstanding at this level.
+
+```java
+private volatile int count;
+void increment() { count++; }        // still a race
+```
+
+`count++` is read, add, write — three actions. `volatile` guarantees each read
+and each write is visible and ordered. It guarantees nothing about the gap
+between them. Two threads can both read 5, both compute 6, and both write 6.
+
+So the decision rule:
+
+| Need | Tool |
+|---|---|
+| Visibility of a single value | `volatile` |
+| Atomic read-modify-write on one variable | `AtomicInteger` / CAS |
+| Atomic operation across several variables, or an invariant spanning them | lock |
+| Publish an immutable object once | `volatile` reference, or `final` fields |
+
+The third row is where design judgement enters: if your invariant spans two
+fields, no amount of per-field atomicity helps. The unit of atomicity has to
+match the unit of the invariant. That single sentence is most of what separates
+someone who adds `synchronized` until the test passes from someone who reasons
+about concurrency.
+
+## 5. Final field semantics
+
+A separate guarantee, and one people rarely know precisely:
+
+> If an object is correctly constructed, any thread that obtains a reference to
+> it is guaranteed to see the correctly initialised values of its **final**
+> fields — with no synchronisation at all.
+
+The JVM implements this by inserting a memory barrier at the end of the
+constructor, preventing the reference from becoming visible before the final
+field writes.
+
+"Correctly constructed" carries the whole caveat: it means `this` did not escape
+during construction. Register a listener, start a thread, or pass `this` to a
+collaborator inside the constructor, and another thread can hold the reference
+before the barrier — and the guarantee is void. See
+[Q58](/java/concurrency#q58).
+
+**This is the formal reason immutable objects are thread-safe.** Not a heuristic,
+not "because nothing changes" — a specific JMM guarantee with a specific
+precondition. Knowing the precondition is what lets you spot the case where
+immutability *doesn't* save you.
+
+## 6. Lab: make it fail, then fix it
+
+Reading this is not sufficient. Run these.
+
+### Lab 1 — reproduce the non-terminating loop
+
+Write the `Stopper` above. Run with `-server`. If it terminates, make the loop
+body emptier and run longer — you need C2 to compile and hoist it. Then:
+
+1. Add `volatile` to `running`. Observe it terminates.
+2. Remove `volatile` and add `System.out.println()` inside the loop. Observe it
+   probably terminates anyway — because `println` is `synchronized` internally
+   and creates an edge. **This is why "it works on my machine" is worthless
+   evidence in concurrency.** An unrelated synchronised call accidentally fixed
+   your bug, and removing it later will resurrect it.
+3. Remove the print and add `-Xint` (interpreted only). It terminates, because
+   the interpreter doesn't hoist. Your bug is invisible in a debugger.
+
+Point 3 is the lesson: concurrency bugs are frequently *hidden* by the tools you
+would use to find them.
+
+### Lab 2 — observe reordering directly
+
+```java
+// Thread 1: x = 1; r1 = y;
+// Thread 2: y = 1; r2 = x;
+// Can r1 == 0 && r2 == 0 ?
+```
+
+Sequential consistency says no — one of the writes must precede both reads.
+Run it a few million times in a loop with no synchronisation and you will observe
+`(0, 0)` on x86. Both writes sat in store buffers.
+
+This is worth doing by hand once. Reading "reordering happens" and *seeing* an
+impossible result on your own machine are different experiences, and the second
+one is what makes you cautious for the rest of your career.
+
+### Lab 3 — jcstress
+
+Hand-rolled stress tests give you weak evidence. **jcstress** is the JDK's
+harness for exactly this: it runs candidate interleavings billions of times and
+reports which outcomes were actually observed, classified as acceptable or
+forbidden.
+
+```bash
+mvn archetype:generate -DarchetypeGroupId=org.openjdk.jcstress \
+    -DarchetypeArtifactId=jcstress-java-test-archetype
+```
+
+Port Lab 2 into it. Then write a jcstress test for the `Config` class in §3, both
+with and without `volatile` on `initialised`, and see the forbidden outcome
+appear when you remove it.
+
+**If you do one thing from this page, do this.** Being able to write a jcstress
+test is a genuine differentiator — it means you can *settle* a concurrency
+argument on your team with evidence instead of opinion.
+
+## 7. Leading on this
+
+Knowing the JMM is table stakes. What a lead does with it:
+
+**Make it unnecessary.** The best JMM strategy is minimising the code that needs
+JMM reasoning. Immutable value objects, thread confinement, and
+`java.util.concurrent` structures cover the great majority of real cases. A
+codebase where twenty people write `volatile` and `synchronized` by hand will
+have bugs; a codebase where three carefully reviewed classes encapsulate all the
+sharing will not. Pushing for the second is an architecture decision, not a
+coding preference.
+
+**Set the convention.** Require `@GuardedBy` annotations on mutable shared state
+and enable the ErrorProne check that enforces them. Now the invariant is in the
+code and checked at build time, instead of in the head of whoever wrote it.
+
+**Review for the right thing.** In review, the question isn't "is this
+synchronised?" but "what is the unit of atomicity here, and does it match the
+invariant?" Most concurrency defects that reach production are correctly
+synchronised at the wrong granularity — check-then-act over a thread-safe map
+being the canonical case ([Q69](/java/concurrency#q69)).
+
+**Teach the transitivity.** Junior engineers reach for `volatile` on every field.
+Showing them the piggyback trace in §3 — once, on a whiteboard — changes how
+they write concurrent code permanently. It is one of the highest-leverage
+30-minute conversations available to you.
+
+## 8. Where to go deeper
+
+- *Java Concurrency in Practice*, Goetz et al. — chapters 3 and 16. Predates
+  Java 8 but the JMM chapters have not aged.
+- JSR-133 FAQ (Manson & Goetz) — short, and the clearest plain-English statement
+  of what changed in Java 5 and why.
+- JLS §17.4 — the actual specification. Read it once, after the above, so you
+  know what the normative text says rather than what blogs say it says.
+- Aleksey Shipilëv, "Close Encounters of The Java Memory Model Kind" — the modern
+  treatment, from the person who wrote much of the tooling.
+- `VarHandle` access modes (plain / opaque / acquire-release / volatile) — the
+  next layer down, once this page is comfortable. It's how you express
+  *weaker-than-volatile* ordering deliberately.
+
+## 9. Self-check
+
+Answer these without looking. If you can't, re-read the relevant section.
+
+1. Why is `while (running)` with a non-volatile flag permitted to loop forever,
+   given the CPU's cache coherence protocol guarantees eventual agreement?
+2. Two threads each `synchronized` on their own instance's monitor, mutating a
+   shared static field. Is there a happens-before edge? Why does the code look
+   correct?
+3. In the `Config` example, which specific reordering breaks the guarantee, and
+   which happens-before edge does it destroy?
+4. You have a `volatile Map<String, Integer>`. Is `map.put(k, v)` thread-safe?
+   Is `map = newMap` thread-safe? Explain the difference in terms of what
+   `volatile` actually governs.
+5. An immutable object with all-final fields is published by assignment to a
+   plain (non-volatile) static field. Is it safely published? Under what
+   condition does your answer change?
+6. Why does adding a `println` to a broken concurrent loop often "fix" it, and
+   what does that tell you about how to validate a concurrency fix?
