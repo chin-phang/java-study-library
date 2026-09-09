@@ -16,8 +16,16 @@ architecture and is not a valid starting point.
 
 **Fumadocs moves quickly.** Do not write setup code from memory or from a blog
 post. Read the current documentation at https://fumadocs.dev/docs before
-configuring search, MDX, or the source adapter, and tell me the version you
-scaffolded so this file can record it.
+configuring search, MDX, or the source adapter.
+
+The scaffolded version defines content collections with the **Macro API in
+`src/lib/source.ts`** — there is no root `source.config.ts`. Older tutorials and
+examples show `source.config.ts`; ignore them. See
+https://fumadocs.dev/docs/mdx/macro. Search is a route handler at
+`src/app/api/search/route.ts`.
+
+This project is on Next.js 16, so request middleware is `proxy.ts` at the root,
+not `middleware.ts`.
 
 ## The two content types
 
