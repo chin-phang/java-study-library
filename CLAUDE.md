@@ -1,0 +1,362 @@
+# Java Lead Study Library — Project Conventions
+
+## What this project is
+
+A personal study library for developing senior/lead-level depth in backend Java,
+the data systems around it, and software design. Interview preparation is a
+**by-product**, not the goal. The goal is judgement: being the person on a team
+who can settle a technical argument with reasoning and evidence.
+
+Built on **Fumadocs** (Next.js App Router), deployed to Vercel. Static, no auth,
+no database.
+
+Scaffolded with `npx create-fumadocs-app` — not from a template repository. The
+Vercel gallery's Nextra template is on the old `pages/` + `theme.config.tsx`
+architecture and is not a valid starting point.
+
+**Fumadocs moves quickly.** Do not write setup code from memory or from a blog
+post. Read the current documentation at https://fumadocs.dev/docs before
+configuring search, MDX, or the source adapter, and tell me the version you
+scaffolded so this file can record it.
+
+## The two content types
+
+This distinction drives everything. Do not blur it.
+
+### Reference questions (407)
+
+The existing Q&A in `_source/`. Optimised for recall — claim, mechanism,
+trade-off. These stay as written; conversion to MDX is **structural only**.
+Their job is fast lookup and self-testing. Each links up to the concept page
+that explains it.
+
+### Concept pages (~55)
+
+Deep-study pages on the load-bearing ideas. Written to build a mental model, not
+to be recited. One concept page typically explains 5–15 reference questions.
+
+**Do not expand all 407 questions into concept pages.** That produces ~250k words
+of padding. The tiering is the point: a small number of deeply understood
+mechanisms generate correct answers to a large number of questions.
+
+## Source material
+
+All in `_source/`, excluded from the build.
+
+### `senior-java-interview-questions.md` — 142 questions, ~27k words
+
+| Section | Range | Target file |
+|---|---|---|
+| Core Language & OOP | Q1–14 | `java/core-language.mdx` |
+| Generics | Q15–21 | `java/generics.mdx` |
+| Collections | Q22–36 | `java/collections.mdx` |
+| Streams & Functional | Q37–47 | `java/streams.mdx` |
+| Concurrency | Q48–70 | `java/concurrency.mdx` |
+| JVM, Memory & GC | Q71–86 | `java/jvm-memory-gc.mdx` |
+| Modern Java 8→21 | Q87–97 | `java/modern-java.mdx` |
+| Spring & Frameworks | Q98–110 | `java/spring.mdx` |
+| Persistence & JPA | Q111–120 | `java/persistence.mdx` |
+| Distributed Systems & Payments | Q121–133 | `java/distributed-systems.mdx` |
+| Testing & Practice | Q134–142 | `java/testing-practice.mdx` |
+
+### `senior-data-messaging-interview-questions.md` — 145 questions, ~30k words
+
+| Section | Range | Target file |
+|---|---|---|
+| Data Modelling & Indexing | Q1–15 | `data/modelling-indexing.mdx` |
+| Query Performance & Plans | Q16–30 | `data/query-performance.mdx` |
+| Transactions & MVCC | Q31–45 | `data/transactions-mvcc.mdx` |
+| Scaling & Operations | Q46–60 | `data/scaling-operations.mdx` |
+| Redis & Caching | Q61–85 | `data/redis-caching.mdx` |
+| RabbitMQ | Q86–105 | `data/rabbitmq.mdx` |
+| Kafka | Q106–135 | `data/kafka.mdx` |
+| Cross-Cutting Design | Q136–145 | `data/cross-cutting.mdx` |
+
+### `senior-design-architecture-interview-questions.md` — 120 questions, ~24k words
+
+| Section | Range | Target file |
+|---|---|---|
+| OOP & Design Fundamentals | Q1–14 | `design/oop-fundamentals.mdx` |
+| SOLID & Design Principles | Q15–26 | `design/solid-principles.mdx` |
+| Design Patterns | Q27–45 | `design/design-patterns.mdx` |
+| Domain-Driven Design | Q46–52 | `design/ddd.mdx` |
+| Architectural Styles | Q53–60 | `design/architecture-styles.mdx` |
+| Microservices: Boundaries | Q61–78 | `design/microservices-boundaries.mdx` |
+| Microservices: Communication | Q79–88 | `design/microservices-communication.mdx` |
+| Microservices: Data | Q89–95 | `design/microservices-data.mdx` |
+| Operations & Organisation | Q96–107 | `design/operations-organisation.mdx` |
+| Remaining Patterns & Topics | Q108–120 | `design/remaining-patterns.mdx` |
+
+**Note:** question numbering restarts per file. Anchor IDs must therefore be
+scoped by file (`/design/ddd#q46`, not a global `#q46`).
+
+Every question in every source follows the same shape:
+
+```
+### Q12. Question text
+
+**Answer.** ...
+
+**Why it matters.** ...            <- present on most, not all
+
+**Follow-up: <question text>?**
+<answer paragraph>                  <- 0 to 3 per question
+```
+
+Do not rewrite, summarise or "improve" answer text during conversion. If a source
+passage seems wrong, flag it in the commit message rather than silently editing.
+
+## Concept page structure
+
+The reference implementation is `_source/java-memory-model-concept-page.md`.
+Every concept page follows its section pattern:
+
+1. **The problem it exists to solve** — a concrete failure, ideally runnable,
+   before any theory. Never open with a definition.
+2. **What it actually is** — the mechanism, plus *why* it was designed this way
+   and what the alternatives were.
+3. **The core model** — the central abstraction, in depth, with worked traces.
+4. **What it does not give you** — the boundary. Where people over-apply it.
+5. **Adjacent guarantees / interactions** — how it composes with neighbours.
+6. **Lab** — things to run and break. Non-negotiable.
+7. **Leading on this** — conventions to set, what to look for in review, how to
+   teach it, what architectural choice makes the problem smaller.
+8. **Where to go deeper** — primary sources, specifications, named authors.
+9. **Self-check** — 5–7 questions answerable only if the model is built. Prefer
+   "why does X break Y" over "what is X".
+
+Sections 6 and 7 are what distinguish this library from the reference Q&A.
+If a page is missing either, it isn't finished.
+
+## Frontmatter
+
+Reference pages:
+
+```yaml
+---
+title: Concurrency
+description: Java Memory Model, locks, executors, virtual threads.
+questionRange: Q48–Q70
+tags: [java, concurrency, jvm]
+---
+```
+
+Concept pages:
+
+```yaml
+---
+title: The Java Memory Model
+concept: jmm
+tier: foundational          # foundational | core | specialist
+prerequisites: [threads-and-scheduling]
+unlocks: [volatile, safe-publication, double-checked-locking]
+questions: [java/concurrency#q48, java/concurrency#q49, java/concurrency#q57]
+estimatedStudyTime: 3h
+---
+```
+
+`prerequisites`/`unlocks` build the dependency graph — render it as a study path
+on the index. `questions` drives bidirectional linking.
+
+## Candidate concept pages
+
+**Foundational** (do these first — they unlock the most):
+
+- The Java Memory Model — *reference implementation, already written*
+- Generics and type erasure
+- How HashMap actually works
+- The JVM's memory areas and what `-Xmx` doesn't bound
+- Generational GC and why allocation is cheap
+- JIT compilation, inlining and deoptimisation
+- B-trees, selectivity and why an index isn't used
+- MVCC and the cost of a row version
+- The log: WAL, replication, and why Kafka and PostgreSQL share a shape
+- Idempotency and the three outcomes of a network call
+- Bounded contexts and finding a boundary
+- Dependency inversion and the hexagonal shape
+
+**Core:**
+
+- Thread pools and Little's Law
+- Virtual threads: continuations, mounting, pinning
+- CAS, contention and lock-free structures
+- Escape analysis and when allocation disappears
+- Class loading and classloader leaks
+- Query planning and cardinality estimation
+- Isolation levels and the anomalies they permit
+- Locking, deadlock and lock ordering
+- Partitioning as one idea across four systems
+- Cache invalidation and the races in each ordering
+- Backpressure and the unbounded-queue failure mode
+- Consistency models and choosing per operation
+- The proxy boundary in Spring
+- The persistence context and dirty checking
+- Aggregates as consistency boundaries
+- Coupling, cohesion and what makes a change expensive
+- The expression problem: polymorphism vs pattern matching
+- Conway's law and the inverse manoeuvre
+- Why microservices are an organisational answer
+
+**Specialist:** add as you hit them. Don't pre-plan the whole list.
+
+## The leadership track
+
+Section 9 of the design bank (Q96–Q107) covers this as reference Q&A. The
+`content/leading/` track is separate, longer-form, and **written by the user, not
+generated**. Claude Code should scaffold the structure and prompt with questions;
+the content must come from real experience or it will read as generic.
+
+Topics: setting and defending conventions; reviewing for design not style;
+one-way vs two-way doors; writing an ADR; running an incident; estimating and
+negotiating scope; growing people; two-year technical strategy; saying no with
+reasons that survive scrutiny; knowing when the boring option is correct.
+
+## Content structure
+
+**Project layout decision:** this project uses the `src/` directory for code and
+keeps content at the repository root. Answer *yes* to the `src/` prompt when
+scaffolding. Every path below assumes this.
+
+```
+CLAUDE.md
+_source/                     # raw markdown, excluded from build
+content/docs/                # MDX — NOT under src/
+source.config.ts
+src/
+  app/
+  components/                # Question.tsx, FollowUp.tsx, Mermaid.tsx
+  lib/                       # source.ts
+  mdx-components.tsx
+```
+
+Content stays at the root because Fumadocs' defaults and examples assume
+`content/docs`; moving it under `src/` means overriding paths for no benefit.
+
+Fumadocs uses `meta.json` files for navigation (not Nextra's `_meta.ts`).
+Confirm against the version you scaffold.
+
+```
+content/docs/
+  index.mdx                  # study paths, entry points
+  meta.json
+  concepts/                  # deep-study pages
+    meta.json
+    jmm.mdx
+    ...
+  java/                      # reference Q&A (11 files)
+  data/                      # reference Q&A (8 files)
+  design/                    # reference Q&A (10 files)
+  leading/                   # leadership essays, user-written
+```
+
+The target filenames in the source tables above are relative to this root.
+
+## The Question component
+
+Build `src/components/Question.tsx` and `src/components/FollowUp.tsx` before
+converting any content, and register them in `src/mdx-components.tsx` so MDX
+files need no imports.
+
+```mdx
+<Question id="q48" title="Explain the Java Memory Model and happens-before.">
+
+**Answer.** ...
+
+<FollowUp q="Give an example of a data race with no lock.">
+Answer text.
+</FollowUp>
+
+</Question>
+```
+
+Requirements:
+- `id` becomes the heading anchor, so `/java/concurrency#q48` deep-links.
+- Title renders as a real `<h3>` — the table of contents depends on heading
+  structure. Do not replace headings with styled divs.
+- Answer collapsed by default, expandable, with a page-level expand-all control.
+- **Acceptance test before any content conversion:** search for a phrase that
+  appears only inside a collapsed answer and confirm it is found. Fumadocs builds
+  its index from `structuredData` extracted from the MDX source rather than from
+  rendered HTML, so collapse behaviour should not affect indexing — but whether
+  text inside custom-component children is extracted must be *verified*, not
+  assumed. If it isn't, the fix is to restructure the component so answer prose
+  sits at the MDX top level rather than as JSX children.
+
+## MDX gotchas
+
+MDX parses `<` and `{` as JSX. `List<String>`, `Map<K,V>`, `<T extends
+Comparable<T>>`, and `N < 100` in bare prose all break the build. Backtick them.
+The Java and design banks are full of these. Run `pnpm build` after every file,
+not after every ten.
+
+## Search
+
+Fumadocs ships built-in search (self-hosted, free). Two modes:
+
+- **Server route** — an API endpoint created from the source object. Fine on
+  Vercel.
+- **Static** — a cached JSON index, for fully static export.
+
+Either is acceptable. Read the current docs for the exact API before wiring it;
+the engine and client helper names have changed at least once (the built-in
+engine moved off `@orama/orama` in 2026), so any snippet older than a few months
+is suspect.
+
+407 questions across 29 pages is a small index — this should not need tuning.
+
+## Diagrams
+
+Fumadocs does **not** render Mermaid natively — unlike Nextra. Add the `mermaid`
+package and a client component that renders a fenced ```mermaid block, then map
+it in `mdx-components.tsx`. Build this once, in session 1, and verify it renders
+before writing 19 diagrams against it.
+
+Mermaid renders client-side, so a syntax error is a broken diagram, not a failed
+build — check each in the browser. Keep them phone-readable: top-to-bottom flow,
+≤10 nodes.
+
+Target list:
+
+*Java* — JVM memory areas and what `-Xmx` doesn't bound (Q71); G1 region layout
+and mixed collection (Q74); `ThreadPoolExecutor` core→queue→max→rejection flow
+(Q53); happens-before edges between two threads (Q48); virtual thread
+mount/unmount and pinning (Q62); Spring proxy boundary and self-invocation (Q101).
+
+*Data* — B-tree descent plus heap fetch vs index-only scan (Q16/17); MVCC tuple
+versions with xmin/xmax (Q33); write-skew timeline (Q32); Kafka partition to
+consumer group assignment (Q110); Kafka ISR and high watermark (Q116);
+transactional outbox end to end (Q136); RabbitMQ exchange→binding→queue (Q86);
+RabbitMQ retry/DLQ topology (Q90).
+
+*Design* — hexagonal ports and adapters with dependency direction (Q53);
+distributed monolith vs properly bounded services (Q65); orchestration vs
+choreography (Q60); strangler fig routing during migration (Q68); aggregate
+boundary and transactional scope (Q48).
+
+That is ~19 diagrams. Do not add decorative ones.
+
+## Study features (build after content exists)
+
+Content first. Do not build features against three pages.
+
+- Collapsible answers (self-test mode)
+- `localStorage` progress: mark a concept page reviewed, with a date
+- Concept dependency graph as a study path
+- Self-check questions collapsed by default
+- Search across everything
+
+Out of scope: accounts, sync, spaced-repetition scheduling, a backend.
+
+## Working agreement
+
+- Reference Q&A conversion is **structural only**. Do not rewrite answer text.
+- Concept pages are new writing. Match the depth and voice of the JMM reference
+  implementation. Do not pad to reach a length.
+- Every concept page must have a runnable lab. If you cannot devise one, say so
+  rather than inventing a fake exercise.
+- Prefer primary sources in "go deeper": specifications, JEPs, named authors.
+- Run `pnpm build` before every commit. One commit per page.
+- Commit format: `content(java): convert concurrency section`.
+- Ask before adding any dependency beyond pagefind and what the template ships.
+- Flag uncertainty explicitly. A page that confidently states something wrong is
+  worse than no page — the user will repeat it in an interview.
