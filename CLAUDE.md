@@ -19,10 +19,16 @@ post. Read the current documentation at https://fumadocs.dev/docs before
 configuring search, MDX, or the source adapter.
 
 The scaffolded version defines content collections with the **Macro API in
-`src/lib/source.ts`** — there is no root `source.config.ts`. Older tutorials and
-examples show `source.config.ts`; ignore them. See
-https://fumadocs.dev/docs/mdx/macro. Search is a route handler at
-`src/app/api/search/route.ts`.
+`src/lib/source.ts`**. Older tutorials and examples define collections in
+`source.config.ts`; ignore them. See https://fumadocs.dev/docs/mdx/macro. Search
+is a route handler at `src/app/api/search/route.ts`.
+
+There **is** a root `source.config.ts`, but it holds *global MDX options only* —
+no collections. It exists to register `remarkMdxMermaid`. This cannot be a
+collection-level `mdxOptions`, because that **replaces** the default plugin set
+and would drop the plugins that build `toc` and `structuredData`, silently
+breaking the ToC and search. The macro docs explicitly sanction keeping a
+`source.config.ts` for global plugins alongside macro collections.
 
 **Verified stack** (record changes here when you upgrade):
 
@@ -34,6 +40,7 @@ https://fumadocs.dev/docs/mdx/macro. Search is a route handler at
 | fumadocs-mdx | 15.4.0 |
 | fumadocs-ui | `npm:@fumadocs/base-ui@16.15.8` |
 | typescript | ^7.0.2 |
+| mermaid | 11.17.2 |
 
 Notes: `fumadocs-ui` is aliased to the Base UI variant, but imports remain
 `fumadocs-ui/*`. Next.js 16 means request middleware is `proxy.ts` at the root,
@@ -43,6 +50,26 @@ not `middleware.ts`. OG image generation **is** enabled — `getPageImageUrl()` 
 **Verification command: `pnpm types:check`** (`next typegen && tsc --noEmit`).
 Run this after every file — it is faster and stricter than `next build`. Run
 `pnpm build` before each commit.
+
+### Tooling on this machine
+
+pnpm 12.3.4 is installed at `%PNPM_HOME%\bin`
+(`C:\Users\admin\AppData\Local\pnpm`), matching the pinned `packageManager`. A
+shell started before those environment variables were set will not see it —
+`%PNPM_HOME%\bin` is a `REG_EXPAND_SZ` reference that expands to nothing without
+`PNPM_HOME`. Fix the shell; do not reach for `corepack`:
+
+```bash
+export PNPM_HOME="C:\Users\admin\AppData\Local\pnpm" && export PATH="$PNPM_HOME/bin:$PATH"
+```
+
+`corepack pnpm` runs without `PNPM_HOME`, resolves a **different store path**,
+and pnpm then wipes and relinks `node_modules` to reconcile. On Windows that wipe
+hits file locks, fails half-way, and leaves the directory unusable.
+
+**Stop the dev server before any `pnpm install` / `pnpm add`.** Next.js holds
+file handles under `node_modules`, so the relink fails with
+`ERR_PNPM_PACKAGE_MANAGER_REMOVE_MODULES_DIR ... Access is denied`.
 
 ## The two content types
 
@@ -252,6 +279,7 @@ content/docs/                # MDX — NOT under src/
   index.mdx
   concepts/ java/ data/ design/ leading/
 proxy.ts                     # Next 16 middleware
+source.config.ts             # global MDX options ONLY (mermaid) — no collections
 src/
   app/
     docs/[[...slug]]/        # the library
@@ -266,8 +294,9 @@ src/
     shared.ts layout.shared.tsx cn.ts
 ```
 
-There is no `source.config.ts` and no `src/mdx-components.tsx`. If a tutorial
-mentions either, it predates this version.
+There is no `src/mdx-components.tsx`. If a tutorial mentions one, it predates
+this version. `source.config.ts` exists but must never contain collections —
+those live in `src/lib/source.ts`.
 
 Content stays at the root because Fumadocs' defaults and examples assume
 `content/docs`; moving it under `src/` means overriding paths for no benefit.
@@ -293,44 +322,91 @@ The target filenames in the source tables above are relative to this root.
 
 ## The Question component
 
-Build `src/components/Question.tsx` and `src/components/FollowUp.tsx` before
-converting any content, and register them in **`src/components/mdx.tsx`** — the
-scaffold's `getMDXComponents()` function — so MDX files need no imports.
+`src/components/Question.tsx`, `src/components/FollowUp.tsx` and
+`src/components/Mermaid.tsx` are built and registered in
+**`src/components/mdx.tsx`** — the scaffold's `getMDXComponents()` function — so
+MDX files need no imports.
+
+`QuestionsProvider` (exported from `Question.tsx`) wraps `<DocsBody>` in
+`src/app/docs/[[...slug]]/page.tsx` and supplies the page-level expand-all
+control, counting questions but not their nested follow-ups. MDX files need no
+boilerplate for it.
 
 There is **no `src/mdx-components.tsx`** in this project. Do not create one; it
 would not be imported by anything. `src/app/docs/[[...slug]]/page.tsx` imports
 `getMDXComponents` from `@/components/mdx` and passes it to `<MDXContent>`.
 Adding a component means adding it to the object returned by that function.
 
+### The authoring shape
+
+The question text is a **real markdown heading** carrying an explicit anchor.
+`<Question>` wraps the answer only. Blank lines inside the JSX are required, or
+the markdown inside is not parsed:
+
 ```mdx
-<Question id="q48" title="Explain the Java Memory Model and happens-before.">
+## Q48. Explain the Java Memory Model and happens-before. [#q48]
+
+<Question id="q48">
 
 **Answer.** ...
 
 <FollowUp q="Give an example of a data race with no lock.">
+
 Answer text.
+
 </FollowUp>
 
 </Question>
 ```
 
-Requirements:
-- `id` becomes the heading anchor, so `/java/concurrency#q48` deep-links.
-- Title renders as a real `<h3>` — the table of contents depends on heading
-  structure. Do not replace headings with styled divs.
-- Answer collapsed by default, expandable, with a page-level expand-all control.
-- **Acceptance test before any content conversion:** search for a phrase that
-  appears only inside a collapsed answer and confirm it is found. Fumadocs builds
-  its index from `structuredData` extracted from the MDX source rather than from
-  rendered HTML, so collapse behaviour should not affect indexing — but whether
-  text inside custom-component children is extracted must be *verified*, not
-  assumed. If it isn't, the fix is to restructure the component so answer prose
-  sits at the MDX top level rather than as JSX children.
+**Do not put the question text in a `title` prop.** An earlier version of this
+file specified `<Question id="q48" title="...">`. It was built, tested and
+rejected — measured on a real page, it failed four ways:
+
+- the ToC is extracted from MDAST at build time, so an `<h3>` rendered by a React
+  component never reaches it — every question was missing from "On this page";
+- `structuredData` does not index JSX attributes, so searching a question's own
+  words returned nothing;
+- content inside the component inherited no heading anchor, so search hits linked
+  to the top of the page rather than to `#q48`;
+- a JSX string attribute cannot carry inline code, and most question titles
+  contain some (``What exactly does `volatile` guarantee?`` — 15 of the 23 in the
+  concurrency section alone).
+
+The heading form fixes all four. `title` survives as an optional prop for a
+question with no heading of its own; conversions do not use it.
+
+Requirements, all verified against `content/docs/java/concurrency.mdx`:
+
+- `[#q48]` on the heading sets the anchor, so `/docs/java/concurrency#q48`
+  deep-links. Lowercase. Keep `<Question id>` matching it — that is what expands
+  the answer when the page is opened on that anchor.
+- Answers collapsed by default. Deep-linking expands that one answer and scrolls
+  to it; the scroll retries after hydration, because Next restores scroll
+  position and would otherwise pull the page back to the top.
+- `FollowUp`'s `q` is a plain string attribute. Backtick spans in it are rendered
+  as `<code>` by the component — and nothing else is, it is deliberately not a
+  markdown parser. A `q` containing a double quote must be written as an
+  expression: `q={"What's a \"start gate\" test?"}`.
+- Do not wrap the answer body in `not-prose` or `prose-no-margin`. Both strip the
+  paragraph margins and turn a four-paragraph answer into a wall of text; the
+  body inherits the article's own prose spacing.
+
+### Acceptance test — passed, do not re-litigate
+
+Fumadocs builds its search index from `structuredData` extracted from the MDX
+source, not from rendered HTML. **Verified 2026-09-09:** a phrase appearing only
+inside a collapsed `<Question>` answer, and one appearing only inside a collapsed
+`<FollowUp>`, are both returned by `/api/search`. Collapse behaviour does not
+affect indexing. Re-run this only if the components are restructured.
 
 ## Conversion rules
 
 These apply to every one of the 29 reference sections. Getting them wrong once
 means getting them wrong 29 times.
+
+`content/docs/java/concurrency.mdx` (Q48–Q70) is converted and is the reference
+implementation. Read it before converting anything else.
 
 ### Drop the source's own headings
 
@@ -364,18 +440,36 @@ So the file begins:
 ---
 title: Concurrency
 description: Java Memory Model, locks, executors, virtual threads.
-questionRange: Q48-Q70
+questionRange: Q48–Q70
 tags: [java, concurrency, jvm]
 ---
 
-<Question id="q48" title="Explain the Java Memory Model and happens-before.">
+## Q48. Explain the Java Memory Model and happens-before. [#q48]
+
+<Question id="q48">
 ...
 ```
 
-The first body content is the first `<Question>`. Nothing above it.
+The first body content is the first question heading. Nothing above it.
 
-The `### QN.` headings are not affected — they become `<Question>` components and
-stop being markdown headings.
+### Heading levels, anchors and separators
+
+The source's `### QN.` headings become `##`, not `###`. They sat beneath a
+`## 5. Concurrency` that the conversion moves into frontmatter, so keeping `###`
+skips a level (h1 → h3) and renders the ToC as a list of indented orphans with no
+parent.
+
+Keep the `QN.` prefix in the heading text: the ToC and search results then
+identify themselves by number, which is how the banks cross-reference each other
+("the outbox pattern (Q136 in the data bank)"). Append the anchor:
+
+```
+### Q48. Explain the Java Memory Model and happens-before.          <- source
+## Q48. Explain the Java Memory Model and happens-before. [#q48]    <- MDX
+```
+
+Drop the `---` separators between questions. The `<Question>` card border does
+that job, and they would otherwise render as stray `<hr>`s.
 
 The same rule applied to `content/docs/concepts/jmm.mdx`: its source began with
 `# The Java Memory Model` under a frontmatter title of the same name, and the H1
@@ -397,9 +491,9 @@ The reference banks currently contain no markdown links — cross-references are
 plain prose ("the outbox pattern (Q136 in the data bank)"). Converting those to
 real links is desirable, but every one needs the prefix.
 
-Anchors come from the `<Question>` `id`, which is lowercase: `#q48`, not `#Q48`.
-Question numbering restarts per bank, so `#q48` exists in all three — the path
-disambiguates, and it must be correct.
+Anchors come from the `[#qNN]` marker on the question heading, and are
+lowercase: `#q48`, not `#Q48`. Question numbering restarts per bank, so `#q48`
+exists in all three — the path disambiguates, and it must be correct.
 
 Consider `createRelativeLink` from `fumadocs-ui/mdx` (already imported in
 `src/app/docs/[[...slug]]/page.tsx`) if you prefer relative paths that are
@@ -409,8 +503,18 @@ validated at build time rather than absolute ones that fail silently.
 
 MDX parses `<` and `{` as JSX. `List<String>`, `Map<K,V>`, `<T extends
 Comparable<T>>`, and `N < 100` in bare prose all break the build. Backtick them.
-The Java and design banks are full of these. Run `pnpm build` after every file,
-not after every ten.
+Run `pnpm build` after every file, not after every ten.
+
+Check mechanically rather than by eye — extract the section and run:
+
+```bash
+grep -n '[<{]' section.md
+```
+
+then confirm every hit is inside a fenced code block or already backticked. The
+concurrency section turned out to be entirely clean by this test (its `<pid>`
+and generics were all already ticked or fenced), so do not assume a section needs
+edits — or that it doesn't.
 
 ## Search
 
@@ -420,19 +524,27 @@ Fumadocs ships built-in search (self-hosted, free). Two modes:
   Vercel.
 - **Static** — a cached JSON index, for fully static export.
 
-Either is acceptable. Read the current docs for the exact API before wiring it;
-the engine and client helper names have changed at least once (the built-in
-engine moved off `@orama/orama` in 2026), so any snippet older than a few months
-is suspect.
+**Wired and verified: the server route**, `src/app/api/search/route.ts`, using
+`createFromSource(source)`. The built-in engine is now **ZBSearch** (it moved off
+`@orama/orama` in 2026), so any snippet older than a few months is suspect — read
+the current docs before changing anything here.
+
+Verified working end to end: the API returns question headings and collapsed
+answer text with correct `#qNN` anchors, and the Ctrl+K dialog shows them.
 
 407 questions across 29 pages is a small index — this should not need tuning.
 
 ## Diagrams
 
-Fumadocs does **not** render Mermaid natively — unlike Nextra. Add the `mermaid`
-package and a client component that renders a fenced ```mermaid block, then map
-it in `src/components/mdx.tsx`. Build this once, in session 1, and verify it
-renders before writing 19 diagrams against it.
+Fumadocs does **not** render Mermaid natively — unlike Nextra. This is already
+built and verified: `remarkMdxMermaid` (registered in `source.config.ts`)
+rewrites fenced ```mermaid blocks into `<Mermaid chart="..." />` before Shiki
+sees them, and `src/components/Mermaid.tsx` renders them client-side. Write
+fenced ```mermaid blocks; no imports, no JSX.
+
+`Mermaid.tsx` takes `useTheme` from `fumadocs-ui/provider/base`, which re-exports
+it, so `next-themes` is **not** a direct dependency — it is not resolvable under
+pnpm's strict layout. Do not add it.
 
 Mermaid renders client-side, so a syntax error is a broken diagram, not a failed
 build — check each in the browser. Keep them phone-readable: top-to-bottom flow,
@@ -462,17 +574,20 @@ That is ~19 diagrams. Do not add decorative ones.
 
 Content first. Do not build features against three pages.
 
-- Collapsible answers (self-test mode)
+- ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
+- ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
 - Concept dependency graph as a study path
 - Self-check questions collapsed by default
-- Search across everything
 
 Out of scope: accounts, sync, spaced-repetition scheduling, a backend.
 
 ## Working agreement
 
 - Reference Q&A conversion is **structural only**. Do not rewrite answer text.
+  Script the conversion rather than retyping, then diff the result back against
+  the source section and confirm the content lines are byte-identical. Retyping
+  407 answers by hand will introduce drift that no build catches.
 - Concept pages are new writing. Match the depth and voice of the JMM reference
   implementation. Do not pad to reach a length.
 - Every concept page must have a runnable lab. If you cannot devise one, say so
@@ -481,6 +596,8 @@ Out of scope: accounts, sync, spaced-repetition scheduling, a backend.
 - Run `pnpm types:check` after every file and `pnpm build` before every commit.
   One commit per page.
 - Commit format: `content(java): convert concurrency section`.
-- Ask before adding any dependency beyond pagefind and what the template ships.
+- Ask before adding any dependency beyond what the template ships. Added so far:
+  `mermaid` (approved). `next-themes` was deliberately **not** added — see
+  **Diagrams**.
 - Flag uncertainty explicitly. A page that confidently states something wrong is
   worse than no page — the user will repeat it in an interview.

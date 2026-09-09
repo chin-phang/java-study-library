@@ -19,7 +19,8 @@ interface Broadcast {
 }
 
 interface QuestionsContextValue {
-  register: () => () => void;
+  /** Follow-ups are nested inside answers, so only questions are counted. */
+  register: (counted: boolean) => () => void;
   broadcast: Broadcast | null;
   setAll: (open: boolean) => void;
 }
@@ -38,7 +39,8 @@ export function QuestionsProvider({ children }: { children: ReactNode }) {
   const [count, setCount] = useState(0);
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
 
-  const register = useCallback(() => {
+  const register = useCallback((counted: boolean) => {
+    if (!counted) return () => {};
     setCount((c) => c + 1);
     return () => setCount((c) => c - 1);
   }, []);
@@ -57,7 +59,7 @@ export function QuestionsProvider({ children }: { children: ReactNode }) {
       {count > 0 ? (
         <div className="not-prose mb-6 flex items-center gap-2 text-sm">
           <span className="text-fd-muted-foreground">
-            {count} collapsible {count === 1 ? 'answer' : 'answers'}
+            {count} {count === 1 ? 'question' : 'questions'}
           </span>
           <div className="ms-auto flex gap-2">
             <button
@@ -86,12 +88,12 @@ export function QuestionsProvider({ children }: { children: ReactNode }) {
  * Shared behaviour for a collapsible whose open state can be driven by the
  * page-level control, and which force-opens when it is the deep-link target.
  */
-function useCollapsible(anchorId?: string) {
+function useCollapsible(anchorId?: string, counted = false) {
   const ctx = useContext(QuestionsContext);
   const [open, setOpen] = useState(false);
 
   const register = ctx?.register;
-  useEffect(() => register?.(), [register]);
+  useEffect(() => register?.(counted), [register, counted]);
 
   const broadcast = ctx?.broadcast;
   useEffect(() => {
@@ -135,42 +137,51 @@ export function Question({
   title,
   children,
 }: {
-  /** Becomes the heading anchor, e.g. `id="q48"` deep-links as `#q48`. */
+  /**
+   * The anchor this question answers, e.g. `id="q48"` pairs with a heading
+   * carrying `[#q48]`. Deep-linking to it expands the answer.
+   */
   id: string;
-  title: string;
+  /**
+   * Optional. Normally the question text lives in a real markdown heading above
+   * this component, so that it reaches the table of contents and the search
+   * index — a JSX prop reaches neither. Pass `title` only for a question with no
+   * heading of its own.
+   */
+  title?: string;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useCollapsible(id);
+  const [open, setOpen] = useCollapsible(id, true);
   const panelId = `${id}-answer`;
 
+  // No `not-prose` on the section: the answer body inherits the article's own
+  // prose spacing, so paragraphs, code blocks and lists are spaced exactly as
+  // they are everywhere else on the site.
   return (
-    <section className="not-prose my-4 rounded-xl border border-fd-border bg-fd-card">
-      {/* A real <h3> — the table of contents depends on heading structure. */}
-      <h3 id={id} className="scroll-mt-24 m-0 text-base font-semibold">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          aria-controls={panelId}
-          className="group flex w-full items-start gap-2 p-4 text-start"
-        >
-          <ChevronRight
-            aria-hidden
-            className={cn(
-              'mt-0.5 size-4 shrink-0 text-fd-muted-foreground transition-transform',
-              open && 'rotate-90',
-            )}
-          />
-          <span className="flex-1">{title}</span>
-          <span className="mt-0.5 shrink-0 font-mono text-xs text-fd-muted-foreground">
-            {id.toUpperCase()}
-          </span>
-        </button>
-      </h3>
+    <section className="my-4 rounded-xl border border-fd-border bg-fd-card">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="not-prose flex w-full items-start gap-2 p-3 text-start text-sm font-medium"
+      >
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            'mt-0.5 size-4 shrink-0 text-fd-muted-foreground transition-transform',
+            open && 'rotate-90',
+          )}
+        />
+        <span className="flex-1">{title ?? (open ? 'Hide answer' : 'Show answer')}</span>
+        <span className="mt-0.5 shrink-0 font-mono text-xs text-fd-muted-foreground">
+          {id.toUpperCase()}
+        </span>
+      </button>
       <div
         id={panelId}
         hidden={!open}
-        className="prose prose-no-margin border-t border-fd-border px-4 py-3 text-sm"
+        className="border-t border-fd-border px-4 py-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
       >
         {children}
         <a
