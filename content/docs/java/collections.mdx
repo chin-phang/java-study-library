@@ -1,0 +1,258 @@
+---
+title: Collections
+description: HashMap internals, concurrent maps, list choices, iterators, hot-path selection.
+questionRange: Q22–Q36
+tags: [java, collections]
+---
+
+## Q22. Walk me through `HashMap` internals in Java 8+. [#q22]
+
+<Question id="q22">
+
+**Answer.** An array of buckets, sized to a power of two. `hash(key)` is `h ^ (h >>> 16)` — spreading the high bits down so that the index calculation `hash & (n-1)`, which only uses low bits, still benefits from the whole hash. Each bucket is a linked list; when a bucket reaches 8 entries **and** the table is at least 64 slots, it converts to a red-black tree, degrading worst-case lookup from O(n) to O(log n). It untreeifies below 6 (hysteresis prevents thrashing). Below table size 64 it resizes instead of treeifying, because the real problem is usually a small table.
+
+Default capacity 16, load factor 0.75; resize doubles capacity and rehashes. Java 8 splits each bucket into a "lo" and "hi" list using `hash & oldCap`, so entries move to either index `i` or `i + oldCap` with no rehash computation and preserved relative order.
+
+**Why it matters.** The treeify feature exists because of hash-collision DoS attacks (CVE-2011-4858) — an attacker sending crafted keys as JSON fields could turn every request into O(n²).
+
+<FollowUp q="What does treeification require of the keys?">
+
+It uses `Comparable` if the keys implement it; otherwise it falls back to comparing class names and `System.identityHashCode` for a stable tie-break. So non-comparable keys still get a tree, just with a weaker ordering.
+
+</FollowUp>
+
+<FollowUp q="How do you size a `HashMap` you know will hold 1,000 entries?">
+
+`new HashMap<>(1000 / 0.75f + 1)` — or in Java 19+, `HashMap.newHashMap(1000)`, which does the arithmetic for you. Otherwise you'll pay several resizes and rehashes.
+
+</FollowUp>
+
+</Question>
+
+## Q23. What actually goes wrong if you use `HashMap` from multiple threads? [#q23]
+
+<Question id="q23">
+
+**Answer.** Three failure modes, in ascending order of nastiness. Lost updates — two puts to the same bucket, one wins. Stale reads — no happens-before, so a thread may never see another's write. And structural corruption during concurrent resize: in Java 7 the transfer loop reversed the list and could produce a cycle, making `get()` spin at 100% CPU forever. Java 8's split-list resize removed the cycle, but you can still get lost entries and infinite loops in edge cases — it is not safe, just less spectacularly unsafe.
+
+**Why it matters.** The Java 7 infinite loop is a famous production incident: an unrelated hung service, no exception, just a pegged core. Being able to describe it shows you've debugged real systems.
+
+<FollowUp q="What is a fail-fast iterator?">
+
+Iterators over `ArrayList`/`HashMap` track a `modCount`; if it changes during iteration, they throw `ConcurrentModificationException` on the next `next()`. It's a best-effort bug detector, not a synchronisation mechanism — it's not guaranteed to fire, and it fires for single-threaded mistakes too (removing from a list while iterating it). Use `Iterator.remove()` or `removeIf`.
+
+</FollowUp>
+
+</Question>
+
+## Q24. `ConcurrentHashMap` vs `Collections.synchronizedMap` vs `Hashtable`. [#q24]
+
+<Question id="q24">
+
+**Answer.** `Hashtable` and `synchronizedMap` use a single lock for the whole map — every operation serialises, and compound operations still need external locking. `ConcurrentHashMap` in Java 8 dropped segments entirely: it uses a CAS to install the first node in an empty bin, and `synchronized` on the bin's head node for subsequent writes. Reads are lock-free because nodes have `volatile` value and next pointers. Resizing is cooperative — multiple threads help transfer ranges of the table.
+
+Its iterators are weakly consistent, not fail-fast: they never throw CME, they reflect the state at some point at or since creation, and each element is returned at most once. `size()` is an estimate (it uses a striped `LongAdder`-style counter).
+
+<FollowUp q="Why doesn't it allow null keys or values?">
+
+Because `get()` returning null would be ambiguous — absent, or present-with-null? — and you can't disambiguate with a follow-up `containsKey` in a concurrent map without a race. `Doug Lea`'s stated reasoning. Use `Optional` or a sentinel.
+
+</FollowUp>
+
+<FollowUp q={"How do you do a thread-safe \"get or compute\"?"}>
+
+`computeIfAbsent`, which is atomic per key. But the mapping function runs while holding the bin lock, so it must be short, must not block, and must not modify the same map — recursive `computeIfAbsent` on the same map can deadlock or corrupt state (fixed to throw `IllegalStateException` in later versions, but still a design error).
+
+</FollowUp>
+
+</Question>
+
+## Q25. `ArrayList` vs `LinkedList` — give me the real answer. [#q25]
+
+<Question id="q25">
+
+**Answer.** Use `ArrayList` essentially always. The textbook answer is "LinkedList is O(1) insert/delete" but that's O(1) *given a node reference*; getting there is O(n). Meanwhile `ArrayList`'s `System.arraycopy` on a contiguous array is extremely fast, and — the decisive factor — it is cache-friendly. `LinkedList` allocates a node object per element (24+ bytes of overhead each), scatters them across the heap, and every traversal is a pointer chase and a cache miss. Benchmarks routinely show `ArrayList` winning even for middle insertion at realistic sizes.
+
+`LinkedList`'s only real justification is as a `Deque`, and `ArrayDeque` beats it there too.
+
+**Why it matters.** This question tests whether you reason about hardware or recite Big-O. Big-O ignores constant factors and memory hierarchy, which dominate at real sizes.
+
+<FollowUp q="When would you use `CopyOnWriteArrayList`?">
+
+Read-dominated, small collections with rare writes — the canonical case is a listener/observer registry. Every write copies the whole array, so writes are O(n) and it's terrible for anything write-heavy. Its iterators are snapshot-based and never throw CME.
+
+</FollowUp>
+
+</Question>
+
+## Q26. Explain `Comparable` vs `Comparator` and the contract you must not break. [#q26]
+
+<Question id="q26">
+
+**Answer.** `Comparable` is the natural ordering baked into the type; `Comparator` is an external, swappable strategy. The contract: `sgn(compare(x,y)) == -sgn(compare(y,x))`, transitivity, and consistency (`compare(x,y)==0` implies equal comparisons against any z). It's strongly recommended — though not required — to be consistent with `equals`; `TreeMap` and `TreeSet` use `compareTo`, not `equals`, so an inconsistent ordering makes a `TreeSet` behave differently from a `HashSet` for the same data.
+
+**Why it matters.** Violate transitivity and TimSort throws `IllegalArgumentException: Comparison method violates its general contract!` — a runtime crash that only appears at certain input sizes, because TimSort only detects it during merging of long runs. The usual culprits are comparators using subtraction on ints (overflow: `Integer.MIN_VALUE - 1`) or returning inconsistent results for equal elements.
+
+<FollowUp q="How do you build a multi-key comparator safely?">
+
+`Comparator.comparing(Order::customer).thenComparing(Order::amount).reversed()`, with `nullsFirst`/`nullsLast` for nullable keys and `comparingInt`/`comparingLong` to avoid boxing on hot paths. Never `a.getX() - b.getX()`; use `Integer.compare`.
+
+</FollowUp>
+
+</Question>
+
+## Q27. When would you reach for the less common `Map` implementations? [#q27]
+
+<Question id="q27">
+
+**Answer.**
+- `LinkedHashMap` — predictable iteration order; with `accessOrder=true` and an overridden `removeEldestEntry` it's a 5-line LRU cache.
+- `TreeMap`/`NavigableMap` — sorted, plus `floorKey`, `ceilingKey`, `subMap`, `headMap`. Ideal for range queries: rate-limit buckets by timestamp, tiered pricing lookups, IP-range tables.
+- `EnumMap` — backed by an array indexed by ordinal; extremely fast and compact. Use it whenever the key is an enum. `EnumSet` similarly is a bitmask.
+- `IdentityHashMap` — reference equality, used for object graph traversal / cycle detection in serializers.
+- `WeakHashMap` — keys are weakly referenced, so entries disappear when the key is otherwise unreachable. Useful for metadata keyed on class objects; dangerous if values strongly reference their keys (the entry never clears).
+
+<FollowUp q="Write the LRU cache.">
+
+```java
+new LinkedHashMap<K,V>(16, 0.75f, true) {
+    protected boolean removeEldestEntry(Map.Entry<K,V> e) { return size() > MAX; }
+};
+```
+Note it's not thread-safe — even `get` mutates order — so wrap it or use Caffeine in production.
+
+</FollowUp>
+
+</Question>
+
+## Q28. `List.of` vs `Arrays.asList` vs `Collections.unmodifiableList` — what's the difference? [#q28]
+
+<Question id="q28">
+
+**Answer.** `Arrays.asList` returns a fixed-size view *backed by the array*: `set` works and writes through to the array, `add`/`remove` throw. `Collections.unmodifiableList` is an unmodifiable *view* of a mutable list — the underlying list can still change beneath you, so it's not immutable. `List.of` (Java 9) is a genuinely immutable collection: no writes at all, rejects nulls, and has a compact memory layout with special-cased implementations for 1 and 2 elements.
+
+**Why it matters.** "Unmodifiable view" vs "immutable" is a real distinction that causes bugs — returning `unmodifiableList(this.internal)` from a getter still lets callers observe your later mutations.
+
+<FollowUp q="Gotchas with `List.of`?">
+
+It throws on null elements and on `contains(null)`; `Collectors.toList()` returns a mutable list while `toUnmodifiableList()`/`Stream.toList()` do not (and `Stream.toList()` *does* allow nulls, unlike `List.of`). Those inconsistencies bite during migrations.
+
+</FollowUp>
+
+</Question>
+
+## Q29. What are sequenced collections (Java 21)? [#q29]
+
+<Question id="q29">
+
+**Answer.** JEP 431 added `SequencedCollection`, `SequencedSet` and `SequencedMap` to fill a long-standing gap: there was no common way to ask any ordered collection for its first or last element. `LinkedHashSet` had no `getFirst()`; `Deque` had a different vocabulary from `List`.
+
+Now you get `addFirst`, `addLast`, `getFirst`, `getLast`, `removeFirst`, `removeLast`, and `reversed()` — which returns a *view*, not a copy, so mutations write through. `SequencedMap` adds `firstEntry`, `lastEntry`, `pollFirstEntry`, `putFirst`, and `sequencedKeySet()`.
+
+**Why it matters.** It's mostly ergonomics, but `list.reversed()` as an O(1) view replaces `Collections.reverse` copies, and retrofitting these interfaces onto `List`, `Deque`, `LinkedHashSet` and `SortedMap` was a non-trivial compatibility exercise worth mentioning.
+
+</Question>
+
+## Q30. Which `BlockingQueue` do you choose, and why does it matter for backpressure? [#q30]
+
+<Question id="q30">
+
+**Answer.**
+- `ArrayBlockingQueue` — bounded, single lock, array-backed, optional fairness. Predictable memory.
+- `LinkedBlockingQueue` — optionally bounded (default `Integer.MAX_VALUE` — effectively unbounded, a trap), two locks so higher throughput under contention.
+- `SynchronousQueue` — zero capacity; a handoff. Used by `newCachedThreadPool`.
+- `PriorityBlockingQueue` — unbounded, ordered; no fairness for equal priorities, and starvation risk.
+- `DelayQueue` — elements become available after a delay; good for scheduled retries.
+- `LinkedTransferQueue` — supports `transfer()`, blocking until a consumer takes the element.
+
+**Why it matters.** Bounding is the point. An unbounded queue converts "the downstream is slow" into "we allocate until OOM" — the queue absorbs the failure signal instead of propagating backpressure. In a payments consumer, I'd rather block or reject and let the broker retain the message than buffer 2 million events in heap.
+
+<FollowUp q="How do you apply backpressure across a network boundary?">
+
+Bounded queues plus a rejection policy plus a client-visible 429/503 with `Retry-After`, or a pull-based protocol (Kafka consumers, reactive streams' `request(n)`) where the consumer controls the rate.
+
+</FollowUp>
+
+</Question>
+
+## Q31. How much memory does a `HashMap` entry actually cost? [#q31]
+
+<Question id="q31">
+
+**Answer.** On a 64-bit JVM with compressed oops: a `HashMap.Node` is a 12-byte header + int hash + 3 references (4 bytes each with compressed oops) = 28, padded to 32 bytes. Plus the table array slot (4 bytes), plus the key and value objects themselves. So a `Map<Integer, Integer>` with a million entries costs roughly 32 + 16 + 16 + 4 ≈ 68 MB for what is logically 8 MB of data — an 8x overhead.
+
+**Why it matters.** This is why primitive-specialised collections (Eclipse Collections, fastutil, HPPC) exist, and why for very large maps people move off-heap or to arrays. It's also why heaps above ~32 GB get suddenly more expensive: compressed oops turn off and every reference doubles to 8 bytes.
+
+<FollowUp q="How do you measure this?">
+
+JOL (Java Object Layout) for exact per-object sizing, or a heap dump into Eclipse MAT and look at retained size and the dominator tree.
+
+</FollowUp>
+
+</Question>
+
+## Q32. What's the risk of using mutable objects as `Set` elements or `Map` keys? [#q32]
+
+<Question id="q32">
+
+**Answer.** The element's hash is computed at insertion. Mutate a hashed field and the object is now in the wrong bucket: `contains` returns false, `remove` fails, iteration still yields it, and it leaks. Worse in a `TreeSet`, where the ordering invariant breaks and lookups return arbitrary results.
+
+The fixes: use immutable keys; or use an identity/ID-based `equals`/`hashCode` that only uses stable fields (e.g. a business key or a database ID assigned before insertion); or remove-mutate-reinsert explicitly.
+
+<FollowUp q="How does this bite in JPA?">
+
+Constantly. Entities added to a `HashSet` before `persist()` have a null ID; after flush the ID is populated, the hash changes, and the set is corrupted. That's why the standard advice is to base entity `equals`/`hashCode` on a natural business key or a client-generated UUID, and to return a constant `hashCode` if you must use the surrogate ID.
+
+</FollowUp>
+
+</Question>
+
+## Q33. How would you implement a bounded LRU cache with TTL from scratch? [#q33]
+
+<Question id="q33">
+
+**Answer.** `LinkedHashMap` in access order gives LRU eviction, but not TTL or thread safety. A production-shaped answer: a `ConcurrentHashMap<K, Node>` for lookup plus an intrusive doubly linked list for recency, guarded by a lock or approximated with a sampling/CLOCK policy to avoid a global lock on every read. TTL via a per-entry expiry timestamp checked lazily on read, plus a periodic sweep for entries that are never read again.
+
+Then I'd say: I'd use Caffeine, which does exactly this with a W-TinyLFU admission policy, and beats a hand-rolled LRU on hit rate. Building it yourself is a good interview exercise and a bad production decision.
+
+<FollowUp q="Why is strict LRU hard to make concurrent?">
+
+Because every *read* mutates shared recency state, turning a read-mostly workload into a write-mostly one. Caffeine solves this by buffering reads in ring buffers per thread and replaying them asynchronously under a try-lock.
+
+</FollowUp>
+
+</Question>
+
+## Q34. What is `Iterator` vs `Spliterator`? [#q34]
+
+<Question id="q34">
+
+**Answer.** `Spliterator` (Java 8) supports `tryAdvance` (one element), `forEachRemaining` (bulk, allowing the source to optimise), and crucially `trySplit`, which partitions the source for parallel processing. It also reports characteristics — `SIZED`, `ORDERED`, `DISTINCT`, `SORTED`, `IMMUTABLE`, `NONNULL`, `CONCURRENT`, `SUBSIZED` — that the stream pipeline uses to skip work.
+
+**Why it matters.** Characteristics drive real optimisations: a `SIZED` and `SUBSIZED` source splits evenly, so `ArrayList` parallelises beautifully while `LinkedList` and `Stream.iterate` split terribly. If you write a custom collection and want it to parallelise, implementing `spliterator()` properly matters more than anything else.
+
+</Question>
+
+## Q35. What is a fail-safe vs fail-fast iterator, and what does "weakly consistent" mean precisely? [#q35]
+
+<Question id="q35">
+
+**Answer.** Fail-fast (`ArrayList`, `HashMap`) throws `ConcurrentModificationException` on structural modification during iteration, detected via `modCount`. Fail-safe iterators come in two flavours: snapshot (`CopyOnWriteArrayList` — you iterate a frozen copy and never see concurrent updates) and weakly consistent (`ConcurrentHashMap`, `ConcurrentLinkedQueue` — you traverse live state, you may or may not see updates made after creation, you'll see each element at most once, and you never throw).
+
+<FollowUp q="Is CME a thread-safety guarantee?">
+
+No — it's documented as best-effort and must not be relied upon for correctness. It's a debugging aid.
+
+</FollowUp>
+
+</Question>
+
+## Q36. How do you choose a collection for a hot path in a low-latency service? [#q36]
+
+<Question id="q36">
+
+**Answer.** I'd think about four things: allocation (does it box? does it allocate per operation?), memory layout (contiguous vs pointer-chasing), concurrency (is it actually shared, or can I make it thread-confined?), and the real access pattern (mostly reads? range scans? single-key lookups?).
+
+Concretely: prefer arrays and `ArrayList` over linked structures; prefer `EnumMap`/`EnumSet` for enum keys; use primitive collections to avoid boxing garbage; make read-mostly structures immutable and publish them by volatile reference swap rather than locking; pre-size everything; and avoid iterator allocation in the innermost loop by using indexed access on `ArrayList`. Then benchmark with JMH, because most of these guesses are wrong at least a third of the time.
+
+</Question>
