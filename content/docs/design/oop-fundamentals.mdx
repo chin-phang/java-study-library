@@ -1,0 +1,270 @@
+---
+title: OOP & Design Fundamentals
+description: Coupling and cohesion, composition, value objects, abstraction, essential complexity.
+questionRange: Q1–Q14
+tags: [design, oop, fundamentals]
+---
+
+## Q1. What do the four pillars of OOP actually buy you? [#q1]
+
+<Question id="q1">
+
+**Answer.** Reciting "encapsulation, inheritance, polymorphism, abstraction" is a junior answer. What they're *for*:
+
+- **Encapsulation** — protecting invariants. The point isn't hiding fields, it's that the object controls every transition of its own state, so an invalid state is unreachable rather than merely discouraged.
+- **Abstraction** — managing complexity by exposing a contract and hiding the mechanism, so callers can be written and changed independently of the implementation.
+- **Polymorphism** — allowing new behaviour to be added without modifying existing code. This is the engine behind most of OCP.
+- **Inheritance** — reuse of implementation. Honestly the weakest of the four, and the one modern design uses least; it exists mostly to enable subtype polymorphism, which interfaces provide without the coupling.
+
+**Why it matters.** The senior framing is that these are *tools for managing change*, not a taxonomy to memorise. Every one of them earns its place by making some future modification cheaper. If a use of inheritance doesn't make something cheaper to change, it's decoration.
+
+<FollowUp q="Is OOP still the right default?">
+
+For modelling systems with identity, lifecycle and invariants — an order, an account, a payment — yes. For data transformation pipelines, functional style is usually cleaner, and modern Java supports it well. The interesting shift is that records plus sealed interfaces plus pattern matching give you algebraic data types, which are a better fit than a class hierarchy when the set of types is closed and the operations keep growing. Good Java in 2026 uses both, chosen by problem shape.
+
+</FollowUp>
+
+</Question>
+
+## Q2. Encapsulation is more than private fields. Explain. [#q2]
+
+<Question id="q2">
+
+**Answer.** A class with private fields and a public getter and setter for every one of them has no encapsulation at all — it's a struct with extra typing. The state is fully exposed, just through a slightly longer syntax, and any caller can drive the object into an invalid state.
+
+Real encapsulation means the object's public API is expressed in terms of *what it does*, not what it holds:
+
+```java
+// no encapsulation
+account.setBalance(account.getBalance().subtract(amount));
+
+// encapsulated: the invariant lives inside
+account.withdraw(amount);   // throws InsufficientFundsException
+```
+
+In the second form, the overdraft rule cannot be bypassed and cannot be duplicated across seventeen call sites. That's the payoff — the invariant has exactly one home.
+
+**Why it matters.** This connects directly to the anemic domain model problem (Q10). Getters and setters everywhere means business logic has nowhere to live except in services, which then becomes a procedural codebase with objects used as data bags.
+
+<FollowUp q="But frameworks need setters — JPA, Jackson.">
+
+They need *a* way to populate state, not public setters. JPA can use field access. Jackson can use constructor binding with `@JsonCreator`, or a separate DTO that maps to your domain object. The framework's needs are a serialisation concern; letting them dictate your domain model's API is the tail wagging the dog. Keeping a boundary DTO layer is a small cost that buys you a domain model you control.
+
+</FollowUp>
+
+</Question>
+
+## Q3. Composition over inheritance — why, and when is inheritance still right? [#q3]
+
+<Question id="q3">
+
+**Answer.** Inheritance is the strongest coupling in object-oriented design. The subclass depends on the superclass's *implementation*, not just its interface, so a change to a private method's behaviour in the parent can break a child that never referenced it. That's the fragile base class problem.
+
+Concretely: `class Stack extends ArrayList` gives Stack every ArrayList method, including `add(int, E)`, which lets a caller insert into the middle of a stack. You've inherited an API you didn't want and can't remove.
+
+Composition — holding a reference and delegating — gives you the reuse without the coupling. You expose only what you choose, you can swap the delegate at runtime, and you can hold several.
+
+Inheritance is still right when there's a genuine *is-a* relationship with substitutability (Q17), the hierarchy is shallow and stable, and you control both sides. Template Method is the legitimate case: a fixed algorithm with designated variation points, in a class explicitly designed for extension.
+
+<FollowUp q={"What did Josh Bloch mean by \"design for inheritance or prohibit it\"?"}>
+
+A class that can be subclassed has a second, invisible API: which methods call which other methods, in what order, and which are safe to override. That's a contract you must document and then never change. Most classes aren't worth that commitment, so make them `final` — and note that `sealed` (Java 17) gives you a middle option: extensible, but only by types you name.
+
+</FollowUp>
+
+</Question>
+
+## Q4. Explain coupling and cohesion, and how you'd actually measure them. [#q4]
+
+<Question id="q4">
+
+**Answer.** **Cohesion** is how strongly the elements inside a module belong together. **Coupling** is how much modules depend on each other. You want high cohesion and low coupling, and the two are related — pulling unrelated things apart usually reduces coupling as a side effect.
+
+Coupling has degrees, from worst to best: content coupling (reaching into another module's internals), common coupling (shared global state), control coupling (passing a flag that changes the callee's behaviour), stamp coupling (passing a whole object when you need one field), data coupling (passing exactly what's needed), and message coupling (calling a method, knowing nothing of the internals).
+
+Measuring it in practice: **afferent coupling** (Ca — who depends on me) and **efferent coupling** (Ce — who I depend on), giving **instability** I = Ce/(Ca+Ce). A module with many dependents and few dependencies is stable and should be abstract; one with many dependencies and few dependents is unstable and should hold volatile detail. Tools like ArchUnit, JDepend, Structure101 and SonarQube compute these. The most useful signal is usually simpler: how many files does a typical change touch?
+
+**Why it matters.** A lead uses these to make an argument concrete. "This is too coupled" is an opinion; "this class has 34 dependencies and every feature touches it" is evidence.
+
+</Question>
+
+## Q5. What is the Law of Demeter and is it worth following? [#q5]
+
+<Question id="q5">
+
+**Answer.** "Only talk to your immediate friends" — a method should call methods on itself, its parameters, objects it creates, and its own fields. Not on objects returned by those.
+
+```java
+// train wreck — three levels of structural knowledge
+order.getCustomer().getAddress().getCountry().getTaxRate();
+
+// obeys it
+order.taxRate();
+```
+
+The first version couples the caller to the entire object graph: change how address is stored, and every one of those call sites breaks. The second exposes an intention and hides the traversal.
+
+Worth following as a *smell detector* rather than a rule. Chains through your own domain model are a real warning sign. Chains through fluent builders (`Stream.of(...).filter(...).map(...)`, `HttpRequest.newBuilder()...`) don't violate it in spirit at all, since each call returns the same conceptual object. Applying it dogmatically produces a wrapper method for everything, which is its own problem.
+
+<FollowUp q={"How does this relate to \"Tell, Don't Ask\"?"}>
+
+Same instinct. Instead of asking an object for its state and deciding what to do, tell it what you want and let it decide. `if (account.getBalance().compareTo(amount) >= 0) { account.setBalance(...) }` becomes `account.withdraw(amount)`. That's the move that pulls behaviour back into objects and out of services.
+
+</FollowUp>
+
+</Question>
+
+## Q6. What is an anemic domain model, and is it always wrong? [#q6]
+
+<Question id="q6">
+
+**Answer.** Objects with fields, getters and setters but no behaviour, with all the logic in service classes. Fowler named it as an anti-pattern because it looks object-oriented while being procedural: you've paid the price of objects (indirection, mapping, ceremony) and taken none of the benefit (invariants enforced in one place, behaviour near data).
+
+The cost shows up as duplicated logic. The overdraft rule ends up in `TransferService`, `WithdrawalService` and `BatchPaymentJob`, and one of them is subtly different.
+
+**But it's not always wrong.** For a CRUD application that genuinely just moves data between a form and a table, a rich domain model is over-engineering — you'd be adding a layer whose only behaviour is assignment. It's also a reasonable fit for pipeline-style processing, where data is transformed rather than governed, and it's the norm in functional designs where data and behaviour are deliberately separate.
+
+**Why it matters.** The signal to look for: does this data have *invariants*? If the answer is "a payment can't be captured before it's authorised, and can't be captured for more than the authorised amount," you have rules, and they need an owner. If the answer is "it's a name and an email," you have data, and a record is fine.
+
+</Question>
+
+## Q7. Entity vs value object — why does the distinction matter? [#q7]
+
+<Question id="q7">
+
+**Answer.** An **entity** has identity that persists through change: a Customer is the same customer after changing their name and address. Equality is by ID. A **value object** is defined entirely by its attributes: `Money(100, MYR)` is interchangeable with any other `Money(100, MYR)`. Equality is by value, and they should be immutable.
+
+The practical consequences are large. Value objects can be freely shared, cached and passed around without defensive copying. They're where validation naturally lives — a `Money` that refuses to be constructed with a negative amount or an unknown currency means every downstream method can stop checking. And they eliminate whole classes of bug: `transfer(Money amount, AccountId from, AccountId to)` cannot have its arguments swapped, whereas `transfer(BigDecimal, String, String)` can and eventually will.
+
+<FollowUp q="How does this map to Java 21?">
+
+`record` is close to a purpose-built value object type — immutable, value-based equality, compact constructor for validation. The caveats from the Java bank apply: it doesn't deep-copy, and it exposes its components as permanent API. Entities remain classes, because they need mutable state and identity-based equality.
+
+</FollowUp>
+
+</Question>
+
+## Q8. What is primitive obsession and why does it matter at scale? [#q8]
+
+<Question id="q8">
+
+**Answer.** Representing domain concepts with primitives and strings: an account ID as `String`, money as `BigDecimal`, an email as `String`, a currency as `String`.
+
+Three costs. **Type safety** — nothing stops you passing a customer ID where an account ID is expected; both are strings, and the compiler is happy. **Validation scatter** — every method that takes an email string must validate it, or trust that someone else did. **No home for behaviour** — currency conversion, masking a card number, formatting an amount all end up in a static utility class.
+
+Wrapping them fixes all three:
+
+```java
+public record AccountId(String value) {
+    public AccountId {
+        if (!value.matches("ACC-\\d{10}")) throw new IllegalArgumentException(value);
+    }
+}
+```
+
+Now the type system enforces what was previously a convention, and the validation happens exactly once — at construction.
+
+<FollowUp q="Isn't that a lot of ceremony?">
+
+It was, before records. It's now three lines per concept, and the payoff scales with codebase size and team size. I'd apply it to identifiers, money, and anything with a validation rule — and not bother for a genuinely free-form string like a description.
+
+</FollowUp>
+
+</Question>
+
+## Q9. How do you handle nulls in a design? [#q9]
+
+<Question id="q9">
+
+**Answer.** Layered. **Prevent** at the boundary — validate inputs once at the edge (controller, message consumer) so the interior can assume non-null. **Express** absence in types — `Optional` as a return type for methods that legitimately may have no result, and nullability annotations (`@Nullable`/`@NonNull`) with static analysis so the compiler helps. **Design it away** — an empty collection instead of null, a Null Object instead of a null collaborator, a required constructor parameter instead of a settable field.
+
+The Null Object pattern is worth knowing specifically: instead of `if (logger != null) logger.log(...)` scattered everywhere, supply a `NoOpLogger` that does nothing. The conditional disappears from every call site.
+
+**Why it matters.** Hoare called the null reference his "billion-dollar mistake" because it makes every reference type secretly a union of the type and nothing, unchecked. The design response isn't null checks — it's arranging for null not to be representable in the first place.
+
+<FollowUp q="What about Kotlin?">
+
+It moves this into the type system: `String` and `String?` are different types and the compiler enforces the difference. That's strictly better than annotations plus tooling, and it's a genuine argument for Kotlin on a new service. In Java, the closest you get is disciplined use of Optional at boundaries plus NullAway or similar in the build.
+
+</FollowUp>
+
+</Question>
+
+## Q10. What makes an interface well-designed? [#q10]
+
+<Question id="q10">
+
+**Answer.** Small, named for the role rather than the implementation, and stable. Specifically:
+
+- **Named for the client's need**, not the provider. `PaymentAuthorizer` beats `StripeServiceInterface` — the name should survive replacing the implementation.
+- **Minimal** — every method is one more thing every implementor must provide and every mock must stub (Q19, ISP).
+- **No implementation leakage** — no method that only makes sense for one implementation, no checked exceptions specific to one technology (`SQLException` in a repository interface tells you the abstraction failed).
+- **Cohesive** — the methods belong together and are likely to be used together.
+
+The test I apply: could I write a second, genuinely different implementation without changing the interface? If the interface has one implementation and always will, it may be pure ceremony — which is a real and common problem in Java codebases.
+
+<FollowUp q="Should every class have an interface?">
+
+No. The one-interface-per-class habit came from mocking frameworks that couldn't mock classes and from DI containers that needed proxies. Both limitations are gone. Add an interface when you have or genuinely anticipate multiple implementations, when you need to invert a dependency across an architectural boundary (Q73), or when it's a published extension point. Otherwise it's an extra file that makes navigation worse.
+
+</FollowUp>
+
+</Question>
+
+## Q11. What is the difference between an abstraction and an indirection? [#q11]
+
+<Question id="q11">
+
+**Answer.** An abstraction *removes* detail — it lets you reason about something without knowing how it works. An indirection just *moves* detail — you now have to look somewhere else to understand the same thing.
+
+A `PaymentGateway` interface with `authorize`, `capture`, `refund` is an abstraction: I can reason about payment flow without knowing whether it's Stripe or an acquirer's SOAP API. A `UserServiceImpl` behind a `UserService` interface with identical methods and one implementation is an indirection: I've added a file and a hop, and I still need to open the impl to know anything.
+
+**Why it matters.** "Every problem can be solved by adding a layer of indirection, except too many layers of indirection." Most over-engineered codebases are full of indirections mistaken for abstractions. The diagnostic question: *what does this let me not think about?* If the answer is nothing, delete it.
+
+</Question>
+
+## Q12. How do you decide when to introduce an abstraction? [#q12]
+
+<Question id="q12">
+
+**Answer.** I lean towards waiting. The rule of three is a reasonable heuristic: the first time, write it directly; the second time, note the duplication; the third time, you have enough information to see what actually varies and abstract along the right axis.
+
+The failure mode of abstracting early is picking the wrong seam. You have one example, you guess at the general case, and you build an abstraction that fits one shape. The second use case doesn't fit, so you add a boolean parameter, then another, and now you have an abstraction that's harder to understand than the duplication it replaced. Removing a bad abstraction is much harder than removing duplication, because everything now depends on it.
+
+Exceptions where I'd abstract early: at a genuine architectural boundary (external system, persistence), where I already know a second implementation is coming (a second payment provider on the roadmap), and where the cost of retrofitting is very high.
+
+<FollowUp q={"What's \"the wrong abstraction is worse than duplication\"?"}>
+
+Sandi Metz's point. Duplication is cheap to find and cheap to fix. A wrong abstraction has been depended upon by twenty call sites, each of which passed a slightly different flag to make it fit, and untangling it means understanding all twenty. Prefer to inline a bad abstraction back to duplication and re-abstract, rather than adding a parameter.
+
+</FollowUp>
+
+</Question>
+
+## Q13. What is design by contract? [#q13]
+
+<Question id="q13">
+
+**Answer.** Each method has **preconditions** (what the caller must guarantee), **postconditions** (what the method guarantees in return), and the class has **invariants** (what's always true between calls). Making these explicit turns "it broke somewhere" into "the caller violated this precondition".
+
+In Java there's no language support, so it's expressed by: `Objects.requireNonNull` and guard clauses for preconditions, throwing meaningful exceptions rather than returning nulls, `assert` for internal invariants in development, and — most importantly — documentation on any non-obvious contract.
+
+**Why it matters.** It's the formal basis of Liskov substitution (Q17): a subtype may **weaken** preconditions (accept more) and **strengthen** postconditions (promise more), never the reverse. That gives you a precise test for whether an override is legitimate, replacing intuition with a rule.
+
+</Question>
+
+## Q14. What is the difference between essential and accidental complexity? [#q14]
+
+<Question id="q14">
+
+**Answer.** Fred Brooks's distinction. **Essential** complexity is inherent in the problem: payments genuinely involve multiple currencies, regulatory rules, partial failures, reconciliation and reversal. No design removes it — you can only move it. **Accidental** complexity comes from our tools and choices: framework ceremony, a distributed system where a monolith would do, five layers of indirection, a build that takes forty minutes.
+
+**Why it matters.** It's the sharpest tool for evaluating an architecture. When someone proposes a change, ask which kind of complexity it addresses. Microservices, for example, don't reduce essential complexity at all — they redistribute it and add a substantial amount of accidental complexity (network, deployment, observability, data consistency) in exchange for organisational scalability. That can be a good trade. It's a bad one if you took it for the wrong reason.
+
+<FollowUp q="How do you use this in an architecture review?">
+
+Ask: what problem does this solve, is that problem essential, and what accidental complexity are we buying? A proposal that can't articulate the essential problem it addresses is usually resume-driven or fashion-driven, and naming that dynamic — carefully — is part of the job.
+
+</FollowUp>
+
+</Question>
