@@ -1,0 +1,129 @@
+---
+title: Domain-Driven Design
+description: Bounded contexts, aggregates, domain events, anti-corruption layers, context mapping.
+questionRange: Q46–Q52
+tags: [design, ddd]
+---
+
+## Q46. What is DDD actually about, and what's the most common misunderstanding? [#q46]
+
+<Question id="q46">
+
+**Answer.** DDD is about making the *model* the shared asset between engineers and domain experts, so the code says what the business means. The misunderstanding is that DDD is a set of tactical patterns — entities, value objects, aggregates, repositories. Those are the least important part.
+
+The important part is **strategic**: identifying bounded contexts, mapping the relationships between them, and establishing a ubiquitous language within each. Get the boundaries right and mediocre tactical design still works. Get the boundaries wrong and no amount of aggregate discipline saves you — which is exactly how teams end up with a distributed monolith.
+
+**Why it matters.** Teams that adopt "DDD" by adding `@Entity`, `@ValueObject` and repository interfaces to an existing anemic model have adopted vocabulary, not DDD. The question that reveals whether it's real: *can a domain expert read your code's class and method names and recognise their own language?*
+
+</Question>
+
+## Q47. What is a bounded context, and how do you find one? [#q47]
+
+<Question id="q47">
+
+**Answer.** A boundary within which a model and its language are consistent. "Customer" means something different to billing (a payer with a payment method and a credit limit), to support (a person with a ticket history), and to fraud (a risk profile with device fingerprints). A bounded context is the scope within which one definition holds.
+
+Finding them: look for **linguistic seams** — the same word meaning different things, or different words meaning the same thing. Look at how the business is organised, because organisational boundaries usually reflect real ones (Conway's law, Q95). Run an **event storming** session: get domain experts to lay out domain events on a wall in time order, and the clusters and handoffs that emerge are strong candidates for context boundaries.
+
+**Why it matters.** Bounded contexts are the single best guide to microservice boundaries (Q87). A service that spans two contexts will have a confused model; two services inside one context will be permanently chatty and change together.
+
+<FollowUp q="Isn't one shared canonical model simpler?">
+
+It's the seductive wrong answer. A canonical `Customer` used by billing, support and fraud accumulates every field any context needs, means nothing precisely, and every change requires agreement across three teams. Bounded contexts accept translation cost at the boundary in exchange for models that are actually correct within each context.
+
+</FollowUp>
+
+</Question>
+
+## Q48. Explain aggregates and the rules around them. [#q48]
+
+<Question id="q48">
+
+**Answer.** An aggregate is a cluster of objects treated as one unit for data changes, with a single **aggregate root** as the only entry point. External code holds a reference to the root, never to internals.
+
+The rules:
+1. **The aggregate is the consistency boundary.** Its invariants are enforced within one transaction. An Order aggregate can guarantee "total equals the sum of line items" because it owns the lines.
+2. **One transaction, one aggregate.** Changes spanning aggregates use eventual consistency (domain events, sagas), not a bigger transaction.
+3. **Reference other aggregates by identity**, not by object reference. `Order` holds a `CustomerId`, not a `Customer`.
+
+**Why it matters.** Rule 3 is the one that has the biggest practical effect, because it's what makes an aggregate loadable and savable as a unit — and it's the modelling rule that maps most directly onto service boundaries later. If your aggregates reference each other by ID, splitting them into services is mechanical. If they're a connected object graph, it's a rewrite.
+
+<FollowUp q="How big should an aggregate be?">
+
+As small as the invariants allow. The pressure to make it large comes from wanting transactional consistency; the pressure to make it small comes from concurrency (a large aggregate is a lock contention point — every order line update contends on the order) and from load cost. Vaughn Vernon's guidance holds up: prefer small aggregates, and use eventual consistency between them. If two things must be immediately consistent, ask hard whether that's a real business requirement or an assumption.
+
+</FollowUp>
+
+</Question>
+
+## Q49. Domain event, integration event, application event — what's the difference? [#q49]
+
+<Question id="q49">
+
+**Answer.**
+- **Domain event** — something meaningful happened in the domain, raised by an aggregate, consumed in the same bounded context. `PaymentAuthorised`. Its schema is internal; you can change it freely.
+- **Integration event** — published to other contexts/services. Its schema is a **public contract**, versioned, and changing it breaks consumers.
+- **Application event** — a technical in-process notification (cache invalidation, metrics) with no domain meaning.
+
+**Why it matters.** Conflating the first two is a common and expensive mistake: publishing your internal domain events straight onto Kafka makes your internal model a public contract, and now every refactor is a breaking change for three other teams. The fix is an explicit translation step — the outbox row (Q136 in the data bank) holds the *integration* event, deliberately shaped, not the domain event.
+
+<FollowUp q="Where should the translation live?">
+
+At the context boundary, owned by the publishing context. It's the outbound half of an anti-corruption layer: you decide what you're willing to promise externally, independently of how you model internally.
+
+</FollowUp>
+
+</Question>
+
+## Q50. What is an anti-corruption layer? [#q50]
+
+<Question id="q50">
+
+**Answer.** A translation layer between your bounded context and an external one, so their model doesn't leak into yours. The external system might be a legacy core banking platform, a third-party provider's API, or another team's service with a model you disagree with.
+
+Without one, their concepts propagate: their field names, their status codes, their odd nullability, their notion of what a "transaction" is. Within six months your domain is shaped by their design and you can't change providers.
+
+The implementation is unglamorous — an adapter (Q31) that maps their DTOs to your domain types and back, with the mapping logic isolated and tested. The value is that when they change, or you replace them, exactly one package changes.
+
+**Why it matters.** In fintech you integrate with a lot of systems you don't control and whose models you'd never choose. The ACL is what keeps your domain yours. It's also the pattern that makes the strangler fig (Q96) work.
+
+</Question>
+
+## Q51. Explain context mapping and the relationship patterns. [#q51]
+
+<Question id="q51">
+
+**Answer.** Context mapping documents how bounded contexts relate — both technically and organisationally:
+
+- **Partnership** — two teams succeed or fail together; coordinated planning and releases.
+- **Shared Kernel** — a shared subset of the model. Powerful and dangerous: any change needs agreement from both teams. Keep it tiny or avoid it.
+- **Customer/Supplier** — downstream's needs influence upstream's priorities; there's a negotiation.
+- **Conformist** — downstream simply adopts upstream's model, with no translation. Appropriate when you have no influence and the model is acceptable.
+- **Anti-Corruption Layer** (Q50) — downstream translates to protect itself.
+- **Open Host Service** — upstream publishes a well-defined protocol for many consumers.
+- **Published Language** — a shared, documented interchange format (often with a schema registry).
+- **Separate Ways** — no integration at all; sometimes duplicating is cheaper than integrating.
+
+**Why it matters.** These are as much organisational descriptions as technical ones, and naming them makes an implicit power dynamic explicit. "We're a Conformist to the core banking team" says something true and useful about why your model looks the way it does, and starts a conversation about whether that's the right relationship.
+
+</Question>
+
+## Q52. When is DDD the wrong choice? [#q52]
+
+<Question id="q52">
+
+**Answer.** When the domain isn't complex. A CRUD application, a reporting service, an integration shim, or a system whose rules are "store this and show it later" gains nothing from aggregates, domain events and a ubiquitous language — you'd be adding layers with no invariants to protect (Q6).
+
+It's also wrong when you can't get access to domain experts. DDD's core mechanism is the conversation that produces the ubiquitous language. Without domain experts in the room, you get engineers inventing a model and calling it DDD, which is just architecture with more vocabulary.
+
+And it's a poor fit under severe time pressure for a short-lived system.
+
+**Why it matters.** DDD has a real cost — more classes, more mapping, more upfront modelling. It pays for itself when the domain has genuine complexity and the system will live for years. Saying so is a stronger answer than enthusiasm, because interviewers have all seen DDD cargo-culted into a CRUD app.
+
+<FollowUp q="Can you apply it partially?">
+
+Yes, and you should. Use the strategic parts — bounded contexts, ubiquitous language, context mapping — almost always; they're cheap and they shape everything. Apply the tactical patterns only in the **core domain**, the part that differentiates the business. Supporting subdomains can be CRUD, and generic subdomains should be bought rather than built. That subdomain distinction is the most practical piece of DDD and the most often skipped.
+
+</FollowUp>
+
+</Question>
