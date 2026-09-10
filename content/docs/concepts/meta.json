@@ -1,5 +1,5 @@
 {
   "title": "Concepts",
   "description": "Deep-study pages on the load-bearing ideas.",
-  "pages": ["jmm", "thread-pools", "generics-erasure", "hashmap", "jvm-memory", "generational-gc", "jit", "btrees-selectivity"]
+  "pages": ["jmm", "thread-pools", "generics-erasure", "hashmap", "jvm-memory", "generational-gc", "jit", "btrees-selectivity", "mvcc"]
 }
