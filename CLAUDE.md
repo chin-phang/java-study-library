@@ -241,7 +241,12 @@ as unwritten, or skip it deliberately. Assume nothing resolves.
 dangling `prerequisites` is a dead end, telling a reader to study something first
 that they cannot read.
 
-- `unlocks` — may dangle. Roadmap.
+- `unlocks` — **the pages that come next**, once this page is understood. Not a
+  list of topics this page happens to cover; those are its own sections. May
+  dangle, because the next page may not be written yet. The JMM page originally
+  listed `volatile`, `safe-publication` and `final-field-semantics` here, which
+  are §3 and §5 *of that page* — the wrong meaning, and it would have had the
+  graph drawing edges to nodes that can never exist.
 - `prerequisites` — **must resolve to a written page.** If the prerequisite is not
   written yet, use `prerequisites: []` and add the edge when the page lands.
 
