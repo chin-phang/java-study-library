@@ -2,8 +2,8 @@
 title: The Java Memory Model
 concept: jmm
 tier: foundational
-prerequisites: [threads-and-scheduling]
-unlocks: [volatile, safe-publication, double-checked-locking, final-field-semantics, atomics-and-cas, immutability]
+prerequisites: []
+unlocks: [cas, deadlock, virtual-threads]
 questions: [java/concurrency#q48, java/concurrency#q49, java/concurrency#q57, java/concurrency#q58, java/concurrency#q69]
 estimatedStudyTime: 3h
 ---
