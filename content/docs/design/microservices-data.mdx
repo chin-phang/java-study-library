@@ -1,0 +1,126 @@
+---
+title: "Microservices: Data & Consistency"
+description: Cross-service queries, CQRS, event sourcing, duplicated data, reporting.
+questionRange: Q89–Q95
+tags: [design, microservices, data]
+---
+
+## Q89. How do you query data that spans several services? [#q89]
+
+<Question id="q89">
+
+**Answer.** Three options, with a clear preference order:
+
+1. **API composition** — the caller (or a BFF) queries each service and joins in memory. Simple, always fresh, no extra storage. Fails when the result set is large, when you need to sort or paginate across services, or when the fan-out latency is unacceptable. Good for "show me this order and its customer".
+2. **CQRS read model** — a service subscribes to events from several services and maintains a purpose-built denormalised view. Fast, supports arbitrary queries, no fan-out at read time. Costs: eventual consistency, extra storage, and a projection that must be rebuildable. Good for search, dashboards and reports.
+3. **A dedicated reporting/analytics store** fed by CDC or events, for genuinely analytical questions.
+
+**Why it matters.** The instinct to reach for a distributed join or a shared database is what this question tests. The correct answer is that cross-service queries are a *design* problem — if you need them constantly, the boundaries may be wrong (Q63).
+
+</Question>
+
+## Q90. Explain CQRS and when it's justified. [#q90]
+
+<Question id="q90">
+
+**Answer.** Command Query Responsibility Segregation: separate the model used for writes from the model used for reads. At its mildest that's two sets of classes against one database. At its fullest it's separate stores, with the read side maintained asynchronously from events.
+
+Justified when read and write workloads genuinely differ: reads vastly outnumber writes, reads need different shapes than the write model provides, or the write model is normalised for invariants while reads want denormalised views. A payment write model enforces state transitions; a merchant dashboard wants a flat, aggregated, searchable view. Forcing both through one model serves neither.
+
+**Not justified** as a default. For a CRUD service, CQRS doubles the code for no benefit, and the asynchronous variant introduces eventual consistency that will surface in the UI as "I just saved it and it's not there".
+
+<FollowUp q="How do you handle the read-your-own-writes problem?">
+
+Return the result from the write response rather than re-reading; or route reads to the write model for a short window after a write; or track a version/LSN and have the read side wait for it. Whichever you choose, it must be a deliberate decision — "the user saves and sees stale data" is the single most common CQRS complaint and it's entirely predictable.
+
+</FollowUp>
+
+</Question>
+
+## Q91. Explain event sourcing and its real costs. [#q91]
+
+<Question id="q91">
+
+**Answer.** Instead of storing current state, store the sequence of events that produced it; current state is a fold over the event stream. Snapshots make replay fast.
+
+**Benefits:** a complete, immutable audit trail (genuinely valuable in finance and often a regulatory requirement); time travel — reconstruct state at any past moment; the ability to build new projections retroactively from historical events; and a natural fit with event-driven integration.
+
+**Costs, which are substantial:**
+- **Schema evolution over years.** You will deserialise 2021's events in 2029. Upcasting is code you maintain forever.
+- **Querying requires projections** for everything; there's no ad-hoc query over event streams.
+- **Eventual consistency** between the event store and every read model.
+- **GDPR erasure** in an immutable log — crypto-shredding is the usual answer, and it must be designed in from the start.
+- **Team cognitive load.** It's a genuinely different way of thinking, and onboarding is slower.
+- **Aggregate design becomes critical** — a stream that grows unboundedly is a performance problem no snapshot fully fixes.
+
+**Why it matters.** The honest position: event sourcing is excellent for a *core* domain where audit and temporal queries have real business value — a ledger, a trading book, a claims process. Applying it to the whole system is a common and expensive mistake. Most systems want an audit log, not event sourcing.
+
+</Question>
+
+## Q92. How do you keep duplicated data consistent across services? [#q92]
+
+<Question id="q92">
+
+**Answer.** Accept that it will be eventually consistent and design for that explicitly:
+
+- **One owner per piece of data.** Exactly one service is authoritative; everyone else holds a cached copy and knows it. Ambiguous ownership is the root of most data-consistency incidents.
+- **Propagate by events**, published via the outbox so they can't be lost (Q136 in the data bank).
+- **Version every replicated record** so an out-of-order update doesn't overwrite newer state.
+- **Make consumers idempotent** — at-least-once delivery guarantees duplicates.
+- **Reconcile periodically.** A job that compares the copy against the source and reports divergence. This is non-negotiable in financial systems, and it's the control that catches the bugs the pipeline doesn't.
+- **Be able to rebuild** the copy from scratch by replaying events.
+
+**Why it matters.** The last two are what separate a design that works from one that works until it silently doesn't. Every event-driven system drifts; the only question is whether you find out from a reconciliation alert or from a customer.
+
+</Question>
+
+## Q93. How do you migrate data when extracting a service? [#q93]
+
+<Question id="q93">
+
+**Answer.** The hardest part of extraction (Q67), and it needs its own plan:
+
+1. **Identify the data the new service will own**, and find every reader and writer — including batch jobs, reports and anything with database access you didn't know about.
+2. **Remove cross-boundary joins and foreign keys first**, while everything is still in one database. Replace them with API calls or denormalised copies. This is the bulk of the work.
+3. **Dual-write** to old and new stores, with the old one authoritative, and reconcile continuously to prove they agree.
+4. **Backfill** history into the new store, in resumable, throttled batches.
+5. **Switch reads** to the new store behind a flag, monitoring for divergence.
+6. **Switch writes**, keeping the old path available for rollback.
+7. **Decommission** — and actually delete, so nobody discovers the old table still being written to in a year.
+
+**Why it matters.** Steps 3 and 5 — dual-run with reconciliation — are what makes this safe for financial data, and they're what teams under time pressure cut. The reconciliation is the evidence that the cutover is safe; without it you're cutting over on hope.
+
+</Question>
+
+## Q94. What's the right way to handle reference data shared across services? [#q94]
+
+<Question id="q94">
+
+**Answer.** Reference data — currencies, country codes, fee schedules, merchant categories — is read by everyone and changed rarely, which tempts people into a shared database.
+
+Better options depending on volatility:
+- **Truly static** (ISO country codes) — embed it in each service. It doesn't change; a library or a config file is fine.
+- **Slowly changing** (fee schedules, product catalogue) — one owning service publishes changes as events; consumers keep a local cache and rebuild from a compacted topic. Fast local reads, no runtime dependency, eventual consistency measured in seconds.
+- **Frequently changing or large** — an API call with local caching and a sensible TTL, plus a circuit breaker and a stale-if-error fallback so the owner's outage doesn't take everyone down.
+
+**Why it matters.** The failure mode to avoid is a synchronous call to a reference-data service on every request — you've made a rarely-changing lookup into a hard availability dependency for the whole estate. The event-plus-local-cache pattern is almost always the right answer, and it's a good example of trading storage for decoupling.
+
+</Question>
+
+## Q95. How do you do reporting across microservices? [#q95]
+
+<Question id="q95">
+
+**Answer.** Not by querying the services. A reporting query that fans out across twelve services is slow, fragile, and puts analytical load on transactional systems.
+
+The pattern: each service publishes events (or is tapped by CDC), those land in a central analytical store — a warehouse or lakehouse — and reporting queries run there. The transformation layer builds the joined, denormalised models the business actually wants.
+
+Design points: land raw data immutably first so transformations can be re-run; version schemas and tolerate evolution; handle late-arriving data explicitly; and — the one people skip — run reconciliation between the warehouse and the source of truth, because silent divergence is the standard failure mode (Q140 in the data bank).
+
+<FollowUp q="Who owns the analytical model?">
+
+This is where data mesh arguments come in. The pragmatic position: the producing team owns the *data product* it publishes — its schema, quality and documentation — and a central team owns the platform and the cross-domain models. Making producing teams accountable for the quality of what they emit is the change that actually improves things; the rest is org design.
+
+</FollowUp>
+
+</Question>
