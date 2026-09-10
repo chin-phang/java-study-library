@@ -89,6 +89,21 @@ Symptoms, any one of which is diagnostic:
 - A change to one service's internal model breaks another.
 - You can't test a service without running five others.
 
+```mermaid
+flowchart TD
+  subgraph DM ["distributed monolith: must deploy together"]
+    direction TB
+    A["service A"] -->|sync| B["service B"]
+    B -->|sync| C["service C"]
+    B -.->|"reads another service's tables"| D[("shared database")]
+  end
+  C ~~~ X
+  subgraph OK ["properly bounded: deploy independently"]
+    direction TB
+    X["service X, owns its data"] -->|"event"| Y["service Y, owns its data"]
+  end
+```
+
 **Why it matters.** This is the most expensive failure mode in the whole space, because it's *worse than the monolith you started with*: same coupling, plus network latency, partial failure, distributed debugging and N deployments. Recognising it early — and being willing to say "we should merge these two services back" — is a genuinely senior act.
 
 <FollowUp q="What's the fix?">
@@ -138,6 +153,16 @@ Yes, deliberately. That's the DRY-is-about-knowledge point (Q22): each service's
 <Question id="q68">
 
 **Answer.** Named for the vine that grows around a tree and eventually replaces it. You put a facade (usually an API gateway or a routing proxy) in front of the legacy system, then incrementally route individual capabilities to new implementations. The legacy system shrinks until it can be removed.
+
+```mermaid
+flowchart TD
+  R["incoming request"] --> F["facade: routing proxy or API gateway"]
+  F -->|"capability already moved"| N["new implementation"]
+  F -->|"not yet moved"| L["legacy system, shrinking"]
+  N --> A["anti-corruption layer keeps the old model out"]
+  N --> DS["data strategy: dual-write with reconciliation, or CDC"]
+  L --> DS
+```
 
 Why it beats a rewrite: value is delivered continuously rather than at the end; risk is spread across many small cutovers instead of one big-bang; each step is independently reversible; and you never have two systems to maintain in parallel for two years while the rewrite catches up on features the old system keeps adding.
 

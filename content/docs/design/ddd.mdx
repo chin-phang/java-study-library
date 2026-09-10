@@ -46,6 +46,17 @@ The rules:
 2. **One transaction, one aggregate.** Changes spanning aggregates use eventual consistency (domain events, sagas), not a bigger transaction.
 3. **Reference other aggregates by identity**, not by object reference. `Order` holds a `CustomerId`, not a `Customer`.
 
+```mermaid
+flowchart TD
+  subgraph AG ["Order aggregate — one transaction"]
+    direction TB
+    R["Order (root): only entry point"] --> L1["OrderLine"]
+    R --> L2["OrderLine"]
+  end
+  AG --> CID["holds CustomerId, not Customer"]
+  CID -.->|"eventual consistency"| CU["Customer aggregate"]
+```
+
 **Why it matters.** Rule 3 is the one that has the biggest practical effect, because it's what makes an aggregate loadable and savable as a unit — and it's the modelling rule that maps most directly onto service boundaries later. If your aggregates reference each other by ID, splitting them into services is mechanical. If they're a connected object graph, it's a rewrite.
 
 <FollowUp q="How big should an aggregate be?">

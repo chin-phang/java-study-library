@@ -15,6 +15,15 @@ tags: [design, architecture]
 
 **Hexagonal / Ports & Adapters** (Cockburn): the application core defines **ports** (interfaces it owns), and **adapters** implement them. Driving adapters (HTTP, message consumer) call inbound ports; the core calls outbound ports implemented by driven adapters (database, payment provider). All dependencies point inward.
 
+```mermaid
+flowchart TD
+  D["driving adapters: HTTP, message consumer"] --> IP["inbound ports, owned by the core"]
+  IP --> C["application core: domain and use cases"]
+  C --> OP["outbound ports, also owned by the core"]
+  OP --> DA["driven adapters: database, payment provider"]
+  DA -.->|"implements the port, so the dependency points inward"| OP
+```
+
 **Onion** (Palermo) and **Clean** (Martin) are essentially the same principle expressed as concentric circles, with the **dependency rule**: source code dependencies point only inward. Clean adds named layers (entities, use cases, interface adapters, frameworks).
 
 **Why it matters.** The single shared insight is that **the domain should not depend on infrastructure** (DIP, Q19). Everything else is presentation. I'd use hexagonal vocabulary because ports/adapters is the clearest metaphor, and I wouldn't be dogmatic about the number of layers.
@@ -136,6 +145,21 @@ Including enough state in the event that consumers don't need to call back for d
 **Answer.** **Choreography**: services react to each other's events with no central coordinator. Loosely coupled, easy to add participants, but the overall process exists nowhere — you reconstruct it by reading five codebases, and "why did this payment stall?" is genuinely hard.
 
 **Orchestration**: a coordinator holds the process state machine and tells participants what to do. The process is explicit, observable, and testable; you can see where each instance is stuck and retry from a known point. The cost is a coordinator that can become a bottleneck or a god service, and participants that are slightly more coupled.
+
+```mermaid
+flowchart TD
+  subgraph CH ["choreography: no coordinator"]
+    direction TB
+    A["service A emits an event"] --> B["service B reacts, emits its own"]
+    B --> C["service C reacts — the process lives nowhere"]
+  end
+  C ~~~ O
+  subgraph OR ["orchestration: explicit process"]
+    direction TB
+    O["coordinator holds the state machine"] --> P["calls each participant, records the result"]
+    P --> Q["can say where any instance is stuck"]
+  end
+```
 
 **My default:** choreography for two or three steps; orchestration beyond that, or whenever the process has business meaning worth observing. For a payment saga with authorisation, fraud check, capture and settlement, an orchestrator earns its place immediately, because operations will need to answer questions about in-flight processes.
 
