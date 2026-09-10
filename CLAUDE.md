@@ -237,10 +237,18 @@ tolerate dangling edges.** An `unlocks` target that resolves to no page is norma
 and must not throw, silently drop the node, or render as a broken link — show it
 as unwritten, or skip it deliberately. Assume nothing resolves.
 
-One asymmetry to consider when that work happens, not yet decided: a dangling
-`unlocks` is a promise, but a dangling `prerequisites` is a dead end — it tells a
-reader to study something first that they cannot read. Worth treating differently,
-and worth a check that flags one but not the other.
+**The two fields are not symmetric.** A dangling `unlocks` is a promise; a
+dangling `prerequisites` is a dead end, telling a reader to study something first
+that they cannot read.
+
+- `unlocks` — may dangle. Roadmap.
+- `prerequisites` — **must resolve to a written page.** If the prerequisite is not
+  written yet, use `prerequisites: []` and add the edge when the page lands.
+
+The JMM page carried `prerequisites: [threads-and-scheduling]`, which was not
+written and not even on the candidate list. It is now `[]`, since nothing in the
+library precedes it. Any check on the graph should flag a dangling
+`prerequisites` and ignore a dangling `unlocks`.
 
 ### Bidirectional linking
 
@@ -299,44 +307,58 @@ for f in glob.glob('content/docs/*/*.mdx'):
 
 ## Candidate concept pages
 
+**The `concept:` slug is the identity used by the whole graph.** `unlocks` and
+`prerequisites` reference these slugs, not page titles, so they are fixed here
+once rather than invented per page. Naming a slug that is not in this table is
+allowed — that is what "unlocks may name unwritten pages" means — but it says
+"this page is not planned", so prefer a slug from the table.
+
 **Foundational** (do these first — they unlock the most):
 
-- The Java Memory Model — *reference implementation, already written*
-- Generics and type erasure
-- How HashMap actually works
-- The JVM's memory areas and what `-Xmx` doesn't bound
-- Generational GC and why allocation is cheap
-- JIT compilation, inlining and deoptimisation
-- B-trees, selectivity and why an index isn't used
-- MVCC and the cost of a row version
-- The log: WAL, replication, and why Kafka and PostgreSQL share a shape
-- Idempotency and the three outcomes of a network call
-- Bounded contexts and finding a boundary
-- Dependency inversion and the hexagonal shape
+| `concept:` | Page |
+|---|---|
+| `jmm` | The Java Memory Model — *written, reference implementation* |
+| `erasure` | Generics and type erasure |
+| `hashmap` | How HashMap actually works |
+| `jvm-memory` | The JVM's memory areas and what `-Xmx` doesn't bound |
+| `generational-gc` | Generational GC and why allocation is cheap |
+| `jit` | JIT compilation, inlining and deoptimisation |
+| `btree-selectivity` | B-trees, selectivity and why an index isn't used |
+| `mvcc` | MVCC and the cost of a row version |
+| `the-log` | The log: WAL, replication, and why Kafka and PostgreSQL share a shape |
+| `idempotency` | Idempotency and the three outcomes of a network call |
+| `bounded-contexts` | Bounded contexts and finding a boundary |
+| `hexagonal` | Dependency inversion and the hexagonal shape |
 
 **Core:**
 
-- Thread pools and Little's Law
-- Virtual threads: continuations, mounting, pinning
-- CAS, contention and lock-free structures
-- Escape analysis and when allocation disappears
-- Class loading and classloader leaks
-- Query planning and cardinality estimation
-- Isolation levels and the anomalies they permit
-- Locking, deadlock and lock ordering
-- Partitioning as one idea across four systems
-- Cache invalidation and the races in each ordering
-- Backpressure and the unbounded-queue failure mode
-- Consistency models and choosing per operation
-- The proxy boundary in Spring
-- The persistence context and dirty checking
-- Aggregates as consistency boundaries
-- Coupling, cohesion and what makes a change expensive
-- The expression problem: polymorphism vs pattern matching
-- Conway's law and the inverse manoeuvre
-- Why microservices are an organisational answer
+| `concept:` | Page |
+|---|---|
+| `thread-pools` | Thread pools and Little's Law |
+| `virtual-threads` | Virtual threads: continuations, mounting, pinning |
+| `cas` | CAS, contention and lock-free structures |
+| `escape-analysis` | Escape analysis and when allocation disappears |
+| `class-loading` | Class loading and classloader leaks |
+| `query-planning` | Query planning and cardinality estimation |
+| `isolation-levels` | Isolation levels and the anomalies they permit |
+| `deadlock` | Locking, deadlock and lock ordering |
+| `partitioning` | Partitioning as one idea across four systems |
+| `cache-invalidation` | Cache invalidation and the races in each ordering |
+| `backpressure` | Backpressure and the unbounded-queue failure mode |
+| `consistency-models` | Consistency models and choosing per operation |
+| `spring-proxy` | The proxy boundary in Spring |
+| `persistence-context` | The persistence context and dirty checking |
+| `aggregates` | Aggregates as consistency boundaries |
+| `coupling-cohesion` | Coupling, cohesion and what makes a change expensive |
+| `expression-problem` | The expression problem: polymorphism vs pattern matching |
+| `conways-law` | Conway's law and the inverse manoeuvre |
+| `microservices-org` | Why microservices are an organisational answer |
 
-**Specialist:** add as you hit them. Don't pre-plan the whole list.
+**Specialist:** add as you hit them, with a slug, in a third table. Don't
+pre-plan the whole list.
+
+Three of these titles contain a colon and must be quoted in YAML — see
+**Frontmatter gotchas**.
 
 ## The leadership track
 
