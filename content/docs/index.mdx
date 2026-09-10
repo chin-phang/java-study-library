@@ -17,15 +17,44 @@ cold.
 
 <Cards>
   <Card title="The Java Memory Model" href="/docs/concepts/jmm"
-        description="Foundational. Explains volatile, safe publication, double-checked locking and final field semantics." />
+        description="Foundational. Explains volatile, safe publication, double-checked locking and final field semantics — and the five reference questions that depend on it." />
 </Cards>
 
-## Reference banks
+## The reference banks
 
-| Area | Questions |
-|---|---|
-| Java — language, collections, concurrency, JVM, Spring, JPA | 142 |
-| Data & messaging — PostgreSQL, Redis, RabbitMQ, Kafka | 145 |
-| Design & architecture — OOP, SOLID, patterns, DDD, microservices | 120 |
+407 questions across 29 pages. Every answer is collapsed by default, so a page
+reads as a list of questions until you choose to see an answer — each page has an
+expand-all control if you'd rather read it straight through.
 
-Conversion from `_source/` is in progress; sections appear as they land.
+<Cards>
+  <Card title="Java — 142 questions" href="/docs/java/core-language"
+        description="Language and OOP, generics, collections, streams, concurrency, JVM and GC, modern Java, Spring, JPA, distributed systems, testing." />
+  <Card title="Data & messaging — 145 questions" href="/docs/data/modelling-indexing"
+        description="Modelling and indexing, query plans, transactions and MVCC, scaling and replication, Redis, RabbitMQ, Kafka, cross-cutting design." />
+  <Card title="Design & architecture — 120 questions" href="/docs/design/oop-fundamentals"
+        description="OOP fundamentals, SOLID, patterns, DDD, architectural styles, microservices boundaries and communication and data, operations." />
+</Cards>
+
+## Working with it
+
+- **Search covers collapsed answers.** `Ctrl` `K` searches the full text of every
+  answer and follow-up, not just the visible headings.
+- **Every question is a deep link.** `/docs/java/concurrency#q48` opens that one
+  answer expanded and scrolls to it — useful for citing a specific claim.
+- **Numbering restarts per bank**, so `#q1` exists three times. The path is what
+  disambiguates: `/docs/java/core-language#q1` and
+  `/docs/data/modelling-indexing#q1` are different questions.
+- **19 diagrams** sit inside the answers they illustrate — the JVM memory areas,
+  G1's mixed collection, MVCC tuple versions, Kafka's high watermark, the
+  transactional outbox, hexagonal ports and adapters, and others.
+
+## What's here, and what isn't
+
+The reference conversion is **complete**: all 29 sections, 407 questions, 283
+follow-ups, converted from `_source/` without rewriting a word of the answers.
+
+The concept pages are the point of the library and are **barely started** — one
+written of roughly twelve foundational candidates. The `leading/` track is empty
+by design; those pages have to come from real experience rather than be
+generated. And the study-path graph that `prerequisites`/`unlocks` is meant to
+drive isn't built yet, so for now the sidebar is the map.
