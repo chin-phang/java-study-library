@@ -573,9 +573,57 @@ fenced ```mermaid blocks; no imports, no JSX.
 it, so `next-themes` is **not** a direct dependency — it is not resolvable under
 pnpm's strict layout. Do not add it.
 
-Mermaid renders client-side, so a syntax error is a broken diagram, not a failed
-build — check each in the browser. Keep them phone-readable: top-to-bottom flow,
-≤10 nodes.
+### Placement
+
+Put each diagram **inside the `<Question>` it illustrates, immediately after the
+paragraph it supports** — not at the end of the answer, and not before the prose
+that explains it. If the mechanism is explained in a `<FollowUp>` rather than the
+main answer, the diagram belongs in the follow-up (the `ThreadPoolExecutor` flow
+at `java/concurrency#q53` is the example: the target list says Q53, but the
+core/queue/max mechanism lives in its follow-up).
+
+Fenced ```mermaid blocks work inside JSX children, including a `<FollowUp>`
+nested in a `<Question>` — `remarkMdxMermaid` traverses into them. Blank lines
+around the fence are still required.
+
+### Verifying — the build tells you nothing
+
+Mermaid runs client-side, so **a syntax error is a blank diagram and a green
+build**. `pnpm build` passing is not evidence. Open each one in the browser and
+confirm an `svg[id^=mermaid]` exists with no "Syntax error" text.
+
+**Measure with an explicit viewport.** When the Browser pane is hidden the whole
+page layout collapses and *every* diagram measures `0x0`, which looks exactly
+like eight broken diagrams. Set a size first (`resize_window`), or check the
+SVG's own `viewBox` — a healthy diagram has a real one even when its
+`getBoundingClientRect()` is zero.
+
+### Phone-readable, concretely
+
+Top-to-bottom flow, ≤10 nodes, and two rules learned the hard way:
+
+- **Fan-out of more than about three siblings renders landscape.** A node with
+  five children lays them out in a row: `java/jvm-memory-gc#q71` first came out
+  659×155 and had to be rebuilt with a subgraph and invisible links (`~~~`) to
+  stack them. Keep branching to two or three, or group the leaves.
+- **Fitting the width is not the same as being readable.** Check the *scale*, not
+  just for overflow. `data/transactions-mvcc#q32` fitted a 375px screen with no
+  horizontal scroll — at 42%, with labels too small to read. Shortening the
+  participant and message labels took it from 968 to 660 viewBox units and fixed
+  it. Screenshot at 375px and look; do not infer readability from dimensions.
+
+A `sequenceDiagram` is legitimate where the point *is* a timeline (write skew,
+two-thread interleavings) — it is inherently top-to-bottom. Keep participant and
+message labels short, because participant count drives the width.
+
+### Diagrams break byte-identity
+
+A file with diagrams is no longer byte-identical to its `_source` section, so the
+conversion verifier will report a diff on it. That is expected. The answer prose
+must still be untouched — only the added fenced blocks may differ.
+
+Done so far: **14 of ~19** — six Java (`e432116`), eight data (`e17caa8`). The
+five design diagrams are outstanding.
 
 Target list:
 
