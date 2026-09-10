@@ -79,8 +79,8 @@ This distinction drives everything. Do not blur it.
 
 The existing Q&A in `_source/`. Optimised for recall — claim, mechanism,
 trade-off. These stay as written; conversion to MDX is **structural only**.
-Their job is fast lookup and self-testing. Each links up to the concept page
-that explains it.
+Their job is fast lookup and self-testing. Each is *intended* to link up to the
+concept page that explains it — **not yet built**, see **Frontmatter** below.
 
 ### Concept pages (~55)
 
@@ -213,7 +213,42 @@ estimatedStudyTime: 3h
 ```
 
 `prerequisites`/`unlocks` build the dependency graph — render it as a study path
-on the index. `questions` drives bidirectional linking.
+on the index. `questions` is *intended* to drive bidirectional linking.
+
+**Status: only the forward direction exists, and only by hand.** Measured on
+`concepts/jmm.mdx`: its five `questions:` anchors all resolve, and its four prose
+links into `/docs/java/concurrency` all resolve — but **0 of those 5 reference
+pages link back**. Nothing reads the `questions:` field yet; the links that work
+were written manually in prose. Building the reverse direction (and rendering the
+forward one from frontmatter rather than prose) is outstanding work.
+
+### Frontmatter gotchas
+
+**Quote any title containing a colon.** `title: Virtual threads: continuations,
+mounting, pinning` is invalid as an unquoted YAML plain scalar — a `: ` inside a
+plain scalar is a parse error or a silent misparse. This already bit three design
+section titles (`"Microservices: Data & Consistency"` and friends), and it will
+bite the concept pages: *Virtual threads: continuations, mounting, pinning*, *The
+log: WAL, replication...* and *The expression problem: polymorphism vs pattern
+matching* are all on the candidate list. Quote it:
+
+```yaml
+title: "Virtual threads: continuations, mounting, pinning"
+```
+
+**Validate `questions:` against real anchors** rather than trusting them. All 407
+exist now, so a wrong one is a bug you can catch:
+
+```python
+import re, glob, os
+real = set()
+for f in glob.glob('content/docs/*/*.mdx'):
+    track = f.replace(os.sep, '/').split('/')[2]
+    page = os.path.basename(f)[:-4]
+    for a in re.findall(r'\[#(q\d+)\]', open(f, encoding='utf-8').read()):
+        real.add(track + '/' + page + '#' + a)
+# every entry of a concept page's `questions:` list must be in `real`
+```
 
 ## Candidate concept pages
 
@@ -407,8 +442,9 @@ affect indexing. Re-run this only if the components are restructured.
 
 ## Conversion rules
 
-These apply to every one of the 29 reference sections. Getting them wrong once
-means getting them wrong 29 times.
+**All 29 sections are converted** — 407 questions, 283 follow-ups, every bank
+contiguous and duplicate-free. This section is now reference, not a task list.
+Read it before touching a converted file, or if a source bank is ever extended.
 
 `content/docs/java/concurrency.mdx` (Q48–Q70) is converted and is the reference
 implementation. Read it before converting anything else.
@@ -535,13 +571,13 @@ for i, l in enumerate(lines, 1):
     if re.search(r'[<{]', re.sub(r'`[^`]*`', '', l)): print(i, l)
 ```
 
-Do not assume a section needs edits — or that it doesn't. Measured so far:
-
-- Concurrency (Q48–Q70) — **0** bare hits; every `<pid>` and generic was already
-  ticked or fenced.
-- JVM, Memory & GC (Q71–Q86) — **1**: `recovering <2% of heap` in Q77, fixed as
-  `&lt;2%`.
-- Modern Java (Q87–Q97) — **0**.
+**Final tally, all 29 sections measured: one bare `<` in 407 questions** —
+`recovering <2% of heap` in java Q77, written as `&lt;2%`. Every other angle
+bracket and brace in the corpus was already fenced or backticked, the design
+bank included. Earlier drafts of this file warned that the Java and design banks
+were "full of" bare generics; that was never measured and was false. Keep the
+check for new material, but do not budget time for it, and never "fix" text that
+is already backticked.
 
 ## Search
 
@@ -622,8 +658,8 @@ A file with diagrams is no longer byte-identical to its `_source` section, so th
 conversion verifier will report a diff on it. That is expected. The answer prose
 must still be untouched — only the added fenced blocks may differ.
 
-Done so far: **14 of ~19** — six Java (`e432116`), eight data (`e17caa8`). The
-five design diagrams are outstanding.
+**Complete: 19 of 19** — six Java (`e432116`), eight data (`e17caa8`), five
+design (`790a0b0`). Add more only if a new concept page needs one.
 
 Target list:
 
@@ -647,7 +683,9 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first. Do not build features against three pages.
+Content first — and the content now exists: 29 pages, 407 questions, 19
+diagrams. **That gate is lifted.** These are unblocked and are the natural work
+after the concept pages.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
