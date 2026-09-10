@@ -116,6 +116,16 @@ away.
 C2 optimises for what has happened, not for what could happen. Concretely, it
 will:
 
+```mermaid
+flowchart TD
+  A["interpreter, gathering a profile"] --> B["C1: compile fast, keep counting"]
+  B --> C["C2: optimise for the profile actually observed"]
+  C --> D{"does the assumption still hold?"}
+  D -->|yes| E["stays compiled and fast"]
+  D -->|no| F["deoptimise: fall back, reprofile, recompile"]
+  F --> B
+```
+
 - assume a branch never taken is never taken, and not compile it
 - assume a value observed non-null is always non-null, and drop the check
 - assume a call site is monomorphic, and inline

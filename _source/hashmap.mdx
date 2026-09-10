@@ -80,6 +80,16 @@ Two keys landing in the same bucket are chained in a linked list. Lookup walks
 it comparing `hash` first (cheap int compare, and this is why the hash is
 cached in the node) then `equals`.
 
+```mermaid
+flowchart TD
+  A["put(k, v): spread the hash, index = hash AND (n-1)"] --> B{"bucket empty?"}
+  B -->|yes| C["store the node"]
+  B -->|no| D["walk the chain: compare hash, then equals"]
+  D --> E{"chain hits 8 and table is at least 64?"}
+  E -->|no| F["append to the linked list"]
+  E -->|yes| G["treeify: red-black tree, O(log n) worst case"]
+```
+
 With a good hash and load factor 0.75, chains are tiny. The Javadoc's Poisson
 calculation gives the probability of a bucket having k entries:
 

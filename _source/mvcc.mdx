@@ -167,6 +167,16 @@ them modulo 2³¹, meaning "half the space is in the past, half in the future" �
 so a tuple whose `xmin` gets more than 2 billion transactions old would appear
 to be *in the future* and become invisible. Silent, total data loss.
 
+```mermaid
+flowchart TD
+  A["row version stamped with an xid"] --> B["the 32-bit xid counter keeps advancing"]
+  B --> C{"frozen before the counter laps it?"}
+  C -->|yes| D["frozen: visible to every future transaction"]
+  C -->|no| E["xmin looks like the future and the row disappears"]
+  B --> F["autovacuum freezes ahead of the wraparound horizon"]
+  F --> D
+```
+
 Freezing prevents this: vacuum marks sufficiently old tuples as frozen, meaning
 "visible to everyone, ignore `xmin`". If freezing falls far enough behind,
 PostgreSQL **refuses new writes** to protect the data — a hard outage, preceded

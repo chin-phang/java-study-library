@@ -152,6 +152,20 @@ is.
 One shared pool means one slow dependency can consume every thread. Separate
 pools per dependency means it can consume at most its own.
 
+```mermaid
+flowchart TD
+  subgraph ONE ["one shared pool"]
+    direction TB
+    A["200 threads for everything"] --> B["one slow dependency takes all 200"]
+    B --> C["every endpoint stalls, including the healthy ones"]
+  end
+  C ~~~ D
+  subgraph MANY ["a pool per dependency"]
+    direction TB
+    D["50 payments, 20 search, 30 reports"] --> E["search stalls; payments keeps serving"]
+  end
+```
+
 ```java
 ExecutorService fraudPool   = boundedPool(20, 50);   // can burn 20 threads, no more
 ExecutorService ledgerPool  = boundedPool(30, 100);

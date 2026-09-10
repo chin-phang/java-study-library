@@ -39,6 +39,17 @@ To billing, a customer is a payer: an account, a payment method, a credit limit,
 a billing address, an invoice history. Whether they've ever filed a support
 ticket is irrelevant.
 
+```mermaid
+flowchart TD
+  W["the word: Customer"] --> CTX
+  subgraph CTX ["three contexts, three models"]
+    direction TB
+    S["Sales: lead source, stage"] ~~~ B["Billing: limit, invoices"]
+    B ~~~ P["Support: tickets, entitlements"]
+  end
+  CTX --> T["one identity — translate at the boundary"]
+```
+
 To support, a customer is a person with a history: a name, a contact channel, a
 tier, a set of interactions. Their credit limit is irrelevant.
 

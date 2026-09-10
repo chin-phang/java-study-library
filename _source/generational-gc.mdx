@@ -102,6 +102,17 @@ generation keeps growing toward a much more expensive collection.
 Objects don't go straight to the old generation. The layout is Eden plus two
 survivor spaces, S0 and S1, one always empty:
 
+```mermaid
+flowchart TD
+  A["allocate in Eden by pointer bump"] --> B["minor GC: copy the survivors out"]
+  B --> C["survivor space, age incremented"]
+  C --> D{"age past MaxTenuringThreshold?"}
+  D -->|no| B
+  D -->|yes| E["promote to the old generation"]
+  B --> F["survivor too small: premature promotion"]
+  F --> E
+```
+
 1. Allocate in Eden.
 2. Minor GC: copy live objects from Eden **and** the occupied survivor space
    into the empty survivor space. Increment each object's age.

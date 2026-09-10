@@ -76,6 +76,17 @@ One structure covering all of that is why it's the default everywhere.
 Here is the part that most people never internalise. **An index scan is not
 free per row.**
 
+```mermaid
+flowchart TD
+  A["predicate matches a fraction of the table"] --> B{"how large?"}
+  B -->|tiny| C["index scan wins"]
+  B -->|"most of it"| D["seq scan wins"]
+  B -->|between| E["bitmap heap scan"]
+  C --> F["the crossover is counted in pages, not rows"]
+  D --> F
+  E --> F
+```
+
 To return a row, the engine must:
 
 1. descend the tree — 3–4 page reads, mostly cached

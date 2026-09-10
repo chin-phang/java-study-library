@@ -51,6 +51,15 @@ The instinct is to make the window smaller — shorter timeouts, better health
 checks, a confirmation call. None of it closes the gap, and it's worth knowing
 why rather than just accepting it.
 
+```mermaid
+flowchart TD
+  A["client sends the request"] --> B{"what came back?"}
+  B -->|"a 2xx"| C["it happened"]
+  B -->|"an error"| D["it did not happen"]
+  B -->|"nothing at all"| E["unknown"]
+  E --> F["the client cannot tell — hence the idempotency key"]
+```
+
 **The Two Generals Problem.** Two parties communicating over a lossy channel
 cannot reach certain agreement on a shared fact, no matter how many messages
 they exchange. Each message needs an acknowledgement; the acknowledgement needs

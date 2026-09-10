@@ -172,6 +172,16 @@ a state store.
 
 > **State is a fold over an ordered log. A snapshot is a cached fold.**
 
+```mermaid
+flowchart TD
+  W["one append-only ordered log"] --> P["PostgreSQL: the WAL"]
+  W --> K["Kafka: the partition log"]
+  P --> PR["replay to recover; ship to replicas"]
+  K --> KR["replay to rebuild state; serve consumers"]
+  PR --> S["state is a fold over the log; a snapshot is a cached fold"]
+  KR --> S
+```
+
 Every system on this page is an instance:
 
 | System | The log | The fold | The snapshot |

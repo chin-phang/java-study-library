@@ -146,6 +146,14 @@ type they need.
 
 The `ClassCastException` in a method you didn't write.
 
+```mermaid
+flowchart TD
+  A["you write compareTo taking a Box"] --> B["erasure would leave nothing matching the interface"]
+  B --> C["so the compiler adds a synthetic bridge: compareTo taking Object"]
+  C --> D["the bridge casts to Box, then calls your method"]
+  D --> E["a bad cast throws inside a method you never wrote"]
+```
+
 ```java
 class Payment implements Comparable<Payment> {
     public int compareTo(Payment other) { ... }
