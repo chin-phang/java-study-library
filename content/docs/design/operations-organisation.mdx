@@ -1,0 +1,203 @@
+---
+title: Operations, Testing & Organisation
+description: Testing strategy, progressive delivery, observability, SLOs, incidents, leading change.
+questionRange: Q96–Q107
+tags: [design, operations, organisation]
+---
+
+## Q96. What's the testing strategy for a microservices system? [#q96]
+
+<Question id="q96">
+
+**Answer.** The end-to-end test suite that spans all services is the thing to *avoid* — it's slow, flaky, requires a shared environment, and nobody can debug a failure. Replace it with layers:
+
+- **Unit tests** — the bulk, no framework, milliseconds.
+- **Integration tests per service** — against real dependencies via Testcontainers (real database, real broker). This is where most bugs are found.
+- **Contract tests** (Q80) — replace cross-service integration testing.
+- **Component tests** — the whole service in isolation with its collaborators stubbed at the boundary.
+- **A very small set of end-to-end journeys** — the two or three flows that must never break, run against a staging environment, accepted as slow.
+- **Production verification** — synthetic transactions, canary analysis, and good alerting.
+
+**Why it matters.** The insight to state: in a distributed system you cannot achieve confidence through pre-production testing alone. You shift some of the confidence budget into production — progressive delivery, feature flags, fast rollback, strong observability. That's not a compromise, it's the correct response to the architecture.
+
+</Question>
+
+## Q97. Explain progressive delivery: blue-green, canary, feature flags. [#q97]
+
+<Question id="q97">
+
+**Answer.**
+- **Blue-green** — two identical environments; deploy to the idle one, verify, switch traffic, keep the old one for instant rollback. Simple, and expensive (double capacity). Database changes must be compatible with both versions, which is the real constraint.
+- **Canary** — route a small percentage of traffic to the new version, compare error rates and latency against the baseline, and increase gradually or roll back automatically. Limits blast radius, catches problems only real traffic reveals. Needs good metrics and enough traffic for statistical signal.
+- **Feature flags** — decouple *deploy* from *release*. Ship the code dark, enable for internal users, then 1%, then everyone. Enables trunk-based development and instant kill switches without a redeploy.
+
+**Why it matters.** These are complementary: deploy via canary, release via flag. The combination means a bad feature is disabled in seconds rather than rolled back in minutes.
+
+<FollowUp q="What's the cost of feature flags?">
+
+Flag debt. Every flag is a branch in the code and a combinatorial explosion in what you're actually testing. Flags need owners, expiry dates, and a routine cleanup discipline; a codebase with 200 stale flags is harder to reason about than one with none.
+
+</FollowUp>
+
+</Question>
+
+## Q98. What does good observability look like across services? [#q98]
+
+<Question id="q98">
+
+**Answer.** Three signals, correlated:
+
+- **Metrics** — RED per service and endpoint (rate, errors, duration as histograms so percentiles aggregate correctly), resource saturation (pools, queues, threads), and business metrics (authorisations per minute by result code).
+- **Traces** — distributed, with context propagated across HTTP and message boundaries (Q84). This is the one that makes microservices debuggable at all.
+- **Logs** — structured, with trace and span IDs so a log line joins a trace.
+
+The thing that matters more than any individual signal is **correlation**: alert → trace → logs in two clicks. And the alerts should be tied to business outcomes and SLOs, not to CPU.
+
+<FollowUp q="What's the difference between monitoring and observability?">
+
+Monitoring answers questions you predicted — dashboards for known failure modes. Observability is the ability to answer questions you *didn't* predict, by exploring high-cardinality data after the fact. In a distributed system most incidents are novel, so the ability to ask "which of these 40 merchants saw elevated latency on this endpoint in this AZ?" without shipping code is the capability that matters.
+
+</FollowUp>
+
+</Question>
+
+## Q99. How do you define and use SLOs and error budgets? [#q99]
+
+<Question id="q99">
+
+**Answer.** An **SLI** is a measurement (proportion of requests served under 300 ms). An **SLO** is a target for it (99.5% over 30 days). The **error budget** is the allowed shortfall — 0.5%, which for a month is a concrete quantity of failure you may spend.
+
+The budget is what makes it useful, because it converts reliability from an argument into arithmetic. Budget remaining → ship faster, take risks. Budget exhausted → the team stops feature work and spends on reliability. That rule, agreed in advance, replaces the recurring and unwinnable "should we prioritise reliability or features" debate.
+
+Setting them: from what users actually need, not from what's achievable. Chasing availability beyond user-perceptible benefit costs enormously and buys nothing — and an SLO of 100% is a statement that you'll never deploy.
+
+**Why it matters.** This is a leadership tool disguised as an ops practice. It gives you a principled, pre-agreed way to say no to feature pressure, which is one of the harder parts of the lead role.
+
+</Question>
+
+## Q100. How do you handle configuration and secrets across many services? [#q100]
+
+<Question id="q100">
+
+**Answer.** **Config**: externalised per environment, injected at runtime (environment variables or mounted files), validated at startup so a bad value fails fast rather than at 3am on the first request that touches it. Type-safe binding with validation, not scattered string lookups. A shared config service is an option but adds a startup dependency — weigh that carefully.
+
+**Secrets**: never in code, never in the image, never in a repo. A secret manager (Vault, cloud KMS-backed) with short-lived, rotatable credentials, mounted as files rather than environment variables where possible — env vars leak into crash dumps, `/proc`, child processes and logs. Audit access. And have a tested rotation procedure, because "we can rotate" and "we have rotated" are different claims.
+
+<FollowUp q="How do you handle a leaked secret?">
+
+Rotate first, investigate second — the same instinct as mitigate-before-diagnose in an incident. Then determine the exposure window and what could have been accessed with it. Then fix the mechanism that allowed it, which is usually a missing pre-commit scan or a secret in an env var that got logged. Secret scanning in CI and in pre-commit hooks prevents most of these.
+
+</FollowUp>
+
+</Question>
+
+## Q101. How do you run an incident? [#q101]
+
+<Question id="q101">
+
+**Answer.** Roles first: an **incident commander** who coordinates and decides, separate from the people investigating. Without that split, the best debugger is also fielding stakeholder questions and nobody is doing either job.
+
+Then: **mitigate before diagnosing.** Roll back, fail over, disable the feature flag, shed load. Diagnosis happens on artefacts — dumps, logs, traces — not on the live system while customers are affected. Every minute spent understanding while impact continues is a choice you're making.
+
+Communicate on a cadence even when there's nothing new; silence causes escalation. Keep a timestamped log as you go, because reconstructing it afterwards is unreliable and the timeline is the most valuable postmortem input.
+
+Then a **blameless postmortem** within a few days: timeline, contributing factors (plural — there's never one cause), and action items with named owners and dates. The most valuable output is usually not the fix but the improved *detection* — the alert that should have fired twenty minutes earlier.
+
+**Why it matters.** The blameless part isn't sentiment. Blame produces concealment, and concealed incidents can't be learned from. Getting a team to that culture is a leadership job.
+
+</Question>
+
+## Q102. How do you decide what technical debt to pay down? [#q102]
+
+<Question id="q102">
+
+**Answer.** Debt is not a single thing. I'd separate:
+
+- **Deliberate and prudent** — "we shipped without the retry logic to hit the deadline, ticket exists". Legitimate; pay it deliberately.
+- **Deliberate and reckless** — "we don't have time for tests". Cultural problem, not a technical one.
+- **Accidental** — we learned something and now the design is wrong. Normal and unavoidable.
+- **Bit rot** — dependencies, deprecated APIs, unsupported versions. Non-negotiable; this becomes a security problem.
+
+Prioritise by **interest rate**, not by how ugly it is: which debt is slowing you down or creating risk *right now*? A hideous module nobody touches costs nothing. A moderately bad module that every feature passes through costs continuously.
+
+<FollowUp q="How do you get time for it?">
+
+Attach it to feature work where possible — "make the change easy, then make the easy change" (Q26). For larger items, quantify the cost in the business's terms: "this adds three days to every payment-related feature, and we ship six a quarter." A number changes the conversation; "the code is bad" does not. And an error budget (Q99) gives you a pre-agreed mechanism for the reliability subset.
+
+</FollowUp>
+
+</Question>
+
+## Q103. How do you introduce architectural change to a team that disagrees? [#q103]
+
+<Question id="q103">
+
+**Answer.** Start by assuming they may be right — they usually have context you don't, especially if you're new. Then:
+
+1. **Establish the problem before the solution.** Agreement on "cross-service changes take three weeks" is much easier than agreement on "we should merge these services", and it's the necessary first step.
+2. **Bring evidence.** Cycle time, incident frequency, the number of files a typical change touches. Data moves arguments that opinion doesn't.
+3. **Make it small and reversible.** Propose a trial on one service, with agreed criteria for judging it. It's far easier to agree to an experiment than to a commitment.
+4. **Write the ADR** (Q57) including the objections. People are much more willing to disagree-and-commit when their objection is recorded rather than dismissed.
+5. **Separate reversible from irreversible.** For reversible decisions, don't spend political capital — let it go and revisit with evidence. Save it for the one-way doors.
+
+**Why it matters.** Being right is not sufficient; a lead's effectiveness is measured by change that actually happens. Someone who wins arguments and changes nothing has failed at the job.
+
+</Question>
+
+## Q104. How do you make architectural decisions with incomplete information? [#q104]
+
+<Question id="q104">
+
+**Answer.** Classify the decision first. **Two-way doors** (reversible) should be decided fast and cheaply — the cost of deciding slowly exceeds the cost of being wrong. **One-way doors** (data model, service boundaries, public API contracts, choice of persistence, anything with a migration cost) deserve real analysis, written options, and wider input.
+
+For the hard ones: state explicitly what you'd need to know to be confident, and whether you can cheaply find out — a spike, a load test, a prototype against real data. Often a day of investigation removes the uncertainty entirely, and people skip it because deciding feels like progress.
+
+Then decide, write down the assumptions and what would change your mind, and set a review trigger: "revisit if write throughput exceeds X" turns a decision into a hypothesis with a test.
+
+**Why it matters.** Waiting for complete information is itself a decision, usually a bad one. The senior skill is calibrating effort to reversibility.
+
+</Question>
+
+## Q105. How do you grow the engineers around you? [#q105]
+
+<Question id="q105">
+
+**Answer.** Concretely rather than aspirationally:
+
+- **Pair on hard problems** rather than taking them over. The instinct to just fix it is the enemy here.
+- **Delegate work slightly beyond someone's current level**, with a safety net and a check-in, rather than delegating only what's safe. Growth happens at the edge of competence.
+- **Explain reasoning in review**, not just conclusions. "Change this to X" teaches nothing; "X because when we change Y later, this version means touching one file instead of nine" teaches a way of thinking.
+- **Make your own uncertainty visible.** Juniors see seniors' polished conclusions and conclude that seniors don't struggle. Saying "I don't know, here's how I'd find out" is one of the most useful things you can model.
+- **Write things down** — ADRs, runbooks, design docs — so knowledge isn't only in conversations.
+
+The measure: is the team's output less dependent on you over time? If you're the only person who can debug the reconciliation job, you've failed at the lead part of the role regardless of how well you debug it.
+
+</Question>
+
+## Q106. What's the difference between a senior engineer and a lead? [#q106]
+
+<Question id="q106">
+
+**Answer.** A senior engineer is accountable for their own work and its quality. A lead is accountable for the **system** and the **team's ability to change it** — which means much of the work is no longer typing.
+
+Concretely, the additions: setting and defending technical direction over a horizon longer than the current sprint; owning the codebase's conventions and the mechanisms that enforce them; making irreversible decisions with incomplete information and recording why; translating between business priorities and technical constraints in both directions; growing people; and being the person who says "we're not doing that" with reasons that survive scrutiny.
+
+The hardest adjustment is that your leverage is now indirect. A day spent unblocking four people produces more than a day spent writing your best code, and it feels far less productive.
+
+**Why it matters.** This question is often the last one asked, and it's checking whether you want the job or the title. The most honest answer includes what you'd find difficult about it.
+
+</Question>
+
+## Q107. Give me an architecture you'd defend for a mid-size payments platform, and its weakest point. [#q107]
+
+<Question id="q107">
+
+**Answer.** A modular monolith or a small number of services aligned to bounded contexts — payments, ledger, merchant, notifications — not twenty. PostgreSQL as the single system of record for money, with the ledger and idempotency keys in one transactional boundary. Kafka as the event backbone, fed by the outbox. Redis for hot reads and rate limiting, treated as disposable. Read models for merchant dashboards and search, rebuildable from events. Reconciliation jobs comparing every derived store back to the ledger.
+
+Hexagonal structure inside each service, so domain logic is testable without infrastructure. Contract tests between services. Progressive delivery with feature flags. SLOs on the authorisation path with an error budget.
+
+**The weakest point**, named before being asked: the single PostgreSQL primary is the write ceiling and the highest-risk failover in the system. It's the right call at this size — one place where money is correct, no distributed consensus in the critical path — but it means write capacity is bounded by one machine. The mitigation is knowing the current headroom, rehearsing failover on a schedule, and having a costed but unbuilt partitioning-by-merchant plan.
+
+**Why it matters.** Every architecture answer should end with what breaks first and what you're doing about it. Confidence without a named weakness reads as inexperience.
+
+</Question>
