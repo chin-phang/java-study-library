@@ -314,32 +314,35 @@ for f in glob.glob('content/docs/*/*.mdx'):
 
 **The `concept:` slug is the identity used by the whole graph.** `unlocks` and
 `prerequisites` reference these slugs, not page titles, so they are fixed here
-once rather than invented per page. Naming a slug that is not in this table is
-allowed — that is what "unlocks may name unwritten pages" means — but it says
-"this page is not planned", so prefer a slug from the table.
+rather than invented per page. This table is reconciled to the drafts in
+`_source/` — where a draft and this table disagreed, the draft won.
 
-**Foundational** (do these first — they unlock the most):
-
-| `concept:` | Page |
-|---|---|
-| `jmm` | The Java Memory Model — *written, reference implementation* |
-| `erasure` | Generics and type erasure |
-| `hashmap` | How HashMap actually works |
-| `jvm-memory` | The JVM's memory areas and what `-Xmx` doesn't bound |
-| `generational-gc` | Generational GC and why allocation is cheap |
-| `jit` | JIT compilation, inlining and deoptimisation |
-| `btree-selectivity` | B-trees, selectivity and why an index isn't used |
-| `mvcc` | MVCC and the cost of a row version |
-| `the-log` | The log: WAL, replication, and why Kafka and PostgreSQL share a shape |
-| `idempotency` | Idempotency and the three outcomes of a network call |
-| `bounded-contexts` | Bounded contexts and finding a boundary |
-| `hexagonal` | Dependency inversion and the hexagonal shape |
-
-**Core:**
+**Foundational** — all thirteen drafted in `_source/`. Only `jmm` is converted
+into `content/docs/concepts/`; the rest are raw material.
 
 | `concept:` | Page |
 |---|---|
-| `thread-pools` | Thread pools and Little's Law |
+| `jmm` | The Java Memory Model — *converted, reference implementation* |
+| `generics-erasure` | Generics and Type Erasure |
+| `hashmap` | How HashMap Actually Works |
+| `jvm-memory` | JVM Memory and What -Xmx Doesn't Bound |
+| `generational-gc` | Generational GC and Why Allocation Is Cheap |
+| `jit` | The JIT — Inlining, Speculation, and Why Benchmarks Lie |
+| `btrees-selectivity` | B-trees, Selectivity, and Why Your Index Isn't Used |
+| `mvcc` | MVCC and the Cost of a Row Version |
+| `the-log` | The Log — Why Kafka and PostgreSQL Are the Same Shape |
+| `idempotency` | Idempotency and the Third Outcome |
+| `bounded-contexts` | Bounded Contexts and Finding a Boundary |
+| `dependency-inversion` | Dependency Inversion and the Hexagonal Shape |
+| `thread-pools` | Thread Pools and Little's Law |
+
+**Core** — not drafted. Eight of these are already named by a foundational
+page's `unlocks`, so the graph reaches them: `query-planning`, `partitioning`,
+`escape-analysis`, `isolation-levels`, `virtual-threads`, `backpressure`, `cas`,
+`deadlock`.
+
+| `concept:` | Page |
+|---|---|
 | `virtual-threads` | Virtual threads: continuations, mounting, pinning |
 | `cas` | CAS, contention and lock-free structures |
 | `escape-analysis` | Escape analysis and when allocation disappears |
@@ -359,11 +362,26 @@ allowed — that is what "unlocks may name unwritten pages" means — but it say
 | `conways-law` | Conway's law and the inverse manoeuvre |
 | `microservices-org` | Why microservices are an organisational answer |
 
-**Specialist:** add as you hit them, with a slug, in a third table. Don't
-pre-plan the whole list.
+**Specialist** — 41 slugs, every one promised by a foundational page's
+`unlocks` and none of them written or planned. They are listed so the names are
+fixed and a later page cannot invent a second spelling; titles get decided when
+someone writes the page. Grouped by what promises them:
 
-Three of these titles contain a colon and must be quoted in YAML — see
-**Frontmatter gotchas**.
+- **`generics-erasure`** unlocks `collections-api-design`, `variance`, `reflection`, `serialisation-frameworks`
+- **`hashmap`** unlocks `concurrent-collections`, `equals-hashcode`, `collection-sizing`, `caching`
+- **`jvm-memory`** unlocks `gc-tuning`, `memory-leaks`, `off-heap-memory`, `classloader-leaks`
+- **`generational-gc`** unlocks `gc-tuning`, `latency-troubleshooting`, `memory-leaks`
+- **`jit`** unlocks `latency-troubleshooting`, `benchmarking`, `startup-optimisation`
+- **`btrees-selectivity`** unlocks `composite-indexes`, `covering-indexes`
+- **`mvcc`** unlocks `vacuum-and-bloat`, `long-transactions`, `replication-lag`, `write-skew`
+- **`the-log`** unlocks `replication`, `cdc-and-outbox`, `event-sourcing`, `kafka-internals`, `crash-recovery`
+- **`idempotency`** unlocks `retries-and-backoff`, `outbox-pattern`, `saga-pattern`, `exactly-once`, `reconciliation`
+- **`bounded-contexts`** unlocks `service-decomposition`, `anti-corruption-layer`, `modular-monolith`, `event-design`, `team-topologies`
+- **`dependency-inversion`** unlocks `anti-corruption-layer`, `modular-monolith`, `hexagonal-architecture`, `testing-strategy`
+- **`thread-pools`** unlocks `bulkheads`, `capacity-planning`, `cascading-failure`
+
+Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
+gotchas**.
 
 ## The leadership track
 
