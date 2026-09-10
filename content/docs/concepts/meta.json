@@ -1,5 +1,5 @@
 {
   "title": "Concepts",
   "description": "Deep-study pages on the load-bearing ideas.",
-  "pages": ["jmm", "generics-erasure", "hashmap"]
+  "pages": ["jmm", "thread-pools", "generics-erasure", "hashmap"]
 }
