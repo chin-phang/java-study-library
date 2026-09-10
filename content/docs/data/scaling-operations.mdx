@@ -1,0 +1,277 @@
+---
+title: Scaling, Replication & Operations
+description: Replicas, pooling, partitioning, sharding, backups, migrations, multi-tenancy.
+questionRange: Q46–Q60
+tags: [data, scaling, operations]
+---
+
+## Q46. When do read replicas help, and when are they the wrong answer? [#q46]
+
+<Question id="q46">
+
+**Answer.** They help when your workload is read-dominated, the reads tolerate staleness, and the primary is CPU or I/O bound on reads. They're an easy, low-risk scaling step.
+
+They don't help when: you're **write**-bound (every replica applies every write, so replicas add no write capacity and actually add load to the primary for WAL shipping); your reads need to be fresh (Q40); or your problem is a single bad query, in which case you've just distributed the bad query. They also introduce real complexity — routing logic, lag monitoring, failover semantics, and a whole class of "works on primary, fails on replica" bugs.
+
+<FollowUp q="What scales writes?">
+
+In order of preference: reduce write volume (batching, avoiding write amplification from excess indexes, moving non-durable counters to Redis); vertical scaling (still remarkably far — a modern box handles a lot); partitioning to reduce index depth and enable parallel maintenance; separating workloads into different databases by bounded context; and only then sharding, which is a large permanent complexity commitment.
+
+</FollowUp>
+
+</Question>
+
+## Q47. Why do you need a connection pooler in front of PostgreSQL specifically? [#q47]
+
+<Question id="q47">
+
+**Answer.** PostgreSQL uses a process per connection, each with its own memory (`work_mem` allocations are per operation, per connection) and a fixed cost in the process table and in snapshot computation. A thousand idle connections consume gigabytes and slow down every transaction's snapshot handling. That's why `max_connections` in the low hundreds is normal, and why the useful concurrency is closer to a few times the core count.
+
+In a microservices world, ten services × ten pods × a 20-connection pool = 2,000 connections against a 200-connection limit. PgBouncer sits in between and multiplexes.
+
+**Pooling modes matter:**
+- **Session** — a client holds a server connection for its whole session. Safe, but barely multiplexes.
+- **Transaction** — a server connection is assigned per transaction. This is where the big win is (thousands of clients on tens of connections), but it breaks anything relying on session state: `SET`, session-level advisory locks, `LISTEN/NOTIFY`, `WITH HOLD` cursors, and server-side prepared statements (PgBouncer 1.21+ handles prepared statements, but check your version).
+- **Statement** — per statement; no multi-statement transactions. Rarely appropriate.
+
+<FollowUp q="Do you still need an application-side pool?">
+
+Yes — HikariCP still avoids TCP connect and auth per query, and it's where you enforce your service's own concurrency limit. The two layers do different jobs: Hikari bounds *your* concurrency, PgBouncer bounds the *database's*.
+
+</FollowUp>
+
+</Question>
+
+## Q48. Explain table partitioning and when it's worth it. [#q48]
+
+<Question id="q48">
+
+**Answer.** Declarative partitioning splits one logical table into physical partitions by range (time — the most common), list (region, tenant), or hash (even distribution). The planner does **partition pruning**, skipping partitions that can't match the query's predicate.
+
+The real benefits are mostly *operational*, not query speed:
+- **Cheap data lifecycle.** `DROP TABLE payments_2024_01` is instant; `DELETE FROM payments WHERE created_at < ...` on 200 million rows generates enormous WAL, bloat, and vacuum work. This alone justifies partitioning for time-series data.
+- **Smaller indexes per partition**, so the hot partition's index stays in memory.
+- **Parallel maintenance** — vacuum, analyze and reindex per partition.
+- Query pruning, when the partition key is in the predicate.
+
+The costs: queries *without* the partition key touch every partition; unique constraints must include the partition key (a real modelling constraint); foreign keys to partitioned tables are limited; partition management must be automated (`pg_partman` or a scheduled job creating future partitions — a forgotten partition means insert failures at midnight); and cross-partition joins can get worse.
+
+<FollowUp q="How many partitions is too many?">
+
+Planning time grows with partition count. Modern PostgreSQL handles thousands, but I'd aim for tens to low hundreds — daily partitions for two years is 730, which is fine; hourly for two years is not. Match the granularity to your retention and query patterns.
+
+</FollowUp>
+
+</Question>
+
+## Q49. How do you shard, and what's the hardest part? [#q49]
+
+<Question id="q49">
+
+**Answer.** Choose a shard key that (a) appears in almost every query so you can route to one shard, (b) distributes evenly, and (c) keeps data that's accessed together on the same shard. In a payments system that's usually `merchant_id` or `customer_id`, not `payment_id`, because the access pattern is "all of this merchant's activity".
+
+The hardest parts, in order:
+1. **Cross-shard queries and transactions.** Anything spanning shards needs scatter-gather (slow, and latency = the slowest shard) and loses atomicity. You design the schema so this is rare, and accept eventual consistency where it isn't.
+2. **Resharding.** Modulo-based sharding requires moving nearly all data when you add a shard. Use **consistent hashing** or, better, many **virtual buckets** (e.g. 1024 logical shards mapped to N physical ones) so rebalancing moves only a fraction, and adding capacity is a mapping change plus a data move.
+3. **Hot shards.** One enormous merchant lands on one shard. You need per-tenant isolation or the ability to split a shard.
+4. **Operations at N×.** Schema migrations, backups, monitoring and failover now happen N times, and partially-failed migrations across shards are their own genre of incident.
+
+**Why it matters.** The senior answer includes "and I'd exhaust everything else first" — partitioning, read replicas, splitting by bounded context, caching, and vertical scaling. Sharding is permanent.
+
+</Question>
+
+## Q50. Design a backup and recovery strategy. [#q50]
+
+<Question id="q50">
+
+**Answer.** Start from RPO and RTO, agreed with the business, because they determine everything else.
+
+Layers: periodic **base backups** (`pg_basebackup`, pgBackRest, WAL-G) plus continuous **WAL archiving**, which together give **point-in-time recovery** — you can restore to any second, which is what you need when the incident is "a bad migration deleted a column at 14:32" rather than a hardware failure. Replicas are *not* backups: they replicate your mistake instantly.
+
+Then the parts people skip:
+- **Test restores on a schedule**, automatically, and measure the restore time. An untested backup is a belief, not a backup. Most backup failures are discovered during the first real restore.
+- **Offsite and immutable copies** — ransomware and a compromised account both delete your backups if they can reach them. Object-lock / write-once storage.
+- **Retention that matches compliance** — financial records often require years.
+- **Logical dumps** occasionally too, because a physical backup can only be restored to a compatible version.
+
+<FollowUp q="RPO 0 — how?">
+
+Synchronous replication to at least one node in another failure domain, plus WAL archiving. And be honest that RPO 0 with a single-region failure tolerance costs latency on every commit; the business needs to see that trade.
+
+</FollowUp>
+
+</Question>
+
+## Q51. What database metrics do you alert on? [#q51]
+
+<Question id="q51">
+
+**Answer.** Split into saturation, latency, and correctness-adjacent:
+
+- **Connections used / max** — the leading indicator of an application-side stall.
+- **Query latency p95/p99 by statement class**, plus the count of queries over a threshold.
+- **Replication lag** in bytes and seconds, per replica.
+- **Longest transaction age and oldest `idle in transaction`** — leading indicator of bloat and lock storms.
+- **Cache hit ratio** and buffer reads — a sudden drop means the working set no longer fits.
+- **Dead tuples / bloat estimate per table, and `last_autovacuum`.**
+- **Transaction ID age** against wraparound thresholds.
+- **Replication slot lag** (unconsumed WAL) and disk free on the WAL volume — this pair kills databases.
+- **Deadlock rate and lock wait counts.**
+- **Checkpoint frequency and whether checkpoints are "requested" rather than "timed"** — requested means `max_wal_size` is too small.
+
+**Why it matters.** Naming the *leading* indicators (oldest transaction, slot lag, connections) rather than only lagging ones (disk full, CPU) is the senior signal.
+
+</Question>
+
+## Q52. How do you load 500 million rows without taking down production? [#q52]
+
+<Question id="q52">
+
+**Answer.** Never one big `INSERT` loop. The approach:
+
+- Use the bulk path — `COPY` (PostgreSQL) or `LOAD DATA INFILE` (MySQL), which bypass most per-row overhead. Orders of magnitude faster than `INSERT`.
+- **Drop or disable indexes and constraints during the load, rebuild after** — building an index once over the finished data is much cheaper than maintaining it per row. Rebuild with `CONCURRENTLY` if the table is live.
+- Load into a **staging table**, validate, then swap or merge. For a partitioned table, load into a detached partition and `ATTACH` it — an instant, atomic publish.
+- Chunk into transactions of manageable size, with a resumable checkpoint so a failure doesn't restart from zero.
+- Throttle. The load competes with production for I/O and buffer cache; pausing between batches keeps p99 sane. Watch replication lag while loading and back off when it grows — a bulk load is the classic cause of a replica falling hours behind.
+- `ANALYZE` afterwards, or every query against the new data gets a plan based on stale statistics.
+
+</Question>
+
+## Q53. Multi-tenancy: database per tenant, schema per tenant, or a tenant column? [#q53]
+
+<Question id="q53">
+
+**Answer.**
+- **Shared tables with a `tenant_id` column** — cheapest to operate, one migration, best resource pooling, easiest cross-tenant analytics. Risks: a single missing `WHERE tenant_id = ?` is a data breach, noisy neighbours affect everyone, and per-tenant restore is hard (you're restoring a subset of rows). Mitigate with row-level security enforced by the database rather than by discipline, and with a repository layer that makes it impossible to write an unscoped query.
+- **Schema per tenant** — better isolation and per-tenant restore, but migrations run N times (and partially fail at tenant 340 of 800), and thousands of schemas strain the catalog.
+- **Database (or cluster) per tenant** — strongest isolation, per-tenant backup/restore/encryption keys/residency, easy to move a big tenant to bigger hardware. Highest operational cost and worst resource efficiency at small tenant sizes.
+
+**My default:** shared tables with RLS for a self-serve product, and database-per-tenant for a small number of large enterprise customers with regulatory requirements. Many mature products run both tiers.
+
+<FollowUp q="What forces the decision in fintech?">
+
+Data residency and regulatory isolation requirements — a Malaysian regulator requiring data in-country, or a bank client requiring their own encryption keys — usually push at least the enterprise tier to separate databases, regardless of what's technically elegant.
+
+</FollowUp>
+
+</Question>
+
+## Q54. When would you choose a non-relational store? [#q54]
+
+<Question id="q54">
+
+**Answer.** Match the store to the access pattern:
+- **Document (MongoDB)** — self-contained aggregates read and written whole, genuinely variable schemas. Weak fit when you need cross-document joins or multi-document transactional invariants.
+- **Wide-column (Cassandra, ScyllaDB)** — enormous write throughput, linear scale, multi-DC active-active, and queries known in advance (you model tables per query). Weak fit for ad-hoc queries and anything needing strong consistency or joins.
+- **Key-value (DynamoDB, Redis)** — point lookups by key at scale.
+- **Search (Elasticsearch/OpenSearch)** — relevance ranking, full-text, faceting. Not a system of record; treat it as a derived index you can rebuild.
+- **Time series (TimescaleDB, InfluxDB, Prometheus)** — append-heavy, time-ordered, downsampling and retention built in.
+- **Graph (Neo4j)** — deep multi-hop traversals; fraud rings and ownership networks are the fintech case, where a 5-hop query in SQL is a nightmare.
+
+**Why it matters.** The honest senior position is that PostgreSQL covers a surprising amount of this (JSONB, full-text, PostGIS, TimescaleDB, `pgvector`) and "boring, one system, well understood" beats a polyglot estate you can't staff. Add a specialised store when a specific access pattern is genuinely painful *and* you can articulate how it stays in sync.
+
+</Question>
+
+## Q55. How do you keep a search index or cache in sync with the database? [#q55]
+
+<Question id="q55">
+
+**Answer.** Never dual-write from the application — that's the same dual-write problem as messaging (Q122), and it silently diverges. Options:
+
+1. **Outbox + async projector** — the write transaction records an event; a consumer updates the index. Atomic with the write, at-least-once delivery, idempotent apply.
+2. **CDC** — Debezium tails the log and drives the projector. No application change, but couples the projection to the physical schema.
+3. **Periodic full rebuild** — the safety net for both. Any derived store must be rebuildable from the source of truth, and you should exercise that path regularly, not just in a crisis.
+
+Then: version each document with the source row's version or LSN so out-of-order updates don't overwrite newer state, and monitor projection lag as a first-class metric.
+
+**Why it matters.** The rule I'd state: derived stores are *disposable*. If you can't rebuild the search index from PostgreSQL in an afternoon, it has become a system of record by accident, and you have a data loss problem you haven't discovered yet.
+
+</Question>
+
+## Q56. What's your approach to database schema migrations in CI/CD? [#q56]
+
+<Question id="q56">
+
+**Answer.** Versioned, immutable, checked-in migration files (Flyway/Liquibase), applied by a dedicated job rather than by every application replica at startup — otherwise ten pods race on the same lock and a migration failure becomes a rolling-restart failure.
+
+Rules I enforce in review:
+- Every migration must be backward compatible with the currently deployed application version, because both run simultaneously during a rolling deploy. Expand/contract in separate releases.
+- No `ALTER` that takes a long exclusive lock without a plan — check the specific engine and version behaviour, use `CREATE INDEX CONCURRENTLY`, and set a `lock_timeout` so a blocked migration fails fast rather than queueing every query behind it.
+- Migrations are tested against a production-sized copy and *timed*, so nobody is surprised by a 40-minute lock.
+- Data backfills are separate from schema changes, chunked, resumable and idempotent.
+- Never edit an applied migration; add a new one.
+
+<FollowUp q="What's the `lock_timeout` trick?">
+
+A DDL statement waiting for a lock queues *behind* it every subsequent query on that table, including reads — so one blocked `ALTER` can take down the whole service in seconds. Setting `lock_timeout = '3s'` (and retrying in a loop) means the migration gives up instead of forming a queue. This is one of the highest-value operational details in PostgreSQL.
+
+</FollowUp>
+
+</Question>
+
+## Q57. How do you handle GDPR/PDPA erasure in a system with backups, replicas, caches and a warehouse? [#q57]
+
+<Question id="q57">
+
+**Answer.** Deletion in a distributed data estate is a design problem, not a `DELETE` statement. The practical patterns:
+
+- **Crypto-shredding** — encrypt each subject's personal data with a per-subject key; erasure means destroying the key, which renders every copy — backups, warehouse, logs — unreadable without touching them. This is the only approach that scales to immutable backups.
+- **Centralise PII** in one service/table with references elsewhere, so there's one place to erase rather than forty.
+- **Pseudonymise in derived stores** — the warehouse and event stream carry a subject ID, not a name; erasure of the mapping is sufficient.
+- **Retention policies with automated expiry** in every store, including logs and message queues (Kafka topics carrying PII need a retention and compaction story).
+- **Document the exceptions** — financial records often have a legal retention obligation that overrides an erasure request, and that conflict needs a documented, defensible position rather than an ad hoc decision.
+
+**Why it matters.** In fintech this is a compliance requirement with real penalties, and "we'll delete the row" is an answer that fails the first audit that asks about the seven-year backup.
+
+</Question>
+
+## Q58. How do you decide between fixing the query, adding an index, caching it, or scaling the hardware? [#q58]
+
+<Question id="q58">
+
+**Answer.** In that order, roughly, because they differ in cost and permanence:
+
+1. **Fix the query or the access pattern.** Free at runtime, removes the problem. Often it's an N+1, a missing predicate, or fetching 200 columns to display 3.
+2. **Index.** Cheap, targeted, but costs writes forever — so I want to see the query volume justify it.
+3. **Cache.** Effective but introduces a consistency and invalidation problem, plus a new failure mode (what happens when Redis is down?). Never cache to paper over a query you haven't understood — you'll cache the wrong thing and the miss path will still fall over.
+4. **Scale hardware.** Fastest to deploy, buys time, doesn't remove the problem, and has a ceiling. Legitimate as a deliberate stopgap while you do 1–3; illegitimate as a strategy.
+5. **Architecture** — partitioning, CQRS, sharding. Highest cost and permanence.
+
+**Why it matters.** The ordering itself is the answer. Candidates who jump to "add Redis" or "shard it" are signalling they'd add complexity before understanding.
+
+</Question>
+
+## Q59. What's the difference between a materialised view and a summary table you maintain yourself? [#q59]
+
+<Question id="q59">
+
+**Answer.** A materialised view is a stored query result the database refreshes on command — `REFRESH MATERIALIZED VIEW CONCURRENTLY` keeps it readable during refresh (at the cost of needing a unique index and being slower). It's declarative and can't drift from its definition, but PostgreSQL has no incremental refresh, so a full refresh over a huge base table is expensive and the data is only as fresh as the last refresh.
+
+A hand-maintained summary table is updated incrementally — by trigger, by the application in the same transaction, or by a stream consumer. Always fresh (or fresh to a known lag), cheap per update, but it *can* drift, so it needs a reconciliation job that recomputes and compares.
+
+**My rule:** materialised views for reporting that tolerates hourly staleness; incremental summary tables plus reconciliation for anything user-facing or financial. And whichever you choose, the recompute-from-source path must exist and be tested.
+
+</Question>
+
+## Q60. Design the data layer for a payment service handling 5,000 transactions per second. [#q60]
+
+<Question id="q60">
+
+**Answer.** I'd start by decomposing by access pattern rather than reaching for a single store.
+
+**Write path:** the authoritative ledger in PostgreSQL, append-only entries, partitioned by month, with the transaction and its outbox row committed together. 5,000 TPS of small inserts is well within a single well-tuned primary — inserts don't contend, there's no hot-row update if balances are derived, and the index set is kept minimal. Synchronous replication to a second AZ for RPO 0.
+
+**Idempotency:** a keyed table with a unique constraint, checked in the same transaction (Q121 in the Java bank).
+
+**Balances:** derived, with a maintained per-account materialised balance updated in the same transaction, sharded for any account that becomes hot, and a nightly reconciliation recomputing from entries.
+
+**Read path:** replicas for merchant dashboards; Redis for hot lookups (merchant config, fee schedules, rate limits, fraud counters) with explicit invalidation; Elasticsearch for transaction search, fed from the outbox.
+
+**Async:** Kafka fed by the outbox, keyed by account for ordering, driving notifications, the warehouse, fraud scoring and reconciliation.
+
+**What I'd instrument from day one:** p99 write latency, replication lag, connection pool saturation, outbox lag, unreconciled entry count and age.
+
+**Why it matters.** The strongest version of this answer is unglamorous: one relational database doing the money, everything else derived and disposable. Reaching for Cassandra or a sharded estate at 5,000 TPS is a signal you haven't measured what one machine does.
+
+</Question>
