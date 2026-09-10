@@ -1,0 +1,214 @@
+---
+title: Remaining Patterns & Topics
+description: Remaining GoF, Unit of Work, Result types, SOA, serverless, chaos, cost, onboarding.
+questionRange: Q108–Q120
+tags: [design, patterns, practice]
+---
+
+## Q108. Cover the GoF patterns we haven't discussed — briefly, and say which still matter. [#q108]
+
+<Question id="q108">
+
+**Answer.** Grouped by how often they still earn their place:
+
+**Still genuinely useful:**
+- **Composite** — treat individual objects and compositions uniformly through one interface. Real uses: UI trees, a nested validation rule set, an org hierarchy, a composite fee structure where a "bundle" fee is the sum of its parts. The uniform interface is what makes recursion over the structure clean.
+- **Flyweight** — share immutable intrinsic state across many instances to save memory. `Integer.valueOf`'s cache and `String` interning are flyweights. Relevant when you have millions of objects with a small set of distinct values; irrelevant otherwise.
+- **Mediator** — centralise communication between components that would otherwise all know each other, turning N² relationships into N. An orchestrator (Q60) is a mediator at service scale.
+
+**Mostly absorbed by the language or a framework:**
+- **Prototype** — clone an existing instance rather than constructing. Largely superseded by copy constructors and records with `with`-style copies; `Cloneable` is broken anyway.
+- **Iterator** — `for-each` and `Stream`. You implement `Iterable`, not the pattern.
+- **Bridge** — separate an abstraction from its implementation so both vary independently. In practice this is what DIP plus composition already gives you; the explicit two-hierarchy version is rare.
+- **Memento** — capture and restore state. Realised in practice as event sourcing, snapshots, or database savepoints rather than as a class.
+- **Interpreter** — building a language. If you genuinely need one, use a parser generator.
+
+**Why it matters.** Being able to triage the catalogue — which patterns are still design tools versus which were workarounds for missing language features — is a better signal than reciting all 23.
+
+</Question>
+
+## Q109. What is the Unit of Work pattern, and where have you already used it? [#q109]
+
+<Question id="q109">
+
+**Answer.** It tracks all objects affected by a business transaction, works out what changed, and writes them out in one coordinated commit — resolving ordering and consistency in the process.
+
+You've used it without naming it: JPA's persistence context is a Unit of Work. It tracks managed entities, dirty-checks them at flush, orders the resulting statements by type, and commits together. That's also why Q120 in the data bank matters — the ordering isn't yours, and the delete-then-insert case fails as a result.
+
+Implementing one yourself is rare and usually a sign you're building an ORM. What's worth taking from it is the *concept*: a business operation should have one commit point, and the code shouldn't scatter individual saves through the call chain. Explicit `repository.save()` calls sprinkled across a service are a symptom of not having a unit of work boundary.
+
+</Question>
+
+## Q110. Should you use a Result/Either type instead of exceptions? [#q110]
+
+<Question id="q110">
+
+**Answer.** It depends on whether the failure is *expected*.
+
+For genuinely exceptional conditions — a database is down, a bug — exceptions are right: they propagate automatically, they carry a stack trace, and forgetting to handle them is usually correct behaviour.
+
+For *expected* domain outcomes — insufficient funds, card declined, validation failed — a `Result<T, Error>` or a sealed `sealed interface AuthResult permits Approved, Declined, Requires3DS` is better. The outcome is part of the method's contract rather than hidden in a throws clause, exhaustive pattern matching forces the caller to handle every case, and you don't pay for stack trace capture on a path that fires thousands of times a second.
+
+```java
+sealed interface AuthResult permits Approved, Declined, Requires3DS {}
+// caller cannot forget the Requires3DS branch — the compiler checks
+```
+
+**Why it matters.** The distinction is "is this a failure, or is this one of the answers?" A declined card is an answer. Modelling it as an exception makes the normal path look exceptional and pushes control flow into catch blocks.
+
+<FollowUp q="What's the downside?">
+
+It's viral — a Result type propagates up the call stack and every caller must unwrap it, which is verbose without language support for monadic composition. In practice I'd use it at domain boundaries where the outcomes matter and keep exceptions for genuine faults, rather than converting the whole codebase.
+
+</FollowUp>
+
+</Question>
+
+## Q111. SOA versus microservices — is there a real difference? [#q111]
+
+<Question id="q111">
+
+**Answer.** Both decompose systems into services. The differences are of degree and of era:
+
+- **SOA** typically had an **enterprise service bus** with routing, transformation and orchestration logic centralised in the middleware — "smart pipes, dumb endpoints". Microservices invert that: "dumb pipes, smart endpoints", with the broker doing nothing but delivery.
+- **SOA** often shared a database and a canonical enterprise data model. Microservices insist each service owns its data (Q88) and rejects the canonical model (Q47).
+- **SOA** services were often large and organisationally centralised, with a governance board. Microservices are team-owned and decentralised.
+- SOA predated the operational tooling — containers, CI/CD, observability — that makes many small services practical.
+
+**Why it matters.** The ESB is the specific lesson: centralising integration logic creates a bottleneck that every team must queue for, and a single point of failure with business rules in it. That's the same trap as putting logic in an API gateway (Q77). Being able to name it means you'll recognise it when someone proposes it again with a new name.
+
+</Question>
+
+## Q112. Where does serverless fit? [#q112]
+
+<Question id="q112">
+
+**Answer.** Good fit: spiky or unpredictable traffic where you'd otherwise pay for idle capacity; event-driven glue (react to a file upload, a queue message, a schedule); genuinely stateless request/response work; and small teams who want to minimise operational surface.
+
+Poor fit: sustained high throughput (it becomes more expensive than instances); latency-sensitive paths where cold starts matter — the JVM is the worst case here, which is what SnapStart and native images address; long-running work; anything needing large in-memory state or connection pools, since each invocation may hold its own database connection and you exhaust the pool at scale.
+
+That last point is the practical killer for Java payment services: a thousand concurrent lambdas is a thousand potential connections against a database that wants twenty (Q47 in the data bank). The mitigation is a proxy layer, which adds back the infrastructure you were trying to avoid.
+
+**Why it matters.** Serverless is a deployment model, not an architecture. The design questions — boundaries, data ownership, consistency — are unchanged; the operational trade-offs are what shift.
+
+</Question>
+
+## Q113. What is chaos engineering and would you use it? [#q113]
+
+<Question id="q113">
+
+**Answer.** Deliberately injecting failure into a system to verify it behaves as designed — killing instances, adding latency, dropping a dependency, saturating a resource — with a hypothesis stated in advance and a blast radius you control.
+
+The value is that resilience mechanisms are only real if they've been exercised. A circuit breaker that has never opened in production is untested code on the most critical path you have. Failover that has never been performed is a hypothesis.
+
+I'd start conservatively: game days in a staging environment with production-like traffic, then scheduled failover drills in production during business hours with everyone watching, then automated experiments with automatic abort conditions. In a regulated payments environment, the governance conversation comes before the tooling one.
+
+**Why it matters.** The prerequisite is honest: you need good observability and a fast rollback before you can do this safely. Teams that adopt chaos engineering before they can see what's happening are just causing incidents.
+
+</Question>
+
+## Q114. How do you keep dependencies current across many services? [#q114]
+
+<Question id="q114">
+
+**Answer.** Automate the routine and centralise the decisions. Automated dependency PRs (Renovate/Dependabot) with grouped updates and auto-merge for patch versions where the test suite is trusted. A scheduled, non-negotiable slot for major upgrades — the framework major, the JDK major — because these never happen if they compete with features.
+
+Vulnerability scanning in CI with a policy that fails the build on new criticals, plus an SBOM per service so that when the next Log4Shell arrives you can answer "are we affected and where" in minutes rather than days. That question is the one that matters, and most organisations cannot answer it quickly.
+
+For consistency across services: a shared parent POM or version catalogue that pins versions, with services free to override deliberately. That gives you one place to bump a library across the estate without forcing lockstep deployment.
+
+**Why it matters.** In a microservices estate, dependency management is N times the work, and it's the cost people forget when counting the price of a new service (Q73).
+
+</Question>
+
+## Q115. How do you think about the cost of an architecture? [#q115]
+
+<Question id="q115">
+
+**Answer.** Three cost lines, and engineers usually only count the first:
+
+- **Infrastructure** — instances, storage, network egress (frequently the surprise), managed service fees, and the cost of redundancy and idle headroom.
+- **Operational** — on-call load, incident time, deployment effort, upgrade effort, monitoring. This scales with the number of moving parts, which is where microservices get expensive.
+- **Cognitive and organisational** — onboarding time, how long a change takes end to end, coordination overhead between teams.
+
+The last one dominates over a system's lifetime and is almost never measured. A design that saves 30% on compute but adds two days to every feature is a bad trade at any reasonable engineer cost.
+
+<FollowUp q="Where does the money actually go in a cloud payments platform?">
+
+Usually: over-provisioned compute for peak, cross-AZ data transfer (Kafka replication and consumer fan-out are big contributors — rack-aware fetch-from-closest-replica is a real saving), oversized managed databases, log volume, and forgotten non-production environments. Tagging by service and putting cost on a dashboard the team sees is what changes behaviour; a monthly bill nobody owns does not.
+
+</FollowUp>
+
+</Question>
+
+## Q116. What makes a good runbook? [#q116]
+
+<Question id="q116">
+
+**Answer.** Written for someone woken at 3am who did not build the system. That means: symptoms first (what the alert says, what the graphs look like), then the specific diagnostic commands with expected output, then the mitigation steps, then escalation with names.
+
+What makes them fail: written from the author's context ("check the usual dashboard"), never tested by anyone else, and never updated after the incident that proved them wrong. A runbook that hasn't been used in a drill is fiction.
+
+The best version is one where the diagnostic steps are links to pre-filtered dashboards and log queries rather than instructions to construct them. At 3am, cognitive load is the enemy.
+
+**Why it matters.** Runbooks are one of the highest-leverage artefacts a lead can insist on, because they convert individual knowledge into team capability — which is exactly the transition from senior to lead (Q106).
+
+</Question>
+
+## Q117. How do you onboard a new engineer onto a microservices codebase? [#q117]
+
+<Question id="q117">
+
+**Answer.** The hard part is that no single repository explains the system. So:
+
+- A **system-level map** — which services exist, what each owns, who owns it, and how a canonical request flows through them. One diagram, kept current, is worth more than fifty READMEs.
+- A **golden path** — a documented, working procedure for creating and deploying a trivial service, run end to end in the first week. Nothing teaches the platform faster than using it.
+- **A real task in week one**, small and shippable, with a pairing partner. Reading code without a goal doesn't produce understanding.
+- **ADRs** (Q57), so the strange decisions have explanations attached rather than looking like incompetence.
+- Explicitly naming **who to ask about what**, because in a distributed system the knowledge is distributed too.
+
+**Why it matters.** Onboarding time is a direct measure of architectural comprehensibility. If it takes three months, that's telling you something about the system, not about the hire.
+
+</Question>
+
+## Q118. What's your approach to code review standards across a team? [#q118]
+
+<Question id="q118">
+
+**Answer.** Automate everything that can be automated so review time goes to what humans are good at. Formatter and linter in the build (never a review comment about style). Static analysis for real defect classes. ArchUnit for boundary rules (Q56). Coverage as a floor, not a target.
+
+Then set expectations for the human part: correctness and edge cases first, then security and data handling, then design and whether this makes the codebase easier to change, then tests. Distinguish blocking concerns from suggestions explicitly. Ask questions rather than issue instructions when context might be missing. And if a review passes about ten comments, stop typing and have a conversation — that's a design disagreement, not a review.
+
+The standard I'd hold the team to: reviews within a day, because a fast adequate review beats a slow perfect one, and review latency is a major contributor to cycle time.
+
+</Question>
+
+## Q119. How do you decide whether to build, buy, or use open source? [#q119]
+
+<Question id="q119">
+
+**Answer.** Start from whether it's a **core, supporting, or generic subdomain** (Q52). Core domain — the thing that differentiates the business — you build, always. Generic subdomains — auth, payments infrastructure you're not differentiating on, email delivery, observability — you buy or adopt. Supporting subdomains are the judgement call.
+
+Then evaluate the non-obvious costs: for buy, vendor lock-in, data residency, the exit cost, and whether their SLA is compatible with yours. For open source, the maintenance burden is real — you own the upgrades, the CVEs, and the operational knowledge — so "free" software has a staffing cost. For build, the ongoing cost is forever and always exceeds the estimate.
+
+**Why it matters.** The failure mode is building generic capability because it's more interesting, and buying core capability because it looks like a shortcut. The second is worse: you've outsourced your differentiator.
+
+</Question>
+
+## Q120. If you joined a team with a struggling microservices architecture, what would you do in the first 90 days? [#q120]
+
+<Question id="q120">
+
+**Answer.** Diagnose before changing anything.
+
+**Weeks 1–4: understand.** Map the services, their dependencies and their owners. Read the last six months of incidents. Measure the things that matter: lead time from merge to production, deployment frequency, change failure rate, time to restore. Ask every engineer what slows them down most — they know, and the answers converge quickly.
+
+**Weeks 4–8: find the actual constraint.** Struggling microservices are usually one of a small number of things: boundaries in the wrong place producing shotgun surgery (Q65), missing platform capability so every deploy is manual, no observability so every incident is archaeology, or an organisational mismatch (Q69). These have very different fixes, and treating the wrong one is expensive.
+
+**Weeks 8–12: one visible improvement, plus a written plan.** Fix the thing with the best ratio of impact to risk — often deployment pipeline or tracing, because they compound. Then an ADR-backed plan for the structural work, with the evidence attached and a sequence that delivers value incrementally.
+
+**What I would not do:** propose merging services back in week two. It may well be right, but without evidence it reads as the new person dismissing everyone's work, and you'll spend credibility you need later.
+
+**Why it matters.** This question tests whether you lead with diagnosis or with opinions. The measurement step is the answer — and naming DORA-style metrics gives you a language the business already understands.
+
+</Question>
