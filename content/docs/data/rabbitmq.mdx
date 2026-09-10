@@ -1,0 +1,336 @@
+---
+title: RabbitMQ
+description: AMQP model, acknowledgements and prefetch, dead-letter retries, quorum queues, ordering.
+questionRange: Q86–Q105
+tags: [data, rabbitmq, messaging]
+---
+
+## Q86. Explain the AMQP model. [#q86]
+
+<Question id="q86">
+
+**Answer.** Publishers never publish to queues — they publish to an **exchange** with a **routing key**. The exchange applies its type's rules against its **bindings** to decide which **queues** receive a copy. Consumers subscribe to queues. That indirection is the point: publishers know nothing about who consumes, and you can add or remove consumers by changing bindings without touching the producer.
+
+The default exchange (`""`) is a direct exchange with an implicit binding from every queue to its own name, which is why `basicPublish("", "my-queue", msg)` appears to publish straight to a queue. Convenient, and a habit that hides the model from people until they need routing.
+
+A **connection** is a TCP connection; **channels** are lightweight multiplexed sessions within it. Open one connection per process (or a small pool) and a channel per thread — never a connection per message, and never share a channel across threads.
+
+</Question>
+
+## Q87. Compare the exchange types. [#q87]
+
+<Question id="q87">
+
+**Answer.**
+- **Direct** — routes when the routing key matches the binding key exactly. Point-to-point and simple round-robin work distribution.
+- **Fanout** — copies to every bound queue, ignoring the routing key. Broadcast: cache invalidation, notifying every service of an event.
+- **Topic** — pattern matching on dot-separated routing keys, with `*` (one word) and `#` (zero or more words). `payment.authorised.MY` can be consumed by bindings `payment.#`, `payment.*.MY`, or `#`. This is the workhorse for event-driven systems and the one I'd default to, because it leaves room to add consumers with narrower interests later.
+- **Headers** — routes on header key/value matching with `x-match: any|all`, ignoring the routing key. Useful when routing depends on multiple independent attributes; slower and rarer.
+
+Plus the **consistent hash exchange** plugin, which distributes messages across queues by hashing the routing key — the way to get Kafka-like per-key ordering with parallel consumers in RabbitMQ.
+
+<FollowUp q="How do you design routing keys?">
+
+Hierarchical, most-general-first: `<domain>.<entity>.<event>.<qualifier>`, e.g. `payments.transaction.authorised.MY`. That lets subscribers bind at whatever granularity they need. Treat routing keys as a public interface — once consumers bind to them, changing the scheme is a breaking change.
+
+</FollowUp>
+
+</Question>
+
+## Q88. Explain acknowledgements and prefetch. [#q88]
+
+<Question id="q88">
+
+**Answer.** With `autoAck=false`, a message is delivered but stays "unacknowledged" until the consumer sends `basic.ack`. If the channel or connection dies first, the broker requeues it — that's the at-least-once guarantee. `basic.nack`/`basic.reject` with `requeue=false` sends it to a dead-letter exchange if configured, or drops it.
+
+**Prefetch** (`basic.qos`) caps how many unacknowledged messages a consumer may hold. It is the single most important RabbitMQ tuning knob:
+- Unlimited (the default) — the broker pushes everything it can to the first consumer, which buffers thousands of messages in memory, breaks fair distribution across consumers entirely, and loses them all back to a requeue if it dies.
+- Prefetch 1 — perfectly fair, but a round trip per message, so throughput suffers badly on fast consumers.
+- The sweet spot for typical work is 10–100, higher for very fast consumers on a high-latency network. The rough model: prefetch ≈ (processing rate × round-trip time), rounded up.
+
+<FollowUp q="When should you use `autoAck=true`?">
+
+Only when losing messages is genuinely acceptable — metrics, logs, live presence updates. It's "fire and forget" from the broker's side: it deletes the message on delivery, so a consumer crash loses everything in flight.
+
+</FollowUp>
+
+<FollowUp q="What if processing takes 10 minutes?">
+
+Long-running work holds an unacknowledged message the whole time. Check the consumer timeout (`consumer_timeout`, default 30 minutes in modern versions — exceeding it closes the channel and requeues, which produces a confusing infinite-retry loop). The better pattern is to ack quickly, record the job in a database, and process from there — the queue delivers work, the database tracks state.
+
+</FollowUp>
+
+</Question>
+
+## Q89. How do you guarantee a message isn't lost? [#q89]
+
+<Question id="q89">
+
+**Answer.** Four things must all be true, and people usually get three:
+
+1. **Durable exchange and queue** — survive broker restart.
+2. **Persistent messages** (`delivery_mode=2`) — written to disk. A persistent message on a non-durable queue is still lost.
+3. **Publisher confirms** — the broker acks the publish once it's safely handled. Without this, `basicPublish` is fire-and-forget over TCP: the broker can be down and your publish "succeeds".
+4. **Consumer acknowledgement after processing**, not before.
+
+And the honest caveat: even with all four, a single broker's disk can die. Real durability needs replication — **quorum queues** (Q94), which replicate via Raft across nodes.
+
+<FollowUp q="Publisher confirms vs transactions?">
+
+AMQP transactions (`tx.select`/`tx.commit`) are synchronous and roughly 250× slower — they're effectively unusable at volume. Confirms are asynchronous: you publish continuously and handle `ack`/`nack` callbacks, tracking outstanding sequence numbers so you can republish on `nack` or on connection loss. That's the pattern to use. Note confirms are per-channel and asynchronous, so a naive "publish then wait for confirm" per message throws away the benefit.
+
+</FollowUp>
+
+</Question>
+
+## Q90. Explain dead-letter exchanges and how you'd build a retry mechanism. [#q90]
+
+<Question id="q90">
+
+**Answer.** A queue with `x-dead-letter-exchange` set republishes messages to that exchange when they are: rejected/nacked with `requeue=false`, expired via TTL, or dropped because the queue hit `x-max-length`. The dead-lettered message carries an `x-death` header recording the reason, the original queue, and a count.
+
+The naive retry — nack with `requeue=true` — is a trap: the message goes straight back to the head of the queue and is redelivered immediately, in a tight loop, at full CPU, forever.
+
+The standard delayed-retry pattern is a **wait queue**: the main queue dead-letters to a retry queue that has a message TTL and *no consumer*, and whose own DLX points back at the main exchange. Messages sit there for the TTL, expire, and get routed back. Chain several with increasing TTLs (5s, 30s, 5m) for exponential backoff, count attempts from the `x-death` header, and after N attempts route to a real dead-letter queue for human inspection.
+
+Alternatively, the **delayed message exchange plugin** lets you set a per-message delay directly, which is much simpler if you can install plugins.
+
+<FollowUp q="What do you do with the DLQ?">
+
+It must be monitored and alerted on — an unwatched DLQ is a data loss mechanism with extra steps. Each message needs enough context to diagnose (original routing key, error, stack trace, trace ID) and a replay tool to re-publish after a fix. And a growing DLQ during an incident is often your best signal of what broke.
+
+</FollowUp>
+
+</Question>
+
+## Q91. Quorum queues vs classic mirrored queues. [#q91]
+
+<Question id="q91">
+
+**Answer.** Classic mirrored queues replicated by a leader/mirror protocol that had well-known failure modes: it could lose messages during partition recovery, synchronisation of a new mirror blocked the queue, and the semantics under partition were subtle. They're deprecated and removed in RabbitMQ 4.x.
+
+**Quorum queues** use Raft: a leader plus followers, with a majority required to commit. They give predictable, well-understood behaviour under partition and failure — a message confirmed to the publisher is on a majority of nodes. They also add poison-message handling via a delivery-limit (`x-delivery-limit`), which automatically dead-letters a message that's been redelivered too many times — a genuinely useful built-in.
+
+Trade-offs: they're always durable (no transient option), they use more memory and disk per message, they need an odd number of replicas (3 or 5), and they don't support some classic features — priorities historically, and they're less suited to very large backlogs than **streams**.
+
+**My default:** quorum queues for anything that matters, classic (non-mirrored) for genuinely transient work where loss is fine and throughput matters.
+
+<FollowUp q="What are RabbitMQ Streams?">
+
+An append-only, replicated log (3.9+) with non-destructive reads and offset tracking — Kafka-like semantics inside RabbitMQ. Use them when you need many consumers reading the same messages, replay, or very large backlogs that would be pathological for a queue. Queues are for work distribution; streams are for event history.
+
+</FollowUp>
+
+</Question>
+
+## Q92. What happens when a queue grows to millions of messages? [#q92]
+
+<Question id="q92">
+
+**Answer.** Classic queues historically kept message *metadata* (and, for non-lazy queues, bodies) in memory, so a large backlog drove memory up until the broker hit its high watermark and applied **flow control** — blocking publishers. That's the "RabbitMQ went unresponsive" incident: a slow consumer creates a backlog, memory fills, the broker blocks publishers, and the entire upstream system stalls.
+
+**Lazy queues** (and the queue-v2 behaviour that became the default in 3.12) page messages to disk aggressively, trading per-message latency for stable memory under deep backlogs. Quorum queues behave similarly by design.
+
+The real answer, though, is that a deep queue is a symptom, not a condition to be tuned around. Options: scale consumers, set `x-max-length` or `x-max-length-bytes` with a dead-letter policy so the queue has a bounded size and overflow is explicit, set a message TTL so stale work expires, and apply backpressure at the producer.
+
+**Why it matters.** RabbitMQ is a *queue* — designed for messages to pass through, not to accumulate. Kafka is a *log* — designed for retention. Using RabbitMQ as a buffer for a persistently under-provisioned consumer is using the wrong tool, and it fails in a way that takes your producers down with it.
+
+</Question>
+
+## Q93. What ordering guarantees does RabbitMQ give? [#q93]
+
+<Question id="q93">
+
+**Answer.** A single queue with a single consumer preserves publish order. Add a second consumer and ordering is gone — messages are distributed round-robin and processed concurrently. Requeues also break order: a nacked message goes back near the head and is redelivered after messages that were published later.
+
+To get per-entity ordering with parallelism, you need consistent routing to distinct queues: the **consistent hash exchange** plugin routes by hashing the routing key so all messages for one account land on one queue, each served by one consumer. That's the same partitioning idea as Kafka, implemented differently — and it's the answer when someone says "RabbitMQ can't do ordering".
+
+**Single Active Consumer** on a queue is the other tool: multiple consumers attach but only one receives messages at a time, with automatic failover. You get ordering plus hot standby, at the cost of no parallelism within a queue.
+
+<FollowUp q="Should you even require global ordering?">
+
+Almost never. Design consumers to be commutative or idempotent where possible, and require ordering only per entity. Requiring global ordering means one consumer, which means your throughput ceiling is one consumer's throughput forever.
+
+</FollowUp>
+
+</Question>
+
+## Q94. How do you scale consumers, and what limits it? [#q94]
+
+<Question id="q94">
+
+**Answer.** Competing consumers on one queue: add processes, each taking messages from the same queue. Prefetch tuning controls fairness. That scales until you hit one of these:
+
+- **The queue itself is a bottleneck** — a single queue is served by a single Erlang process on a single node, so there's a ceiling (tens of thousands of messages/sec, depending on size and durability). Beyond that, shard across multiple queues with a consistent hash exchange or the sharding plugin.
+- **The downstream is the bottleneck** — usually the database. Adding consumers just moves the queue from RabbitMQ to your connection pool, and often makes things worse through lock contention.
+- **Ordering requirements** — per-entity ordering caps parallelism at the number of queues/partitions.
+
+<FollowUp q="How do you decide the consumer count?">
+
+Little's Law again: concurrency = target throughput × per-message latency. 1,000 msg/s at 50 ms each needs 50 concurrent consumers. Then check that the downstream can take 50 concurrent operations — if the database pool is 20, you've built a queue in front of a queue.
+
+</FollowUp>
+
+</Question>
+
+## Q95. How does RabbitMQ handle network partitions? [#q95]
+
+<Question id="q95">
+
+**Answer.** A cluster is not partition-tolerant by default; you configure `cluster_partition_handling`:
+- **`ignore`** — do nothing. Both sides continue independently, and you get split brain with divergent queue state. Only acceptable when the network genuinely cannot partition.
+- **`pause_minority`** — nodes in the minority pause themselves (refusing clients) until the partition heals. This is the CP-ish choice and my default: it prevents split brain, at the cost of the minority being unavailable. Requires 3+ nodes to be meaningful.
+- **`autoheal`** — after the partition heals, a winning partition is chosen and the losers restart, discarding their state. Available, but it means accepting data loss on the losing side.
+
+Quorum queues handle this properly at the queue level via Raft — they simply can't commit without a majority — which is another argument for them.
+
+**Also worth knowing:** RabbitMQ clustering is designed for a low-latency LAN. Do not stretch a cluster across regions. Use **Federation** (loose, asynchronous linking of exchanges/queues across brokers, tolerant of latency and outages) or **Shovel** (a configured process that moves messages from one broker to another) for cross-datacentre topologies.
+
+</Question>
+
+## Q96. How do you make a RabbitMQ consumer idempotent? [#q96]
+
+<Question id="q96">
+
+**Answer.** You must, because delivery is at-least-once: a consumer that processes a message and dies before acking will see it again.
+
+Give each message a stable business identifier (not a broker-generated delivery tag, which changes on redelivery) in a header — a payment ID, or a producer-generated UUID. Then either:
+- **Make the operation naturally idempotent** — `UPDATE ... SET status='SETTLED' WHERE id=? AND status='PENDING'` is safe to run twice; a status check plus a separate write is not.
+- **Dedupe with a database constraint** — insert the message ID into a processed-messages table with a unique index *in the same transaction* as the side effect. A duplicate hits the constraint and is acked without reprocessing. The transaction is what makes this correct; a Redis `SETNX` check outside the transaction has a window.
+- **Version/state machine checks** — reject a message whose expected prior state doesn't match, which also protects against out-of-order delivery.
+
+Expire the dedupe table by time, and size that window comfortably larger than your maximum possible redelivery delay.
+
+<FollowUp q="What about the `redelivered` flag?">
+
+It's a hint, not a guarantee — it can be false on a genuine redelivery after a broker restart or failover. Never build correctness on it. Use it for logging and metrics only.
+
+</FollowUp>
+
+</Question>
+
+## Q97. What do you monitor in RabbitMQ? [#q97]
+
+<Question id="q97">
+
+**Answer.**
+- **Queue depth and its rate of change** per queue — depth alone is a lagging indicator; a rising slope is the alert you want.
+- **Publish rate vs deliver/ack rate** — the gap is your accumulating backlog.
+- **Unacknowledged message count** — high and static means consumers are stuck, not slow.
+- **Consumer count per queue** — an alert on zero consumers catches a whole class of silent failure.
+- **Message age / time in queue** — often more meaningful to the business than count ("payments are being confirmed 40 minutes late").
+- **Memory and disk alarms / flow-control state** — `blocked` or `blocking` connections mean publishers are being throttled, which will surface as latency in an apparently unrelated service.
+- **File descriptors and socket usage**, connection and channel counts (channel leaks are a common application bug).
+- **Cluster node status, partition events, and quorum queue leader/follower health.**
+- **DLQ depth**, always.
+
+</Question>
+
+## Q98. RabbitMQ or Kafka — how do you choose? [#q98]
+
+<Question id="q98">
+
+**Answer.** They solve different problems, and the choice usually comes down to whether messages are *work* or *facts*.
+
+**RabbitMQ** is a smart broker with dumb consumers: complex routing, per-message acknowledgement and redelivery, priorities, TTLs, delays, and a natural fit for task distribution and RPC-ish workflows. Messages are consumed and gone. Best when you need flexible routing, per-message lifecycle control, and low-latency work dispatch to a variable pool of workers.
+
+**Kafka** is a dumb broker with smart consumers: an ordered, partitioned, retained log. Consumers track their own offsets, so multiple independent consumer groups read the same data, replay is trivial, and throughput is enormous. Best for event streaming, event sourcing, stream processing, and any case where several teams want the same events and new consumers will appear later.
+
+**Concretely, in a payments platform:** Kafka for the event backbone (payment lifecycle events consumed by ledger, fraud, analytics, notifications, warehouse — each independently, with replay). RabbitMQ for command-style work with complex routing and per-message retry semantics — document generation, provider callbacks, scheduled retries.
+
+<FollowUp q="Isn't running both an anti-pattern?">
+
+It's a real cost, and I'd start with one. But the failure mode of forcing everything into one is worse: RabbitMQ used as an event store accumulates unbounded backlogs (Q92), and Kafka used for per-message delayed retry with priorities requires reimplementing a broker in your consumer. If you can only have one, Kafka is the more general foundation for an event-driven architecture — you can build work queues on it; you can't easily build a durable replayable log on RabbitMQ queues.
+
+</FollowUp>
+
+</Question>
+
+## Q99. What are the common RabbitMQ client mistakes? [#q99]
+
+<Question id="q99">
+
+**Answer.**
+- **A connection per message or per operation.** Connections are expensive (TCP + AMQP handshake + Erlang process). One long-lived connection per process, channels per thread.
+- **Sharing a channel across threads** — channels are not thread-safe; symptoms are corrupt frames and unexplained channel closures.
+- **Unlimited prefetch** (Q88).
+- **Not handling connection recovery.** Networks blip. Use the client's automatic recovery, and re-declare topology on recovery — but be aware that in-flight unacked messages are redelivered, so recovery and idempotency are the same problem.
+- **Declaring queues with different arguments than they were created with** — this throws a channel-level `PRECONDITION_FAILED` and closes the channel, which surfaces as a mysterious startup failure after someone changes a TTL in code.
+- **Ignoring publisher confirm nacks** or, more commonly, never enabling confirms.
+- **Doing the work inside the delivery callback** on the client's I/O thread, blocking the connection's heartbeat and causing the broker to drop the connection as unresponsive.
+
+</Question>
+
+## Q100. How do you do a zero-downtime change to a queue's configuration? [#q100]
+
+<Question id="q100">
+
+**Answer.** Most queue arguments (TTL, max length, dead-letter exchange) are immutable after declaration, so you cannot just change the code — a redeclare with different arguments fails.
+
+Two approaches. **Policies** are the clean one: RabbitMQ policies apply settings like TTL, max-length, DLX and queue type to queues matching a pattern, and they can be changed at runtime without redeclaring. Prefer policies over queue arguments for anything you might want to tune, precisely for this reason.
+
+Where the change genuinely requires a new queue (changing queue type from classic to quorum, for instance): declare the new queue, bind it alongside the old one so both receive new messages, start consumers on the new queue, let the old queue drain to zero, then unbind and delete it. Shovel can move a residual backlog. It's the same expand/contract discipline as a schema migration.
+
+</Question>
+
+## Q101. Design a reliable email/notification sending pipeline on RabbitMQ. [#q101]
+
+<Question id="q101">
+
+**Answer.** Topology: a topic exchange `notifications`, with routing keys like `notification.email.transactional`. Quorum queues per channel type (email, SMS, push) so a provider outage in one doesn't block others — a bulkhead. Each queue has a DLX pointing at a retry chain with 30s/5m/30m TTLs, and a terminal DLQ after ~5 attempts.
+
+Correctness: the producer writes the notification intent to the database and publishes from an outbox (so we never send an email for a transaction that rolled back, and never lose one that committed). Each message carries a notification ID; the consumer dedupes on it, since the provider will happily send twice. Ideally we pass the ID to the provider as *their* idempotency key too.
+
+Operations: rate limiting per provider (a Redis token bucket) because providers throttle and a 429 storm becomes a retry storm; a circuit breaker so a dead provider doesn't burn the retry budget; consumer prefetch tuned to the provider's latency; and metrics on queue age, DLQ depth, provider error rates and per-notification-type latency.
+
+The part people forget: **suppression and compliance** — unsubscribes, quiet hours, and a hard cap on how many times one recipient can be messaged, checked at send time rather than at enqueue time, because a message may sit in a retry queue for an hour before it's sent.
+
+</Question>
+
+## Q102. What is RabbitMQ flow control and when does it bite? [#q102]
+
+<Question id="q102">
+
+**Answer.** RabbitMQ applies backpressure at two levels. **Credit-based flow control** between internal Erlang processes throttles a publisher whose messages are being accepted faster than downstream processes can handle them — you see connections in state `flow`. That's healthy and self-regulating.
+
+**Resource alarms** are the blunt one: when memory exceeds `vm_memory_high_watermark` (default 0.4 of RAM) or free disk falls below `disk_free_limit`, the broker **blocks all publishing connections entirely** until the alarm clears. Publishers just stop, often with no error — they hang. To a service developer this looks like "the broker is down" while the management UI shows it running fine.
+
+**Why it matters.** The failure chain is: slow consumer → backlog → memory alarm → publishers blocked → producing services' thread pools fill → cascading outage in services that never talked to a consumer. Defences: bound queue lengths, monitor memory and alarm state, use lazy/quorum queues so backlogs live on disk, and make publishers handle `connection.blocked` notifications explicitly rather than hanging.
+
+</Question>
+
+## Q103. How do you handle a poison message? [#q103]
+
+<Question id="q103">
+
+**Answer.** A message that always fails — malformed payload, references a deleted entity, triggers a bug. Without protection it's redelivered forever, consuming a consumer slot and filling logs.
+
+Detection: count redeliveries. With quorum queues, `x-delivery-limit` does this for you and dead-letters automatically. Otherwise count from the `x-death` header across the retry chain, or maintain an attempts counter keyed by message ID.
+
+Handling: after N attempts, route to a DLQ with full diagnostic context, alert, and continue. Then classify — a permanent failure (bad schema, business rule violation) should fail fast on the first attempt rather than retrying five times, whereas a transient failure (downstream timeout) should retry. Distinguishing the two in the consumer's exception handling is what stops a DLQ from filling with things that would have succeeded and a retry queue from spinning on things that never will.
+
+</Question>
+
+## Q104. How would you implement priority handling? [#q104]
+
+<Question id="q104">
+
+**Answer.** Two options. Native **priority queues** (`x-max-priority`, typically 1–10; more priority levels cost CPU and memory) sort within the queue. The catch is that priority only applies to messages *in the queue* — anything already prefetched to a consumer is committed, so a high prefetch defeats priority entirely. With `x-max-priority` you generally want a low prefetch. Also, unacked messages and the interaction with lazy queues make priorities behave less predictably at depth.
+
+The alternative — usually better at scale — is **separate queues per priority** with consumers that poll high-priority first, or dedicated consumer pools per class. That's explicit, observable per class, and avoids starvation surprises. Add a rule so low priority isn't starved indefinitely (e.g. consume 9 high : 1 low, or promote by age).
+
+**Why it matters.** The senior instinct is to ask *why* there are priorities: often it's because one class of work is latency-sensitive and another is bulk, and the right answer is separate queues with separately-scaled consumers — a bulkhead — rather than a shared queue with a sort order.
+
+</Question>
+
+## Q105. Compare RabbitMQ's delivery guarantees to what your application actually needs. [#q105]
+
+<Question id="q105">
+
+**Answer.** RabbitMQ gives you at-most-once (autoAck) or at-least-once (manual ack, durable, confirms). It does not give exactly-once, and neither does anything else across a network boundary.
+
+So the design question is what your consumer does with a duplicate. For an idempotent operation (setting a status, upserting a projection), at-least-once is complete. For a non-idempotent one (sending money, sending an email, incrementing a counter), you must add deduplication or an idempotency key — the broker cannot solve it for you, because the duplicate arises from the acknowledgement gap that exists in any protocol.
+
+**Why it matters.** The clean formulation to give an interviewer: *the broker guarantees delivery; the consumer guarantees effect.* Every "exactly once" system is at-least-once delivery plus an idempotent or transactional consumer, whatever the marketing says.
+
+</Question>
