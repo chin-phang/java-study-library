@@ -1,0 +1,366 @@
+---
+title: Design Patterns
+description: The GoF patterns that still earn their place, what replaced the rest, anti-patterns.
+questionRange: Q27–Q45
+tags: [design, patterns]
+---
+
+## Q27. What are design patterns for, and what's the main way people misuse them? [#q27]
+
+<Question id="q27">
+
+**Answer.** They're a shared vocabulary for recurring solutions. The main value is communication: saying "put a Strategy here" conveys a whole design in two words to anyone who knows the catalogue.
+
+The main misuse is treating them as goals. Patterns are *discovered* by refactoring towards a problem, not applied in advance because a design should have patterns in it. A codebase where every class is named `XFactory`, `YStrategy`, `ZVisitor` usually has more indirection than domain.
+
+The second misuse is not noticing that the language has absorbed them. In modern Java, Strategy is a lambda, Iterator is `for-each`, Singleton is a Spring bean, Command is a `Runnable`, Observer is a listener list or a reactive stream, Template Method is often better as a higher-order function. Implementing the 1994 class-based version of these is usually wrong now.
+
+**Why it matters.** The interviewer wants to see whether you can name patterns *and* judge when not to use them. "I'd use the Visitor pattern" is a fine answer for a stable data structure with growing operations, and a poor answer in Java 21, where sealed types plus pattern matching give you the same thing with far less machinery.
+
+</Question>
+
+## Q28. Factory Method vs Abstract Factory vs a static factory method. [#q28]
+
+<Question id="q28">
+
+**Answer.**
+- **Static factory method** — not a GoF pattern; just a named static method instead of a constructor. Benefits: a meaningful name (`Money.ofMinor(1000, MYR)`), the ability to return a cached instance or a subtype, and no requirement to create a new object. This is the one you'll use most; `List.of`, `Optional.of`, `Integer.valueOf` are all examples.
+- **Factory Method** — a method on a class, overridden by subclasses to decide which concrete product to create. The creation decision is bound to the subclass.
+- **Abstract Factory** — an object that creates *families* of related products, so all products come from one consistent family. The example that justifies it: a `ReportRenderer` factory producing matched `HeaderRenderer`, `TableRenderer` and `FooterRenderer` for PDF or for HTML, where mixing families would be wrong.
+
+**Why it matters.** Abstract Factory is heavily over-applied. Its distinguishing requirement is *families of products that must be consistent with each other*. If you only ever create one kind of thing, you want a static factory or a simple `Supplier<T>`, not a factory hierarchy.
+
+<FollowUp q="What replaces these in modern Java?">
+
+A `Supplier<T>` or a `Function<Config, T>` covers most Factory Method uses. Dependency injection covers most Abstract Factory uses — you configure which implementations are wired, once, in the composition root, which is exactly the "consistent family" job.
+
+</FollowUp>
+
+</Question>
+
+## Q29. When is the Builder pattern the right answer? [#q29]
+
+<Question id="q29">
+
+**Answer.** When an object has many parameters, several optional, and you want it immutable. It solves the telescoping-constructor problem and the "which of these six booleans is which" problem in one move:
+
+```java
+Payment.builder()
+    .amount(Money.of(100, MYR))
+    .reference("INV-2026-0042")
+    .capture(false)
+    .build();                     // validate invariants here
+```
+
+Crucially, `build()` is where you validate cross-field invariants — "capture requires an authorised amount", "a scheduled payment needs a future date" — which a constructor can also do but a setter-based approach cannot.
+
+**Why it matters.** The alternative in modern Java is a record with a compact constructor, which is better when the parameter count is small and all fields are required. Builders earn their place at roughly five-plus parameters, or when optionality and defaults matter.
+
+<FollowUp q="What are the downsides?">
+
+Verbosity (mitigated by Lombok's `@Builder`, at the cost of a bytecode-manipulating dependency), no compile-time check that required fields were set — `build()` fails at runtime — and a mutable builder that can be misused across threads. The staged/step builder variant recovers compile-time safety for required fields at the cost of more interfaces.
+
+</FollowUp>
+
+</Question>
+
+## Q30. Singleton — why is it considered an anti-pattern? [#q30]
+
+<Question id="q30">
+
+**Answer.** The pattern itself is fine; the classic *implementation* is the problem. A static singleton is global mutable state, which means: hidden dependencies (a class using it has a dependency invisible in its signature), untestable code (you can't substitute it, and state leaks between tests), thread-safety hazards, and lifecycle you don't control.
+
+It also conflates two concerns that should be separate: "there should be one instance" and "everyone can reach it globally." The first is a legitimate requirement; the second is the damage.
+
+The correct modern approach: let the DI container manage a single instance and inject it. You get one instance, an explicit dependency, and full substitutability in tests. That's a singleton *scope*, not a Singleton *pattern*.
+
+<FollowUp q="If you must implement one without a container?">
+
+Enum singleton (serialization-safe, thread-safe, concise) or the holder idiom (Q14 in the Java bank). And keep it stateless if at all possible — a stateless singleton is much less harmful, because most of the damage comes from the shared mutable state, not from the singularity.
+
+</FollowUp>
+
+</Question>
+
+## Q31. Explain Adapter, Facade and Proxy — they're often confused. [#q31]
+
+<Question id="q31">
+
+**Answer.** All three wrap something, with different intent:
+
+- **Adapter** — converts one interface into another so incompatible things can work together. Intent: compatibility. `Arrays.asList` adapts an array to a List; an anti-corruption layer (Q68) is an adapter at architectural scale.
+- **Facade** — provides a simpler interface over a complex subsystem. Intent: simplification. It doesn't change the interface of one thing; it hides several things behind one.
+- **Proxy** — provides the *same* interface as the target, controlling access to it. Intent: control. Variants: virtual (lazy loading — a Hibernate lazy proxy), protection (security checks), remote (RPC stub), smart (caching, reference counting). Spring's `@Transactional` is a proxy.
+
+**Why it matters.** The distinguishing question is *what does the wrapper's interface look like compared to the target's?* Different interface → Adapter. Simpler interface over many things → Facade. Same interface → Proxy. Same interface with added behaviour → Decorator (Q32).
+
+</Question>
+
+## Q32. Decorator vs inheritance — when do you reach for it? [#q32]
+
+<Question id="q32">
+
+**Answer.** Decorator adds behaviour by wrapping an object with the same interface, so behaviour composes at runtime rather than being fixed at compile time. `java.io` is the canonical example: `new BufferedReader(new InputStreamReader(new FileInputStream(f)))` — buffering, decoding and file access composed independently.
+
+It beats inheritance when the behaviours are orthogonal and combinable. With inheritance you'd need a subclass per combination: `BufferedFileReader`, `CompressedBufferedFileReader`, `EncryptedCompressedBufferedFileReader` — a combinatorial explosion. With decorators you need N classes for N behaviours and compose them freely.
+
+**Why it matters.** It's a concrete demonstration of composition over inheritance (Q3) with a measurable payoff — 2^N classes becomes N.
+
+<FollowUp q="What are the downsides?">
+
+Debugging through five layers of wrapper is unpleasant, and stack traces get deep. Identity is surprising — the decorated object is not `equals` to the target, which breaks code that relies on identity. And `java.io`'s API is widely cited as an example of decorators making a simple task (read a file) require knowing three classes.
+
+</FollowUp>
+
+</Question>
+
+## Q33. Strategy pattern — is it still relevant in Java 21? [#q33]
+
+<Question id="q33">
+
+**Answer.** The intent is: encapsulate interchangeable algorithms and select one at runtime. Absolutely still relevant — but the *implementation* has changed.
+
+The 1994 form is an interface plus a class per algorithm plus a factory. In modern Java, if the strategy is a single function, it's a lambda or a method reference:
+
+```java
+Map<PaymentType, FeeCalculator> calculators = Map.of(
+    CARD, amount -> amount.multiply(0.029).plus(cents(30)),
+    FPX,  amount -> cents(100)
+);
+```
+
+The class-based form is still right when the strategy has multiple methods, needs its own state or dependencies, or benefits from being a Spring bean (injected, testable, discoverable). In a fintech context, a fee strategy that needs a rates repository and an audit logger is a class; one that's arithmetic is a lambda.
+
+<FollowUp q="How does Spring make this easy?">
+
+Inject `Map<String, FeeCalculator>` or `List<FeeCalculator>` and Spring populates it with every implementation, keyed by bean name. Adding a new strategy is adding a class — no registration, no factory edit. That's OCP with framework support, and it's one of the genuinely elegant Spring idioms.
+
+</FollowUp>
+
+</Question>
+
+## Q34. Template Method — where does it still belong? [#q34]
+
+<Question id="q34">
+
+**Answer.** A base class defines the skeleton of an algorithm and defers specific steps to subclasses. It's the legitimate use of inheritance (Q3): a fixed sequence with designated variation points.
+
+```java
+abstract class SettlementJob {
+    public final void run() {        // final: the sequence is not overridable
+        var batch = load();
+        validate(batch);
+        var result = process(batch);  // abstract — the variation point
+        report(result);
+    }
+    protected abstract Result process(Batch b);
+}
+```
+
+Marking `run()` final is the important detail — the whole point is that the sequence is invariant.
+
+**Why it matters.** The functional alternative is passing the varying step as a parameter (a higher-order function), which avoids inheritance entirely and lets you compose steps at runtime. I'd prefer that unless there are several variation points with shared state, where the class form reads better.
+
+<FollowUp q="What's the danger?">
+
+The fragile base class problem, and the fact that adding a variation point later changes the contract for every existing subclass. Also, a template method calling an overridable method from a constructor is the initialisation-order bug from Q8 in the Java bank.
+
+</FollowUp>
+
+</Question>
+
+## Q35. Observer pattern and its modern replacements. [#q35]
+
+<Question id="q35">
+
+**Answer.** One-to-many notification: subjects publish, observers subscribe. The hand-rolled form (a `List<Listener>` and a `notifyAll` loop) is still common and still has three well-known problems: **memory leaks** if listeners never deregister (Q14 in the Java bank), **unbounded synchronous execution** — one slow listener blocks the publisher and one throwing listener can break the loop for the rest — and **no backpressure**.
+
+Modern replacements, in order of scale: Spring's `ApplicationEventPublisher` for in-process decoupling (with `@TransactionalEventListener` to fire only after commit, which is genuinely useful); reactive streams (`Flux`) when you need backpressure and composition; and a message broker when the observers are other services.
+
+**Why it matters.** The step from in-process events to a broker is exactly where the dual-write problem appears (Q136 in the data bank), so "we'll just publish an event" has very different implications inside a process and across one.
+
+<FollowUp q="What's the transactional event trap?">
+
+Publishing an event inside a transaction and having a listener act on it *before* commit, so the listener sees state that may roll back. `@TransactionalEventListener(phase = AFTER_COMMIT)` fixes the in-process case. Across services, the outbox pattern is the fix.
+
+</FollowUp>
+
+</Question>
+
+## Q36. When would you use the State pattern? [#q36]
+
+<Question id="q36">
+
+**Answer.** When an object's behaviour changes with its state and the conditional logic is spreading. Each state becomes a class implementing a common interface, and transitions are explicit.
+
+The fintech case is compelling: a payment moves through Pending → Authorised → Captured → Settled, with Failed and Refunded branches. Without the pattern, every method starts with a switch on status and the legal transitions are implicit in scattered `if`s. With it, `AuthorisedPayment.capture()` is valid and `PendingPayment.capture()` throws — the state machine is in the type system.
+
+**Why it matters.** It makes illegal transitions *unrepresentable* rather than merely checked, which is the same instinct as value objects (Q8).
+
+<FollowUp q="What's the Java 21 alternative?">
+
+A sealed interface with a record per state and pattern matching on transitions. You get exhaustiveness checking from the compiler — add a state and every transition function fails to compile until you handle it — which the class-based State pattern doesn't give you. For a state machine with a fixed set of states, that's strictly better. For very complex machines, a dedicated state machine library with a declarative transition table is more maintainable than either.
+
+</FollowUp>
+
+</Question>
+
+## Q37. Explain the Command pattern and where you've seen it. [#q37]
+
+<Question id="q37">
+
+**Answer.** Encapsulate a request as an object, so it can be queued, logged, retried, undone, or executed by a different thread. The essential move is turning a method call into data.
+
+Where it appears: `Runnable`/`Callable` submitted to an executor is Command; a job row in a database queue (Q29 in the data bank) is a serialised Command; every message in a message broker is one; undo/redo stacks in editors; and CQRS commands.
+
+**Why it matters.** The pattern's value is *reification* — once a request is an object, you can do things to it that you can't do to a method call: persist it, ship it across a network, retry it, audit it, replay it. That's the conceptual bridge between OO design and event-driven architecture, and it's worth being able to make explicitly.
+
+<FollowUp q="Command vs event?">
+
+A command is an instruction to do something, addressed to a specific handler, and it can be rejected (`CapturePayment`). An event is a statement that something happened, in the past tense, broadcast to whoever cares, and cannot be rejected (`PaymentCaptured`). Confusing them produces topics full of commands that three services all try to handle. Naming discipline — imperative for commands, past tense for events — prevents a surprising amount of design confusion.
+
+</FollowUp>
+
+</Question>
+
+## Q38. Chain of Responsibility — where is it genuinely useful? [#q38]
+
+<Question id="q38">
+
+**Answer.** A request passes along a chain of handlers until one handles it (or all have had a look). It decouples the sender from knowing which handler will act.
+
+Genuinely useful in: filter/middleware chains (servlet filters, Spring Security's filter chain, interceptors), validation pipelines where each rule can reject, approval workflows with escalating authority limits, and exception/fallback chains.
+
+The fintech example: a payment routing chain where each handler decides whether it can process a given transaction — this acquirer handles MYR cards, that one handles FPX, a fallback handles the rest.
+
+**Why it matters.** The pattern's risk is that it makes control flow implicit — you can't tell from the call site what will happen, and debugging means stepping through the chain. Keep the chain short, make its construction visible in one place, and log which handler acted.
+
+</Question>
+
+## Q39. Visitor — and why Java 21 mostly replaces it. [#q39]
+
+<Question id="q39">
+
+**Answer.** Visitor separates an algorithm from the object structure it operates on, using double dispatch: each element has an `accept(Visitor)` that calls back `visitor.visitConcreteType(this)`. It's designed for a **stable set of types with a growing set of operations** — the classic case being an AST where you keep adding new passes.
+
+The costs are notorious: every element class needs an `accept` method (so the data structure is polluted with the pattern), adding a new element type breaks every existing visitor, and the double dispatch makes the code hard to follow.
+
+**Java 21 replaces it for most cases.** A sealed interface plus record patterns plus switch gives you the same capability — add operations freely without touching the types — with compile-time exhaustiveness and none of the machinery:
+
+```java
+sealed interface Expr permits Num, Add, Mul {}
+double eval(Expr e) {
+    return switch (e) {
+        case Num(double v)         -> v;
+        case Add(var l, var r)     -> eval(l) + eval(r);
+        case Mul(var l, var r)     -> eval(l) * eval(r);
+    };
+}
+```
+
+**Why it matters.** Being able to say "Visitor was a workaround for the absence of pattern matching, and Java now has pattern matching" shows you understand *why* the pattern existed rather than just what it does.
+
+</Question>
+
+## Q40. Repository pattern — what is it actually for? [#q40]
+
+<Question id="q40">
+
+**Answer.** A repository mediates between the domain and data mapping, presenting a collection-like interface for aggregates: `orders.findById(id)`, `orders.save(order)`. The domain expresses persistence in its own language and never sees SQL, JPA or a `ResultSet`.
+
+The two real benefits: the domain is testable without a database, and persistence technology becomes a swappable detail (DIP — the interface lives in the domain, the implementation in infrastructure).
+
+The common misuse is a repository per *table* rather than per *aggregate*, with 40 methods including `findByStatusAndCreatedAtBetweenOrderByAmountDesc`. At that point it isn't an abstraction, it's a thin veneer over a query language with worse ergonomics (Q11).
+
+<FollowUp q="Is Spring Data's repository a Repository?">
+
+Partly. It gives you the interface and the implementation for free, which is excellent leverage. But `JpaRepository` exposes `flush`, `saveAll`, `getReferenceById` and pagination types — JPA concepts leaking into what should be a domain interface. If I care about the boundary, I define my own narrow domain interface and implement it *using* Spring Data, rather than extending `JpaRepository` in the domain layer.
+
+</FollowUp>
+
+<FollowUp q="What about the Specification pattern?">
+
+It encapsulates a query predicate as a domain object, so business rules like "overdue high-value invoices" are named, testable and composable rather than scattered as query strings. Spring Data supports it directly via `JpaSpecificationExecutor`. Useful when query logic is genuinely domain logic; over-engineering when it's just a filter.
+
+</FollowUp>
+
+</Question>
+
+## Q41. What are the most damaging anti-patterns you look for? [#q41]
+
+<Question id="q41">
+
+**Answer.**
+- **God object / god service.** One class that everything depends on and every change touches. Detectable mechanically: file size, number of dependencies, and how often it appears in diffs.
+- **Big Ball of Mud.** No discernible architecture; every module reaches into every other. Usually the result of no enforced boundaries (Q24 — ArchUnit would have prevented it).
+- **Service Locator** (Q25) — hidden dependencies, runtime failures.
+- **Anemic domain model** (Q6) with fat services.
+- **Primitive obsession** (Q8).
+- **Distributed monolith** (Q93) — the most expensive of all, because you pay microservice costs for monolith coupling.
+- **Shotgun surgery** — one conceptual change requiring edits in fifteen files. This is the clearest signal that the boundaries are wrong.
+- **Speculative generality** — abstractions, parameters and extension points built for requirements that never arrived.
+
+**Why it matters.** The last two are the ones I'd emphasise, because they're *measurable*. Shotgun surgery shows up in commit statistics; speculative generality shows up as code paths with no callers. Making architectural problems measurable is how you get budget to fix them.
+
+</Question>
+
+## Q42. How do you refactor towards a pattern safely? [#q42]
+
+<Question id="q42">
+
+**Answer.** Small steps, tests green throughout. The mechanics that make it safe:
+
+1. **Characterisation tests first** if the code is untested — capture current behaviour, including the bugs, so you can tell refactoring from changing.
+2. **Branch by abstraction** rather than a long-lived branch: introduce the abstraction, route through it, migrate implementations one at a time, remove the old path. Everything stays merged and deployable.
+3. **Parallel run** for high-risk changes — execute both old and new paths, compare results, log divergence, and only then cut over. Standard practice for anything financial.
+4. **One refactor per commit**, separate from behaviour changes, so review is possible and revert is surgical.
+
+**Why it matters.** The failure mode is the six-week refactoring branch that never merges. Any technique that keeps the codebase releasable throughout is worth more than the elegance of the end state.
+
+</Question>
+
+## Q43. Give an example of a pattern you removed rather than added. [#q43]
+
+<Question id="q43">
+
+**Answer.** (Have a real one. The shape that reads well:)
+
+"We had an Abstract Factory producing a family of report renderers, built when we expected three output formats. Two years on there was still one format, and every new report type meant touching four interfaces and four implementations. I inlined it back to a single class with a method per section, deleted about 300 lines, and the next report took an afternoon instead of a day. The extension point had been a bet on an axis that never varied."
+
+**Why it matters.** Interviewers hear "I applied pattern X" constantly. Deletion demonstrates judgement, willingness to revisit decisions, and the confidence to remove someone else's work — including your own. It's also honest about the fact that most speculative abstraction is wrong.
+
+</Question>
+
+## Q44. How have functional features changed which patterns you use? [#q44]
+
+<Question id="q44">
+
+**Answer.** Several patterns collapse into a function:
+
+| Pattern | Modern form |
+|---|---|
+| Strategy | Lambda / method reference |
+| Command | `Runnable`, `Callable` |
+| Template Method | Higher-order function taking the varying step |
+| Factory Method | `Supplier<T>` |
+| Iterator | `for-each`, `Stream` |
+| Observer | Listener list, `Flux`, event publisher |
+| Visitor | Sealed types + pattern matching |
+| Decorator | Function composition (`f.andThen(g)`) for single-method cases |
+| Chain of Responsibility | `Stream` of predicates, or composed functions |
+
+What remains genuinely class-shaped: patterns with state (Builder, State with data), patterns with multiple methods (Adapter, Facade), and patterns where the object needs its own dependencies (a Strategy that needs a repository).
+
+**Why it matters.** It shows you know the patterns as *solutions to problems* rather than as class diagrams. The problem (interchangeable algorithms) is eternal; the solution (an interface hierarchy) was a workaround for a language limitation.
+
+</Question>
+
+## Q45. What's the difference between a pattern and an idiom? [#q45]
+
+<Question id="q45">
+
+**Answer.** A pattern is language-independent — Strategy exists in Java, Go and Haskell in different forms. An idiom is a language-specific convention: try-with-resources, the holder idiom for lazy singletons, the double-brace initialisation anti-idiom, `Optional` chaining, the builder-with-compact-constructor combination.
+
+Worth distinguishing because idioms are where a lot of practical quality lives, and they're what code review actually enforces day to day. A team that knows Java's idioms will write better code than one that knows the GoF catalogue but writes C# in Java.
+
+</Question>
