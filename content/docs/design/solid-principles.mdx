@@ -1,0 +1,249 @@
+---
+title: SOLID & Design Principles
+description: SOLID one principle at a time, where they conflict, DRY, YAGNI, the composition root.
+questionRange: Q15–Q26
+tags: [design, solid, principles]
+---
+
+## Q15. Explain the Single Responsibility Principle. What does "one reason to change" actually mean? [#q15]
+
+<Question id="q15">
+
+**Answer.** The common reading — "a class should do one thing" — is unhelpful, because "one thing" has no fixed granularity. Uncle Bob's later formulation is the useful one: **a module should be responsible to one, and only one, actor**.
+
+So the question isn't "does this class do too much?" but "who requests changes to it?" A `Payment` class with `calculateFee()`, `save()` and `toPdf()` serves three different actors: finance (fee rules), the DBA (schema), and the reporting team (document format). Each will request changes independently, and each change risks breaking the others' code because they share a file.
+
+**Why it matters.** Framing it by actor makes it decidable. It also explains why SRP isn't about line count — a 500-line class serving one actor may be fine, while a 40-line class serving three isn't.
+
+<FollowUp q="Doesn't SRP lead to hundreds of tiny classes?">
+
+Applied without judgement, yes — and that's a real failure mode. A codebase of 300 single-method classes has traded one kind of complexity for another; you can no longer see a whole use case in one place. My check: after splitting, is the *system* easier to change, or just each class? If a typical feature now touches nine files, the split was along the wrong axis.
+
+</FollowUp>
+
+<FollowUp q="How does SRP interact with cohesion?">
+
+They're two views of the same idea. SRP says split things that change for different reasons; cohesion says keep together things that belong together. The failure mode of over-applying SRP is low cohesion — related logic scattered across many classes, which is exactly what the Common Closure Principle warns against.
+
+</FollowUp>
+
+</Question>
+
+## Q16. Explain the Open/Closed Principle, and its cost. [#q16]
+
+<Question id="q16">
+
+**Answer.** Open for extension, closed for modification: you should be able to add behaviour without editing existing, tested code. The mechanism is polymorphism — define an abstraction, and add new implementations rather than adding branches to a switch.
+
+```java
+// closed to extension: every new type edits this method
+if (type == CARD) { ... } else if (type == FPX) { ... }
+
+// open: add a new PaymentMethod implementation, touch nothing existing
+interface PaymentMethod { AuthResult authorize(Money amount); }
+```
+
+**The cost, which is usually understated:** OCP requires you to predict the axis of variation correctly. You've made the code open along *one* dimension and, in doing so, made it *harder* to change along others. If new payment methods arrive frequently, this is right. If instead the change is "every method now needs a 3-D Secure step", you must edit every implementation — the design is closed against exactly the change you got.
+
+**Why it matters.** OCP is not free extensibility, it's a bet on which dimension will vary. Making that bet explicitly, based on what has actually changed historically, is the senior version of applying it.
+
+<FollowUp q="Does pattern matching on sealed types violate OCP?">
+
+It inverts it deliberately. A sealed hierarchy is *closed* to new types and open to new operations; polymorphism is open to new types and closed to new operations. That's the expression problem, and Java 21 now supports both sides. Choose by which axis actually varies: an open set of payment providers wants polymorphism; a closed set of event types with an ever-growing set of handlers wants sealed types and pattern matching.
+
+</FollowUp>
+
+</Question>
+
+## Q17. Explain Liskov Substitution with a real violation. [#q17]
+
+<Question id="q17">
+
+**Answer.** Subtypes must be substitutable for their base type without breaking correctness. Formally (Q13): a subtype may weaken preconditions, strengthen postconditions, and must preserve the base type's invariants.
+
+The classic textbook case is Square extends Rectangle: `setWidth` on a Square must also change the height to preserve squareness, which breaks any client that assumes `setWidth(5); setHeight(4);` yields area 20. The subtype strengthened an invariant the base type didn't have.
+
+The version you actually meet:
+
+```java
+List<String> list = List.of("a", "b");
+list.add("c");        // UnsupportedOperationException
+```
+
+`List.of` returns a `List` that violates the `List` contract — it strengthens the precondition on `add` to "never". The JDK does this knowingly, and it's why `Collections.unmodifiableList` surprises people. Another: a `ReadOnlyRepository` that extends `Repository` and throws on `save`.
+
+**Why it matters.** LSP violations produce bugs at a distance — code that works with the base type breaks with one specific subtype, often in production and often far from where the subtype was chosen. And the fix is usually not in the subtype: it's that the hierarchy is wrong. Split the interface instead (which is ISP doing LSP's work).
+
+<FollowUp q="How do you detect violations?">
+
+Run the base type's test suite against every subtype — if a subtype needs different tests for the same method, that's the smell. Also: any override that throws `UnsupportedOperationException`, checks `instanceof` on the subtype in client code, or documents "don't call this on X" is a violation announcing itself.
+
+</FollowUp>
+
+</Question>
+
+## Q18. Explain the Interface Segregation Principle. [#q18]
+
+<Question id="q18">
+
+**Answer.** Clients shouldn't be forced to depend on methods they don't use. A fat interface means every implementor implements methods it doesn't need (usually by throwing), every mock stubs methods irrelevant to the test, and a change to any method recompiles and potentially breaks every client.
+
+The classic fix is role interfaces: instead of one `Repository` with 20 methods, have `ReadOnlyOrders`, `OrderWriter`, `OrderSearch`, and let a single class implement several. Clients depend on the narrow role they need.
+
+**Why it matters.** ISP is really about *coupling to a contract you don't use*. It's also a leading indicator: when a class implements an interface by throwing on half the methods, you have an LSP violation caused by an ISP violation. The two principles interlock.
+
+<FollowUp q="Where does ISP show up in real Java code?">
+
+Spring Data repositories are a good example done well — `CrudRepository`, `PagingAndSortingRepository`, `JpaRepository` are layered so you extend only what you need. A good counter-example is the older Servlet API's `HttpServlet`, where you extend and override the two methods you want and inherit a dozen you don't.
+
+</FollowUp>
+
+</Question>
+
+## Q19. Explain the Dependency Inversion Principle, and how it differs from dependency injection. [#q19]
+
+<Question id="q19">
+
+**Answer.** DIP: high-level modules shouldn't depend on low-level modules; both should depend on abstractions. And — the half people forget — **abstractions shouldn't depend on details; details should depend on abstractions**.
+
+The second half is the whole point, and it's about *who owns the interface*. If `OrderService` depends on a `PaymentGateway` interface that lives in the payment infrastructure package, you haven't inverted anything — the dependency arrow still points from your domain to infrastructure. Real inversion means the interface is defined in the **domain**, expressed in the domain's language, and the infrastructure implements it. Now the arrow points inward, and you can delete the Stripe adapter without touching the domain.
+
+**DIP vs DI vs IoC:**
+- **DIP** is a design principle about the direction of dependencies.
+- **Dependency injection** is a technique for supplying dependencies from outside — you can do DI while completely violating DIP, by injecting a concrete `StripeClient` into your domain service.
+- **Inversion of Control** is the broader idea that the framework calls you rather than you calling it.
+
+Being able to separate these three is a strong senior signal, because most people use them interchangeably.
+
+**Why it matters.** DIP is the mechanism behind hexagonal architecture (Q73) — the ports are domain-owned interfaces, the adapters are the details that depend on them.
+
+</Question>
+
+## Q20. Where do the SOLID principles conflict with each other? [#q20]
+
+<Question id="q20">
+
+**Answer.** Frequently, and knowing where is more useful than knowing the definitions.
+
+- **SRP vs cohesion/locality.** Splitting by actor scatters a use case across files. Taken far enough, you can't read a feature without opening nine classes. SRP optimises for independent change; locality optimises for comprehension. They trade off.
+- **OCP vs YAGNI.** OCP asks for an extension point; YAGNI says don't build it until you need it. Building extension points speculatively is one of the most common forms of over-engineering.
+- **ISP vs simplicity.** Segregating aggressively yields many tiny interfaces and more files, more names, more indirection.
+- **DIP vs directness.** Every inversion adds a layer. Inverting a dependency on something that will never be replaced (your logging library, say) is pure cost.
+- **OCP vs SRP.** Making a class extensible often means adding abstraction *inside* it, which can pull in responsibilities.
+
+**Why it matters.** SOLID is a set of heuristics with costs, not laws. The interviewer is checking whether you'd apply them mechanically or weigh them. My general resolution: favour the principle that addresses a problem you can *demonstrate*, and prefer the simpler design when the argument is speculative.
+
+</Question>
+
+## Q21. What are the criticisms of SOLID, and are they fair? [#q21]
+
+<Question id="q21">
+
+**Answer.** Several are fair and worth being able to state.
+
+- **Vague and unfalsifiable.** "One reason to change" and "one thing" are subjective enough that any design can be argued to comply. The actor-based reformulation helps but doesn't remove it.
+- **Optimised for a specific era.** SOLID was formulated around large statically-typed OO codebases with expensive recompilation and no first-class functions. Several of its mechanisms (Strategy classes, Abstract Factory) are one-line lambdas today.
+- **Encourages indirection.** In practice, teams applying SOLID enthusiastically produce codebases with many small classes, many interfaces with one implementation, and low readability. Dan North's "CUPID" and "write simple code" critiques target exactly this.
+- **Silent on the things that matter most now** — concurrency, data flow, failure handling, distribution.
+
+**My position:** the underlying instincts are sound and worth internalising — separate things that change separately, depend on contracts not implementations, don't force clients to know what they don't need. The named five are a teaching device, not a design method, and a senior engineer should be able to critique them as well as apply them.
+
+<FollowUp q="What would you teach a team instead?">
+
+The same instincts, framed around change: what has actually changed in this codebase over the last year, and does the design make that kind of change cheap? That's empirical, team-specific, and immediately actionable — whereas "is this SRP-compliant?" generates debate without evidence.
+
+</FollowUp>
+
+</Question>
+
+## Q22. DRY is frequently misapplied. Explain. [#q22]
+
+<Question id="q22">
+
+**Answer.** DRY is about *knowledge*, not text. Its actual formulation is "every piece of knowledge must have a single, unambiguous, authoritative representation within a system." Two code fragments that look identical but represent different knowledge are **not** duplication, and merging them creates coupling between things that should vary independently.
+
+The failure mode: a `Customer` DTO and a `Customer` entity have the same fields, so someone merges them. Now the API contract and the database schema are the same class, and you cannot change one without changing the other. That's the opposite of what DRY is for.
+
+The counter-heuristics: **WET** (write everything twice — wait for the third occurrence), and **AHA** (avoid hasty abstractions, Kent C. Dodds) — prefer duplication over the wrong abstraction (Q12).
+
+**Why it matters.** Over-applied DRY is one of the top causes of accidental coupling in large codebases, particularly the shared-library problem in microservices (Q92). The question to ask before deduplicating: *if this changes for one caller, should it change for all of them?* If the answer is no, it isn't duplication.
+
+</Question>
+
+## Q23. YAGNI versus designing for change — how do you reconcile them? [#q23]
+
+<Question id="q23">
+
+**Answer.** By separating *reversible* from *irreversible* decisions.
+
+For reversible decisions — how a class is structured, whether there's an interface, which pattern is used — apply YAGNI hard. The cost of getting it wrong is a refactor, and refactoring is what we're good at. Speculative flexibility here is nearly always wasted, because you guess the wrong axis (Q16).
+
+For irreversible or expensive-to-reverse decisions — the data model, the public API contract, the service boundary, the choice of persistence, whether you can identify a tenant on every request — think hard up front. These are the ones where "we'll change it later" means a migration project.
+
+**Why it matters.** YAGNI applied indiscriminately produces systems where the database has no tenant column and adding multi-tenancy is a year of work. The skill isn't choosing between the two principles, it's classifying the decision correctly.
+
+<FollowUp q="What's a cheap way to preserve optionality without building it?">
+
+Design the *seam* without the implementation: keep the boundary clean and the dependency inverted, so a future implementation can be slotted in. That costs one interface, not a plugin framework. And write down in an ADR (Q83) what you deliberately didn't build and what would trigger revisiting it.
+
+</FollowUp>
+
+</Question>
+
+## Q24. What are the package/component design principles? [#q24]
+
+<Question id="q24">
+
+**Answer.** Less famous than SOLID and more directly useful for module and service boundaries. Cohesion:
+
+- **REP** (Release/Reuse Equivalence) — the unit of reuse is the unit of release. If you want people to reuse it, version and release it.
+- **CCP** (Common Closure) — classes that change together belong together. This is SRP at package level, and it's the strongest guide for drawing module boundaries.
+- **CRP** (Common Reuse) — classes used together belong together; don't force a consumer to depend on things it doesn't use. ISP at package level.
+
+Coupling:
+
+- **ADP** (Acyclic Dependencies) — no cycles in the package dependency graph. Cycles make independent build, test and deploy impossible.
+- **SDP** (Stable Dependencies) — depend in the direction of stability.
+- **SAP** (Stable Abstractions) — stable packages should be abstract, so they can be extended without modification.
+
+**Why it matters.** These transfer directly to microservices: CCP is the argument for decomposing by business capability rather than technical layer (Q87), ADP is why circular service dependencies are a distributed-monolith smell (Q93), and SDP explains why shared libraries must be more stable than their consumers.
+
+<FollowUp q="How do you enforce ADP?">
+
+ArchUnit tests in the build. A test asserting "no cycles between top-level packages" and "the domain package depends on nothing outside itself" catches architectural erosion at PR time, which is the only time it's cheap to fix.
+
+</FollowUp>
+
+</Question>
+
+## Q25. What is a composition root, and why does it matter? [#q25]
+
+<Question id="q25">
+
+**Answer.** The single place in an application where the object graph is wired — where concrete implementations are chosen and injected. In Spring it's the configuration classes and component scanning; done manually, it's a factory method called from `main`.
+
+The value is that dependency *resolution* is confined to one place, so the rest of the codebase never asks for its dependencies — it declares them in constructors and receives them. That's what keeps the code testable and framework-independent.
+
+The anti-pattern it prevents is the **Service Locator**: a global registry that classes call to fetch dependencies (`ServiceLocator.get(PaymentGateway.class)`). It looks like DI but inverts the benefit — dependencies become invisible in the signature, tests need the locator populated, and you get runtime failures instead of compile-time or startup-time ones. Mark Seemann's "Service Locator is an anti-pattern" is the canonical argument.
+
+<FollowUp q="Isn't Spring's `ApplicationContext` a service locator?">
+
+It can be used as one, and that's the misuse. Injecting `ApplicationContext` and calling `getBean()` is service location. Letting Spring inject constructor arguments is dependency injection, with the context acting as the composition root. The distinction is whether the class knows about the container.
+
+</FollowUp>
+
+</Question>
+
+## Q26. If you could only teach a team three design principles, which? [#q26]
+
+<Question id="q26">
+
+**Answer.**
+
+1. **Make the change easy, then make the easy change** (Kent Beck). It reframes design as something you do continuously in response to real requirements, rather than up front against imagined ones. It also gives a natural home for refactoring in the workflow.
+2. **Depend on contracts, not implementations** — the DIP instinct, without the vocabulary. It's the one principle that buys the most: testability, replaceability, and the ability to reason about a module in isolation.
+3. **Optimise for deletion.** Code that's easy to delete is loosely coupled, well-bounded and honest about its dependencies, almost by definition. And in a long-lived codebase you will delete far more than you predict.
+
+**Why it matters.** The question tests whether you can prioritise, and whether your principles are things you'd actually use in a review. Naming Beck's line rather than a SOLID letter also signals that you've read past the standard curriculum.
+
+</Question>
