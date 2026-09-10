@@ -197,8 +197,8 @@ subject. The drafts run 9–11 sections and 1,900–2,500 words, and the last fo
 are always Lab, Leading on this, Where to go deeper, Self-check. That tail is the
 part to hold fixed.
 
-**Settled: yes, when the picture does not already exist.** Applied across the
-twelve drafts in `72fc07d`. A page whose subject *is* an existing reference
+**Settled: yes, when the picture does not already exist.** Applied across all
+twelve concept drafts. A page whose subject *is* an existing reference
 diagram links to it and adds nothing — `jvm-memory` is
 `java/jvm-memory-gc#q71`, `dependency-inversion` is
 `design/architecture-styles#q53`. A page that wants an *adjacent* picture gets
@@ -275,8 +275,7 @@ library precedes it. Any check on the graph should flag a dangling
 
 ### Bidirectional linking
 
-**Built in `35cb3bb`. One declaration drives both directions**, so they cannot
-drift:
+**Built. One declaration drives both directions**, so they cannot drift:
 
 - **Forward** — `RelatedQuestions` renders the `questions:` list as links, from
   `src/app/docs/[[...slug]]/page.tsx` rather than from MDX, so a concept page
@@ -788,9 +787,9 @@ SVG's own `viewBox` — a healthy diagram has a real one even when its
 **A diagram drafted in `_source/` cannot be verified where it sits**, because
 `_source` is outside `content/docs` and is never built. Extract them into a
 throwaway page under `content/docs`, add it to `content/docs/meta.json`, render,
-check, then delete both. That is how the twelve concept drafts were verified in
-`72fc07d`; three of ten failed the phone test on the first pass and would have
-shipped unnoticed otherwise.
+check, then delete both. That is how the twelve concept drafts were verified;
+three of ten failed the phone test on the first pass and would have shipped
+unnoticed otherwise.
 
 ### Phone-readable, concretely
 
@@ -816,12 +815,13 @@ A file with diagrams is no longer byte-identical to its `_source` section, so th
 conversion verifier will report a diff on it. That is expected. The answer prose
 must still be untouched — only the added fenced blocks may differ.
 
-**Complete: 19 of 19** — six Java (`e432116`), eight data (`e17caa8`), five
-design (`790a0b0`). Add more only if a new concept page needs one.
+**Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
+new concept page needs one.
 
 ### A concept page links to a reference diagram, it does not copy it
 
-Decided on the JMM page in `35cb3bb`. The happens-before diagram already existed
+Decided on the JMM page when the concept pattern was finished. The
+happens-before diagram already existed
 at `java/concurrency#q48`; the concept page links to it. Two copies of one mermaid
 source in two files drift and nothing checks them, and moving it would strip the
 bank's most-linked answer of its only picture.
