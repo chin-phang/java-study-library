@@ -67,6 +67,17 @@ export PNPM_HOME="C:\Users\admin\AppData\Local\pnpm" && export PATH="$PNPM_HOME/
 and pnpm then wipes and relinks `node_modules` to reconcile. On Windows that wipe
 hits file locks, fails half-way, and leaves the directory unusable.
 
+**`.claude/launch.json` obeys this too** — it invoked `corepack pnpm dev` until
+2026-09-11 and now calls `pnpm` directly. If the Browser pane's dev server ever
+stops starting, check that entry before anything else.
+
+The `export PNPM_HOME=...` line above is for **PowerShell or a fresh shell**; the
+Windows path with backslashes does not survive the Bash tool's own pnpm shim, so
+run `pnpm` from PowerShell where it is already on `PATH`. PowerShell wraps a
+native command's stderr as a red `NativeCommandError` even on success — for
+`pnpm types:check` the pass signal is `✓ Types generated successfully` followed
+by no `tsc` output, not the absence of red text.
+
 **Stop the dev server before any `pnpm install` / `pnpm add`.** Next.js holds
 file handles under `node_modules`, so the relink fails with
 `ERR_PNPM_PACKAGE_MANAGER_REMOVE_MODULES_DIR ... Access is denied`.
@@ -185,9 +196,15 @@ Every concept page follows its section pattern:
    "why does X break Y" over "what is X". Mark them up with `<SelfCheck>` — see
    **The Question component**.
 
-   *Widened from 5–7 on 2026-09-10.* The JMM page has 6; all twelve later drafts
-   independently landed on 8. Twelve pages agreeing against the spec means the
-   spec was wrong, not the pages.
+   *Widened from 5–7 on 2026-09-10.* The JMM page has 6; ten of the twelve later
+   drafts independently landed on 8, and `jvm-memory` and `btrees-selectivity`
+   on 7. Pages agreeing against the spec means the spec was wrong, not the pages.
+
+   *Corrected 2026-09-11, measured across all thirteen converted pages.* This
+   previously read "all twelve later drafts independently landed on 8", which
+   was never measured. Counts are 6 / 7 / 8 / 8 / 8 / 8 / 8 / 7 / 8 / 8 / 8 / 8 /
+   8 — a hundred items in total. Do not pad a 7-item draft to 8 during
+   conversion; the range is the spec, not the mode.
 
 Sections 6 and 7 are what distinguish this library from the reference Q&A.
 If a page is missing either, it isn't finished.
@@ -237,6 +254,16 @@ estimatedStudyTime: 3h
 banks. `prerequisites`/`unlocks` are meant to build a dependency graph rendered as
 a study path on the index — **that part is still not built**; the fields are
 recorded but nothing reads them yet.
+
+**The graph now has thirteen real nodes to draw** (2026-09-11). Measured across
+all thirteen converted pages: **no dangling `prerequisites`** — eight are
+legitimate roots (`prerequisites: []`) and the five resolving edges are
+`thread-pools → jvm-memory`, `generational-gc → jvm-memory`, `mvcc →
+btrees-selectivity`, `the-log → mvcc` and `bounded-contexts →
+dependency-inversion`. Every `unlocks` target that is *not* one of the thirteen
+dangles by design, which is most of them. So a renderer built today must
+tolerate dangling `unlocks` on day one; it will not meet a dangling
+`prerequisites` unless someone introduces one.
 
 ### The dependency graph — settled conventions
 
@@ -289,6 +316,24 @@ library precedes it. Any check on the graph should flag a dangling
 Add a concept page, declare its `questions:`, and both directions appear. Write
 nothing on the reference side.
 
+**Verified end to end across all thirteen concept pages** (2026-09-11), on all
+three reference tracks and with 65 reference questions claimed. Two details the
+first few pages did not exercise:
+
+- **A question may be claimed by more than one concept page**, and this works.
+  `java/jvm-memory-gc#q80` and `java/streams#q47` are each claimed by both
+  `generational-gc` and `jit`; `conceptsForPage()` collects them into one block
+  listing both pages. Nothing needs declaring for this — do not try to make a
+  question "belong" to a single page.
+- **A cosmetic nit that follows from it:** that block's heading reads "The model
+  behind this **answer**" (singular) above a list of two. Copy lives in
+  `Question.tsx`. Left alone deliberately; fix it if the doubling ever looks
+  wrong.
+
+Anchors are validated per track, and the per-bank numbering restart does not
+bite: `#q3` under `data/modelling-indexing` resolves to the data bank's Q3, not
+the Java bank's.
+
 **Why this needed a schema.** fumadocs' `pageSchema` is a Zod object with
 `$strip`: every key it does not declare — `concept`, `tier`, `prerequisites`,
 `unlocks`, `questions` — is discarded before reaching `page.data`. That is why
@@ -334,12 +379,15 @@ for f in glob.glob('content/docs/*/*.mdx'):
 rather than invented per page. This table is reconciled to the drafts in
 `_source/` — where a draft and this table disagreed, the draft won.
 
-**Foundational** — all thirteen drafted in `_source/`. Only `jmm` is converted
-into `content/docs/concepts/`; the rest are raw material.
+**Foundational** — **all thirteen drafted and converted** into
+`content/docs/concepts/`, one commit per page, finished 2026-09-11. The
+`_source/*.mdx` drafts stay as the conversion baseline: every converted page is
+byte-identical to its draft outside the self-check, verified by hash, with one
+deliberate exception recorded under **Conversion rules**.
 
 | `concept:` | Page |
 |---|---|
-| `jmm` | The Java Memory Model — *converted, reference implementation* |
+| `jmm` | The Java Memory Model — *the reference implementation; read it first* |
 | `generics-erasure` | Generics and Type Erasure |
 | `hashmap` | How HashMap Actually Works |
 | `jvm-memory` | JVM Memory and What -Xmx Doesn't Bound |
@@ -352,6 +400,19 @@ into `content/docs/concepts/`; the rest are raw material.
 | `bounded-contexts` | Bounded Contexts and Finding a Boundary |
 | `dependency-inversion` | Dependency Inversion and the Hexagonal Shape |
 | `thread-pools` | Thread Pools and Little's Law |
+
+**This table's order is not the sidebar order.** The sidebar is the explicit
+`pages` list in `content/docs/concepts/meta.json`, which runs language and
+runtime, then data, then distributed and design:
+
+```json
+["jmm", "thread-pools", "generics-erasure", "hashmap", "jvm-memory",
+ "generational-gc", "jit", "btrees-selectivity", "mvcc", "the-log",
+ "idempotency", "bounded-contexts", "dependency-inversion"]
+```
+
+The list is explicit, so a page left out of it builds fine and is silently
+missing from the sidebar. Add new concept pages to it deliberately.
 
 **Core** — not drafted. Eight of these are already named by a foundational
 page's `unlocks`, so the graph reaches them: `query-planning`, `partitioning`,
@@ -582,6 +643,41 @@ requiring one each would mean authoring 94 in a single conversion pass, and
 rushed pointers are worse than none. Convert without them, add them per page when
 someone is actually reading that page.
 
+**All 100 are now written** (the 94 plus the JMM page's 6), one page per session
+across thirteen sessions — which is the "per page, while reading it" advice
+followed rather than an exception to it. Doing a page's pointers meant reading
+that page properly; several questions turned out to be answered by a *different*
+section than the obvious one, and those are the pointers worth having:
+
+- a question whose mechanism is in one section but whose remedy is in
+  **Leading on this** needs both (`jit` item 7, `mvcc` item 7, `idempotency`
+  item 8);
+- a section with several bolded sub-parts is better named by the sub-part than
+  the whole (`the-log` "§3 Write-ahead logging, the checkpoint trade-off";
+  `dependency-inversion` "§7 Watch for leakage in signatures, not in imports").
+  The JMM page already did this with "§3 The piggyback effect", which is a
+  bolded paragraph, not a heading.
+
+**`where` is rendered as plain text, not markdown.** `SelfCheckItem` drops the
+string straight into a `<p>`; only `FollowUp`'s `q` deliberately converts
+backtick spans to `<code>`. So when a heading you are pointing at carries
+backticks or emphasis, **strip them**:
+
+| Heading in the source | Write in `where` |
+|---|---|
+| ``### 3. Why `RSS` and heap usage diverge`` | `§3 Why RSS and heap usage diverge.` |
+| ``### `count(*)` cannot be O(1)`` | `§3 count(*) cannot be O(1).` |
+| `## 6. What this does *not* cover` | `§6 What this does not cover.` |
+
+Characters like `*` and `_` are safe to keep verbatim when they are part of a
+real name — `count(*)` renders correctly — precisely because there is no
+markdown parser to trip. A lint that flags them is producing a false positive.
+
+**The inverse holds for the children.** The question body between the tags *is*
+parsed as markdown, so emphasis, backticks and double quotes carried over from
+a source numbered list all render as intended, and need no escaping. The
+`q={"...\"...\""}` rule for `FollowUp` does not apply here.
+
 `SelfCheckItem` reuses `useCollapsible` from `Question.tsx`, so items that *do*
 have a `where` count towards and respond to the page-level expand-all control;
 that is what makes the control appear on concept pages, which have no
@@ -595,6 +691,28 @@ that is what makes the control appear on concept pages, which have no
 **All 29 sections are converted** — 407 questions, 283 follow-ups, every bank
 contiguous and duplicate-free. This section is now reference, not a task list.
 Read it before touching a converted file, or if a source bank is ever extended.
+
+**And all thirteen concept drafts** (2026-09-11), to the same discipline: the
+only diff between `_source/<page>.mdx` and `content/docs/concepts/<page>.mdx` is
+the self-check markup, proved by hashing the prose region of each pair. One
+exception, deliberate and recorded here:
+
+> **`hashmap` line 321 — one link target repaired.**
+> `/docs/data/microservices-data#q116` → `/docs/java/persistence#q116`. The
+> original was dead rather than a forward reference: there is no
+> `data/microservices-data` page and none is planned, since the only
+> `microservices-data` is in the **design** track at Q89–95, which has no q116.
+> `Q116` exists in three banks; the surrounding prose names the JPA case and
+> paraphrases `java/persistence#q116`'s three options exactly, so the intended
+> target is unambiguous. Treated as markup, since link correctness is
+> conversion work.
+>
+> **Still open, and prose so not touched:** that same line reads "in the design
+> bank's persistence material" when the material is in the **Java** bank. A
+> one-word fix to the draft (`design` → `Java`) that only the user should make.
+
+Everything else needed no repair — no MDX hazards in any of the thirteen, and
+every `questions:` anchor valid on first check.
 
 `content/docs/java/concurrency.mdx` (Q48–Q70) is converted and is the reference
 implementation. Read it before converting anything else.
@@ -818,6 +936,34 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
+**Concept pages add 10 more, so the library holds 29.** Of the thirteen
+foundational pages, **ten carry their own diagram** and **three link to a
+reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
+`java/jvm-memory-gc#q71`, `dependency-inversion` →
+`design/architecture-styles#q53`. Each of those three was checked by following
+the link and confirming the target still renders the picture the prose promises,
+which is the only verification a borrowed diagram gets.
+
+**Phone-readability, measured on all ten at 375px.** None overflows; the page
+body never scrolls horizontally. Rendered scale, worst first:
+
+| Scale | Page | Shape |
+|---|---|---|
+| 50% | `generational-gc` | decision diamond beside a side branch |
+| 52% | `btrees-selectivity` | three-sibling fan-out, landscape |
+| 53% | `hashmap`, `idempotency` | three-way fan-out |
+| 55% | `mvcc` | |
+| 59% | `the-log` | |
+| 61% | `jit` | |
+| 99% | `thread-pools`, `bounded-contexts` | stacked subgraphs via `~~~` |
+| 100% | `generics-erasure` | plain top-to-bottom chain |
+
+The two at 99–100% are the ones that stack with invisible links or stay a simple
+chain — that is the technique paying off, and it is worth reaching for. The two
+at 50–52% are legible but the tightest in the library; they are the first place
+to look if the phone pass is ever tightened. All of them were left as drafted:
+changing a diagram is beyond a structural conversion.
+
 ### A concept page links to a reference diagram, it does not copy it
 
 Decided on the JMM page when the concept pattern was finished. The
@@ -853,14 +999,19 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: 29 pages, 407 questions, 19
-diagrams. **That gate is lifted.** These are unblocked and are the natural work
-after the concept pages.
+Content first — and the content now exists: **42 pages** (29 reference + 13
+concept), 407 questions, **29 diagrams**, 100 self-check items.
+**That gate is lifted, and the concept pages that followed it are done too**
+(2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path
+- Concept dependency graph as a study path — **now has thirteen real nodes.**
+  Read **The dependency graph — settled conventions** before starting: eight
+  roots, five resolving `prerequisites` edges, and a large majority of `unlocks`
+  targets pointing at unwritten specialist pages. Tolerating dangling `unlocks`
+  is a day-one requirement, not an edge case.
 - ~~Self-check questions collapsed by default~~ — built, see **The Question component**
 
 Out of scope: accounts, sync, spaced-repetition scheduling, a backend.
