@@ -1,4 +1,10 @@
-import { getPageImageUrl, getPageMarkdownUrl, source } from '@/lib/source';
+import {
+  conceptsForPage,
+  getPageImageUrl,
+  getPageMarkdownUrl,
+  resolveQuestions,
+  source,
+} from '@/lib/source';
 import {
   DocsBody,
   DocsDescription,
@@ -13,6 +19,7 @@ import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { gitConfig } from '@/lib/shared';
 import { QuestionsProvider } from '@/components/Question';
+import { RelatedQuestions } from '@/components/RelatedQuestions';
 
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const params = await props.params;
@@ -21,6 +28,11 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
 
   const MDX = page.data.body;
   const markdownUrl = getPageMarkdownUrl(page).url;
+
+  // Both directions come from the concept pages' `questions:` frontmatter, so a
+  // reference page needs no markup of its own and the two cannot drift.
+  const explains = resolveQuestions(page.data.questions);
+  const concepts = conceptsForPage(page.slugs);
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
@@ -34,13 +46,14 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
         />
       </div>
       <DocsBody>
-        <QuestionsProvider>
+        <QuestionsProvider concepts={concepts}>
           <MDX
             components={getMDXComponents({
               // this allows you to link to other pages with relative file paths
               a: createRelativeLink(source, page),
             })}
           />
+          <RelatedQuestions questions={explains} />
         </QuestionsProvider>
       </DocsBody>
     </DocsPage>

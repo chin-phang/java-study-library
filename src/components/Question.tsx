@@ -9,8 +9,14 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { ChevronRight, Link2 } from 'lucide-react';
+import { ChevronRight, Link2, Lightbulb } from 'lucide-react';
 import { cn } from '@/lib/cn';
+
+/** Mirrors `ConceptRef` in `@/lib/source`, kept structural to avoid a server import. */
+interface ConceptRef {
+  url: string;
+  title: string;
+}
 
 interface Broadcast {
   open: boolean;
@@ -23,6 +29,8 @@ interface QuestionsContextValue {
   register: (counted: boolean) => () => void;
   broadcast: Broadcast | null;
   setAll: (open: boolean) => void;
+  /** anchor (`q48`) -> concept pages that explain it, from their frontmatter. */
+  concepts: Record<string, ConceptRef[]>;
 }
 
 const QuestionsContext = createContext<QuestionsContextValue | null>(null);
@@ -35,7 +43,13 @@ const QuestionsContext = createContext<QuestionsContextValue | null>(null);
  * The toolbar only appears once at least one collapsible has registered, which
  * keeps concept pages (no questions) clean.
  */
-export function QuestionsProvider({ children }: { children: ReactNode }) {
+export function QuestionsProvider({
+  children,
+  concepts = {},
+}: {
+  children: ReactNode;
+  concepts?: Record<string, ConceptRef[]>;
+}) {
   const [count, setCount] = useState(0);
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
 
@@ -50,8 +64,8 @@ export function QuestionsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<QuestionsContextValue>(
-    () => ({ register, broadcast, setAll }),
-    [register, broadcast, setAll],
+    () => ({ register, broadcast, setAll, concepts }),
+    [register, broadcast, setAll, concepts],
   );
 
   return (
@@ -152,6 +166,7 @@ export function Question({
   children: ReactNode;
 }) {
   const [open, setOpen] = useCollapsible(id, true);
+  const explainedBy = useContext(QuestionsContext)?.concepts[id] ?? [];
   const panelId = `${id}-answer`;
 
   // No `not-prose` on the section: the answer body inherits the article's own
@@ -184,6 +199,17 @@ export function Question({
         className="border-t border-fd-border px-4 py-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
       >
         {children}
+        {explainedBy.length > 0 ? (
+          <div className="not-prose mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-fd-border bg-fd-muted/40 px-3 py-2 text-xs">
+            <Lightbulb aria-hidden className="size-3.5 shrink-0 text-fd-muted-foreground" />
+            <span className="text-fd-muted-foreground">The model behind this answer:</span>
+            {explainedBy.map((c) => (
+              <a key={c.url} href={c.url} className="font-medium underline underline-offset-2">
+                {c.title}
+              </a>
+            ))}
+          </div>
+        ) : null}
         <a
           href={`#${id}`}
           className="not-prose mt-3 inline-flex items-center gap-1 text-xs text-fd-muted-foreground no-underline hover:text-fd-foreground"

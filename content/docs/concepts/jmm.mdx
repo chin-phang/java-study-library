@@ -163,6 +163,10 @@ order. This is exactly the bug in unsafe publication, and exactly why
 double-checked locking needs `volatile` on the reference — see
 [Q57](/docs/java/concurrency#q57).
 
+This exact edge — the plain writes, the volatile write, and the reader that sees
+both — is drawn as a diagram on the reference answer:
+[Q48](/docs/java/concurrency#q48).
+
 ## 4. What this does *not* give you
 
 Visibility and atomicity are different problems, and conflating them is the most
@@ -317,18 +321,51 @@ they write concurrent code permanently. It is one of the highest-leverage
 
 Answer these without looking. If you can't, re-read the relevant section.
 
-1. Why is `while (running)` with a non-volatile flag permitted to loop forever,
-   given the CPU's cache coherence protocol guarantees eventual agreement?
-2. Two threads each `synchronized` on their own instance's monitor, mutating a
-   shared static field. Is there a happens-before edge? Why does the code look
-   correct?
-3. In the `Config` example, which specific reordering breaks the guarantee, and
-   which happens-before edge does it destroy?
-4. You have a `volatile Map<String, Integer>`. Is `map.put(k, v)` thread-safe?
-   Is `map = newMap` thread-safe? Explain the difference in terms of what
-   `volatile` actually governs.
-5. An immutable object with all-final fields is published by assignment to a
-   plain (non-volatile) static field. Is it safely published? Under what
-   condition does your answer change?
-6. Why does adding a `println` to a broken concurrent loop often "fix" it, and
-   what does that tell you about how to validate a concurrency fix?
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§1 The problem it exists to solve; §3 The edges, and what each really means.">
+
+Why is `while (running)` with a non-volatile flag permitted to loop forever,
+given the CPU's cache coherence protocol guarantees eventual agreement?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§3 The edges, and what each really means.">
+
+Two threads each `synchronized` on their own instance's monitor, mutating a
+shared static field. Is there a happens-before edge? Why does the code look
+correct?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§3 The piggyback effect.">
+
+In the `Config` example, which specific reordering breaks the guarantee, and
+which happens-before edge does it destroy?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§4 What this does not give you.">
+
+You have a `volatile Map<String, Integer>`. Is `map.put(k, v)` thread-safe?
+Is `map = newMap` thread-safe? Explain the difference in terms of what
+`volatile` actually governs.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§5 Final field semantics.">
+
+An immutable object with all-final fields is published by assignment to a
+plain (non-volatile) static field. Is it safely published? Under what
+condition does your answer change?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§6 Lab: make it fail, then fix it; §7 Leading on this.">
+
+Why does adding a `println` to a broken concurrent loop often "fix" it, and
+what does that tell you about how to validate a concurrency fix?
+
+</SelfCheckItem>
+
+</SelfCheck>
