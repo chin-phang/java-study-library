@@ -79,8 +79,10 @@ This distinction drives everything. Do not blur it.
 
 The existing Q&A in `_source/`. Optimised for recall — claim, mechanism,
 trade-off. These stay as written; conversion to MDX is **structural only**.
-Their job is fast lookup and self-testing. Each is *intended* to link up to the
-concept page that explains it — **not yet built**, see **Frontmatter** below.
+Their job is fast lookup and self-testing. Each links up to the concept page that
+explains it — **built**, and derived automatically; see **Frontmatter** below. No
+reference file contains any linking markup, and all 29 remain byte-identical to
+`_source` apart from the diagrams.
 
 ### Concept pages (~55)
 
@@ -180,7 +182,8 @@ Every concept page follows its section pattern:
    teach it, what architectural choice makes the problem smaller.
 8. **Where to go deeper** — primary sources, specifications, named authors.
 9. **Self-check** — 5–7 questions answerable only if the model is built. Prefer
-   "why does X break Y" over "what is X".
+   "why does X break Y" over "what is X". Mark them up with `<SelfCheck>` — see
+   **The Question component**.
 
 Sections 6 and 7 are what distinguish this library from the reference Q&A.
 If a page is missing either, it isn't finished.
@@ -212,15 +215,37 @@ estimatedStudyTime: 3h
 ---
 ```
 
-`prerequisites`/`unlocks` build the dependency graph — render it as a study path
-on the index. `questions` is *intended* to drive bidirectional linking.
+`questions` drives bidirectional linking between concept pages and the reference
+banks. `prerequisites`/`unlocks` are meant to build a dependency graph rendered as
+a study path on the index — **that part is still not built**; the fields are
+recorded but nothing reads them yet.
 
-**Status: only the forward direction exists, and only by hand.** Measured on
-`concepts/jmm.mdx`: its five `questions:` anchors all resolve, and its four prose
-links into `/docs/java/concurrency` all resolve — but **0 of those 5 reference
-pages link back**. Nothing reads the `questions:` field yet; the links that work
-were written manually in prose. Building the reverse direction (and rendering the
-forward one from frontmatter rather than prose) is outstanding work.
+### Bidirectional linking
+
+**Built in `35cb3bb`. One declaration drives both directions**, so they cannot
+drift:
+
+- **Forward** — `RelatedQuestions` renders the `questions:` list as links, from
+  `src/app/docs/[[...slug]]/page.tsx` rather than from MDX, so a concept page
+  cannot forget it. An anchor that does not resolve renders visibly as
+  `broken reference: …` instead of silently vanishing.
+- **Reverse** — `conceptsForPage()` inverts every concept page's `questions:`
+  list and passes the map through `QuestionsProvider`; `<Question>` renders "The
+  model behind this answer" when its own `id` appears. **No reference file is
+  touched**, so nothing to hand-maintain across 407 questions.
+
+Add a concept page, declare its `questions:`, and both directions appear. Write
+nothing on the reference side.
+
+**Why this needed a schema.** fumadocs' `pageSchema` is a Zod object with
+`$strip`: every key it does not declare — `concept`, `tier`, `prerequisites`,
+`unlocks`, `questions` — is discarded before reaching `page.data`. That is why
+the field looked inert. `src/lib/schema.ts` replaces it with a hand-written
+Standard Schema that preserves unknown keys. It is hand-written rather than
+`pageSchema.extend()` because extending needs `zod`, which pnpm's strict layout
+does not expose (fumadocs depends on it transitively) and which CLAUDE.md
+requires asking to add. Do not reach for zod to add a frontmatter field; add it
+to `DocFrontmatter` in `schema.ts`.
 
 ### Frontmatter gotchas
 
@@ -329,8 +354,10 @@ src/
   components/
     mdx.tsx                  # getMDXComponents() — register components HERE
     Question.tsx FollowUp.tsx Mermaid.tsx
+    SelfCheck.tsx RelatedQuestions.tsx
   lib/
     source.ts                # defineDocs macro + loader()
+    schema.ts                # frontmatter Standard Schema — see Frontmatter
     shared.ts layout.shared.tsx cn.ts
 ```
 
@@ -439,6 +466,37 @@ source, not from rendered HTML. **Verified 2026-09-09:** a phrase appearing only
 inside a collapsed `<Question>` answer, and one appearing only inside a collapsed
 `<FollowUp>`, are both returned by `/api/search`. Collapse behaviour does not
 affect indexing. Re-run this only if the components are restructured.
+
+### Self-check: `<Question>` deliberately does not fit
+
+`<Question>` hides an *answer*. A self-check prompt has no answer by design — the
+instruction is "answer these without looking" — so there is nothing for it to
+collapse, and reusing it would mean inventing answers the page withholds on
+purpose. **Do not put self-check answers on the page.**
+
+`<SelfCheck>` / `<SelfCheckItem>` hide the *pointer* instead: which section of
+this page builds the model being tested. Revealed after you have tried, it checks
+recall without handing over the answer.
+
+```mdx
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§3 The piggyback effect.">
+
+Which specific reordering breaks the guarantee, and which edge does it destroy?
+
+</SelfCheckItem>
+
+</SelfCheck>
+```
+
+`where` is navigation — a section name, never an answer. `SelfCheckItem` reuses
+`useCollapsible` from `Question.tsx`, so it counts towards and responds to the
+page-level expand-all control; that is what makes the control appear on concept
+pages, which have no `<Question>` of their own.
+
+`RelatedQuestions` needs no markup at all — `page.tsx` renders it from
+`questions:` frontmatter. Do not place it in MDX.
 
 ## Conversion rules
 
@@ -661,6 +719,18 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java (`e432116`), eight data (`e17caa8`), five
 design (`790a0b0`). Add more only if a new concept page needs one.
 
+### A concept page links to a reference diagram, it does not copy it
+
+Decided on the JMM page in `35cb3bb`. The happens-before diagram already existed
+at `java/concurrency#q48`; the concept page links to it. Two copies of one mermaid
+source in two files drift and nothing checks them, and moving it would strip the
+bank's most-linked answer of its only picture.
+
+So: if a concept page wants a picture that already exists on a reference answer,
+**link to it**. If the concept page genuinely needs a diagram of its own, it
+should show something the reference answer does not — a worked reordering trace,
+a lab's failure mode — rather than a second rendering of the same idea.
+
 Target list:
 
 *Java* — JVM memory areas and what `-Xmx` doesn't bound (Q71); G1 region layout
@@ -691,7 +761,7 @@ after the concept pages.
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
 - Concept dependency graph as a study path
-- Self-check questions collapsed by default
+- ~~Self-check questions collapsed by default~~ — built, see **The Question component**
 
 Out of scope: accounts, sync, spaced-repetition scheduling, a backend.
 
