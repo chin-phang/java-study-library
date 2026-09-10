@@ -1,0 +1,552 @@
+---
+title: Kafka
+description: Storage model, acks and ISR, consumer groups, compaction, Streams, sizing and operations.
+questionRange: Q106–Q135
+tags: [data, kafka, messaging, streaming]
+---
+
+## Q106. Explain Kafka's architecture and storage model. [#q106]
+
+<Question id="q106">
+
+**Answer.** A **topic** is split into **partitions**; each partition is an ordered, immutable, append-only log stored as a series of **segment** files on disk, with sparse offset and timestamp indexes alongside. Each message has a monotonically increasing **offset** within its partition.
+
+Each partition has a leader broker and follower replicas. Producers and consumers talk to the leader; followers fetch to stay in sync. Consumers within a **consumer group** each own a disjoint set of partitions and track their own offsets, so consumption is a cursor into a retained log rather than a destructive read. Different groups read the same data independently — that's the feature that makes Kafka an event backbone rather than a queue.
+
+Since 3.3+, cluster metadata is managed by **KRaft** (a Raft quorum of controllers) instead of ZooKeeper, which was removed entirely in Kafka 4.0.
+
+<FollowUp q="Why is Kafka fast despite writing to disk?">
+
+Sequential I/O — appending to a log is close to memory speed on modern hardware and fast even on spinning disks, unlike the random I/O a database does. It writes to the OS **page cache** rather than maintaining its own cache, so the OS handles readahead and writeback, and recently-written data is served from memory without a copy. And **zero-copy** (`sendfile`) sends bytes from page cache straight to the socket without passing through user space. Plus batching and compression amortise per-message overhead.
+
+</FollowUp>
+
+<FollowUp q="When does zero-copy not apply?">
+
+With TLS (the data must be encrypted in user space) and when the broker has to recompress or re-format records for an older client protocol version. Both are worth knowing because they explain sudden throughput drops after enabling encryption or after a client downgrade.
+
+</FollowUp>
+
+</Question>
+
+## Q107. Walk me through the producer's send path. [#q107]
+
+<Question id="q107">
+
+**Answer.** `send()` is asynchronous. The record is serialised, the partitioner picks a partition (by key hash, or sticky-batching round-robin when there's no key), and it's appended to an in-memory batch in the record accumulator. A background I/O thread drains batches and sends them to brokers.
+
+The knobs that matter:
+- **`batch.size`** — max bytes per partition batch. Bigger batches mean better compression and throughput.
+- **`linger.ms`** — how long to wait for more records before sending. Default 0 (send immediately). Setting it to 5–20 ms trades a little latency for much better batching and is often the single biggest throughput win.
+- **`compression.type`** — `lz4` or `zstd` are the practical choices; `zstd` compresses hardest, `lz4` is fastest. Compression happens per batch, so it interacts with batch size, and it reduces both network and *disk* usage since brokers store the compressed batch.
+- **`buffer.memory`** and **`max.block.ms`** — when the buffer fills (because the broker is slow), `send()` blocks up to `max.block.ms` then throws. That's your backpressure signal, and applications that ignore it fail badly.
+- **`acks`** and **`retries`** — durability (Q108).
+
+<FollowUp q="How do you guarantee ordering with retries?">
+
+Historically you had to set `max.in.flight.requests.per.connection=1`, because a retried batch could land after a later one. With the **idempotent producer** enabled (`enable.idempotence=true`, the default since 3.0), the broker deduplicates and reorders by sequence number, so ordering is preserved with up to 5 in-flight requests. That's a much better throughput/ordering trade and worth knowing as a version-specific fact.
+
+</FollowUp>
+
+</Question>
+
+## Q108. Explain `acks`, ISR and `min.insync.replicas`. [#q108]
+
+<Question id="q108">
+
+**Answer.** `acks` controls when the producer considers a write successful:
+- `acks=0` — never waits. Fastest, and messages vanish silently on any failure.
+- `acks=1` — the leader has written it (to its page cache, not necessarily fsynced). If the leader dies before followers replicate, the message is lost.
+- `acks=all` — every replica in the **in-sync replica set (ISR)** has it.
+
+The ISR is the set of replicas caught up with the leader within `replica.lag.time.max.ms`. A replica that falls behind is removed from the ISR; it rejoins when it catches up.
+
+The subtlety: `acks=all` alone is not enough. If replicas fail and the ISR shrinks to just the leader, `acks=all` means "the leader acknowledged" — one copy. **`min.insync.replicas=2`** with replication factor 3 forces the broker to *reject* the write when fewer than two replicas are in sync, so you never acknowledge a write that only exists once. That combination — RF=3, `min.insync.replicas=2`, `acks=all` — is the standard durable configuration, and it tolerates one broker failure while remaining writable.
+
+<FollowUp q="What is unclean leader election?">
+
+If all in-sync replicas are lost, `unclean.leader.election.enable=true` allows an out-of-sync replica to become leader — restoring availability by **discarding** committed messages. It's false by default and should stay false for anything financial: you'd rather the partition be unavailable than silently lose acknowledged transactions. Knowing this is an availability-vs-durability choice you make deliberately is the point.
+
+</FollowUp>
+
+</Question>
+
+## Q109. Explain the idempotent producer and Kafka transactions. [#q109]
+
+<Question id="q109">
+
+**Answer.** The **idempotent producer** assigns each producer a PID and epoch, and each record a monotonically increasing sequence number per partition. The broker tracks the last sequence per (PID, partition) and discards duplicates, so a retry caused by a network timeout doesn't append twice. This gives exactly-once *delivery to a partition* for a single producer session, at essentially no cost — hence it being the default now.
+
+**Transactions** extend this across multiple partitions and across the consume-process-produce cycle. With a `transactional.id`, the producer can atomically write to several partitions and commit consumer offsets in the same transaction. The broker writes control markers into the log, and consumers with `isolation.level=read_committed` skip records from aborted transactions and don't read past the last stable offset.
+
+That is Kafka's exactly-once semantics (EOS), and its scope must be stated precisely: **it is exactly-once for read-from-Kafka, process, write-to-Kafka.** It does not extend to your database or an external HTTP call. For those you still need idempotency at the sink.
+
+<FollowUp q="What does EOS cost?">
+
+Latency (consumers can only read up to the last stable offset, so an in-flight transaction delays visibility), throughput overhead from control records and coordination, and operational complexity — a `transactional.id` per producer instance, and zombie fencing via epochs when a producer is replaced. Use it where the guarantee is worth it, not by default.
+
+</FollowUp>
+
+</Question>
+
+## Q110. How do consumer groups and rebalancing work? [#q110]
+
+<Question id="q110">
+
+**Answer.** Consumers in a group send a `JoinGroup` to the **group coordinator** (a broker). One member becomes the leader and computes the partition assignment; the coordinator distributes it via `SyncGroup`. Each partition is owned by exactly one consumer in the group, so group parallelism is capped at the partition count — extra consumers idle.
+
+Rebalances trigger when a member joins, leaves, or is deemed dead (missed heartbeats past `session.timeout.ms`, or exceeded `max.poll.interval.ms` between polls).
+
+**Eager** rebalancing is stop-the-world: every consumer revokes *all* partitions, then the new assignment is computed and distributed. On a large group with state, that's a multi-second consumption outage every time one pod restarts. **Cooperative incremental** rebalancing (`CooperativeStickyAssignor`) only revokes the partitions that actually need to move, so most consumers keep working throughout. It's the default for Streams and the right choice for consumers too.
+
+<FollowUp q="How do you stop rebalance storms?">
+
+- **Static membership** (`group.instance.id`): a restarting consumer rejoins with the same identity, and if it returns within `session.timeout.ms` no rebalance happens at all. This is the fix for rolling deploys causing N rebalances.
+- Raise `max.poll.interval.ms` or lower `max.poll.records` so slow processing doesn't look like death. Better still, don't do long work on the poll thread.
+- Use the cooperative assignor.
+- Fix the actual cause — usually a consumer whose processing time occasionally spikes past the interval.
+
+</FollowUp>
+
+</Question>
+
+## Q111. How do you commit offsets, and what are the trade-offs? [#q111]
+
+<Question id="q111">
+
+**Answer.** Offsets are stored in the internal `__consumer_offsets` topic, keyed by (group, topic, partition).
+
+- **Auto-commit** (`enable.auto.commit=true`) commits periodically on poll. Simple, and gives at-most-once-ish behaviour with a surprise: it commits offsets for records you fetched, so a crash mid-batch loses the unprocessed remainder. Fine for metrics, wrong for anything important.
+- **Manual commit after processing** — `commitSync` (blocks, retries, simple, slower) or `commitAsync` (fast, no retry — a failed async commit followed by a rebalance means reprocessing). Common pattern: `commitAsync` in the loop, `commitSync` in the `finally` before closing.
+- **Store the offset with your side effect** — commit the offset into your own database, in the same transaction as the work, and seek to it on assignment. This is the strongest option for a database sink, because it makes the offset and the effect atomic.
+
+Whichever you choose, committing *after* processing gives at-least-once, which means the consumer must be idempotent.
+
+<FollowUp q="What happens with no committed offset?">
+
+`auto.offset.reset` decides: `latest` (skip everything that exists — a new consumer group silently misses history, which surprises people during deploys), `earliest` (read from the start — a new group replays everything, which surprises people differently), or `none` (throw). Also relevant: if a group is inactive past `offsets.retention.minutes`, its offsets are deleted and it resets — a classic cause of "our consumer reprocessed a week of data after the holiday".
+
+</FollowUp>
+
+</Question>
+
+## Q112. How do you choose the number of partitions? [#q112]
+
+<Question id="q112">
+
+**Answer.** Partition count sets your maximum consumer parallelism per group and your key-level ordering granularity. Estimate from throughput: if one consumer instance handles 5 MB/s and you need 50 MB/s, you need at least 10 partitions — then add headroom for growth, because increasing partitions later has a serious consequence.
+
+Costs of too many: more open file handles and memory on brokers, longer leader election and controller failover, more end-to-end latency (replication is per-partition), more overhead per producer batch (batching is per-partition, so 1,000 partitions means smaller batches and worse compression), and slower rebalances.
+
+**The reason to think hard up front:** adding partitions changes `hash(key) % partitions`, so **existing keys start routing to different partitions**, and per-key ordering is broken for the transition — messages for one account can be processed out of order across two partitions. There's no online repartitioning that preserves key ordering; the safe path is a new topic with the new partition count and a controlled migration.
+
+**Rule of thumb:** start with something like 2–3× your expected peak consumer count, in the tens rather than the hundreds for most services, and revisit deliberately.
+
+</Question>
+
+## Q113. Explain retention and log compaction. [#q113]
+
+<Question id="q113">
+
+**Answer.** Two independent policies. **`delete`** removes segments older than `retention.ms` or beyond `retention.bytes` — time or size based, applied at segment granularity (so a message can outlive its retention until its segment closes).
+
+**`compact`** retains at least the *latest* value for every key, forever, deleting superseded versions. A record with a null value is a **tombstone**, marking the key as deleted; tombstones are themselves retained for `delete.retention.ms` so consumers have a chance to see them before cleanup.
+
+Compaction turns a topic into a durable changelog you can replay to rebuild current state — which is exactly what Kafka Streams uses for state stores, what Connect uses for offsets, and what makes a compacted topic a viable source for materialising a table.
+
+You can also use `compact,delete` together for "keep the latest per key, but drop anything older than 90 days".
+
+<FollowUp q="What are the gotchas?">
+
+Compaction is asynchronous and lags — the "dirty" head of the log always contains duplicates, so consumers must tolerate seeing multiple versions of a key. `min.cleanable.dirty.ratio` controls how aggressively the cleaner runs. Keys must be set (a null key can't be compacted). And a compacted topic grows with your *key space*, so a topic keyed by something unbounded (a request ID) will grow forever — a common and expensive mistake.
+
+</FollowUp>
+
+</Question>
+
+## Q114. What is consumer lag, and how do you deal with it? [#q114]
+
+<Question id="q114">
+
+**Answer.** Lag = the partition's log-end offset minus the consumer group's committed offset — how many records behind you are. Measure it per partition, not just as a group total, because one lagging partition (a hot key, a stuck consumer) is invisible in the aggregate.
+
+I'd also measure **time lag** — the age of the last processed record — because "50,000 messages behind" means nothing to a business stakeholder while "settlement events are 12 minutes late" means everything.
+
+Causes and fixes:
+- **Not enough consumers** — scale up, capped by partition count.
+- **Slow processing** — profile the consumer; usually a downstream call or an N+1. Batch downstream writes.
+- **Skew** — one partition much hotter than others because of key distribution. Requires a better key or a repartition.
+- **Rebalance churn** — the consumer keeps stopping (Q110).
+- **A poison message** blocking a partition — the whole partition stalls behind it, which is the most important structural difference from RabbitMQ.
+- **Downstream saturation** — adding consumers makes it worse.
+
+<FollowUp q="How do you recover from a huge backlog?">
+
+Decide first whether you need the data. If it's stale (a real-time price feed), seek to the end and skip — often the right business call. If you need it, temporarily scale consumers to the partition count, increase `max.poll.records` and batch downstream writes, and consider a temporary parallel consumer group writing to a side path. And afterwards, fix whatever let it build without alerting.
+
+</FollowUp>
+
+</Question>
+
+## Q115. A single message keeps failing and it's blocking the partition. What do you do? [#q115]
+
+<Question id="q115">
+
+**Answer.** This is Kafka's fundamental trade: ordering per partition means a stuck message stops everything behind it. There's no per-message ack or redelivery like RabbitMQ.
+
+The standard pattern is a **dead-letter topic**: try N times with backoff in the consumer, then publish the record (plus error context, original topic/partition/offset, and trace ID) to a DLT, commit the offset, and continue. Then monitor and alert on DLT depth, and provide a replay tool.
+
+Refinements worth mentioning:
+- **Distinguish retryable from permanent failures.** A deserialisation error will never succeed — send it straight to the DLT. A downstream timeout should be retried in place, because sending it to a DLT loses ordering.
+- **Retry topics with increasing delays** (`retry-5s`, `retry-1m`, `retry-10m`) for retryable failures, so the main partition isn't blocked while waiting. This is Spring Kafka's non-blocking retry model.
+- **Be explicit that ordering is sacrificed** the moment a message goes to a retry or dead-letter topic. If per-key ordering is a hard requirement, you must instead pause the partition and stop — accepting unavailability rather than reordering. That's a business decision, and for a payments ledger the answer is often "stop and page someone".
+
+</Question>
+
+## Q116. How does Kafka replication actually work? [#q116]
+
+<Question id="q116">
+
+**Answer.** Each partition has a leader and `replication.factor - 1` followers. Followers issue fetch requests to the leader exactly like consumers do, and the leader tracks each follower's fetch position. A follower within `replica.lag.time.max.ms` is in the ISR.
+
+The **high watermark** is the highest offset replicated to all ISR members. Consumers can only read up to the high watermark — this is what prevents you from reading a message that could still be lost if the leader fails. The **log end offset** is the leader's latest appended offset; the gap between the two is un-replicated data.
+
+On leader failure, the controller elects a new leader from the ISR. Because the new leader has everything up to the high watermark, no acknowledged (`acks=all` with `min.insync.replicas`) data is lost. Follower truncation and leader epochs handle the edge cases where a returning replica has divergent data.
+
+<FollowUp q="What is rack awareness and why does it matter?">
+
+`broker.rack` lets Kafka spread a partition's replicas across racks/availability zones, so an AZ failure doesn't take out all replicas of a partition. Without it, random assignment can put all three replicas of some partition in one AZ, and you'll only discover it during an outage. Consumers can also fetch from the closest replica (`client.rack`), cutting cross-AZ data transfer costs substantially — a real operational win people miss.
+
+</FollowUp>
+
+</Question>
+
+## Q117. What is a schema registry and which compatibility mode do you choose? [#q117]
+
+<Question id="q117">
+
+**Answer.** A registry stores versioned schemas (Avro, Protobuf, JSON Schema) and the serialiser writes a small schema ID into each record rather than the full schema. Consumers fetch the schema by ID to deserialise. The registry enforces compatibility rules at *registration* time, so an incompatible schema is rejected in CI rather than breaking consumers in production.
+
+Modes:
+- **BACKWARD** (default) — a new schema can read data written with the previous schema. Upgrade **consumers first**. Allows deleting fields and adding optional fields.
+- **FORWARD** — the previous schema can read data written with the new one. Upgrade **producers first**. Allows adding fields and deleting optional ones.
+- **FULL** — both. The most restrictive and the safest.
+- **`_TRANSITIVE`** variants check against *all* previous versions, not just the latest — which is what you actually want if consumers may be many versions behind, and is the mode most people should be using without realising.
+
+**Why it matters.** The choice is really "who upgrades first", which is an organisational question. In a large estate where you don't control consumers, BACKWARD_TRANSITIVE is the pragmatic default. And the rule that makes it all work: **always give new fields a default value**, so both sides can cope with their absence.
+
+</Question>
+
+## Q118. Explain Kafka Streams' core concepts. [#q118]
+
+<Question id="q118">
+
+**Answer.** A **KStream** is an unbounded record stream (each record is an independent event). A **KTable** is a changelog interpretation of the same log — the latest value per key, a materialised table. `GlobalKTable` is fully replicated to every instance, so it can be joined without co-partitioning (good for small reference data like currency or fee tables).
+
+Stateful operations (aggregations, joins, windows) use local **state stores**, by default RocksDB on local disk, backed by a **changelog topic** in Kafka. That changelog is what makes the state fault-tolerant: if an instance dies, another restores the store by replaying the compacted changelog. **Standby replicas** keep a warm copy so failover doesn't require a full restore, which is the difference between seconds and hours on a large state store.
+
+Joins require **co-partitioning** — both sides must have the same number of partitions and the same keying strategy — otherwise related records land on different instances. Kafka Streams inserts automatic **repartition topics** when you change the key, which is why a `selectKey` before a join silently adds a whole extra topic and network hop.
+
+<FollowUp q="When would you use Kafka Streams over a plain consumer?">
+
+When you need stateful stream processing — windowed aggregations, stream-table joins, deduplication over a time window — and want the fault tolerance handled for you. For simple stateless transformations or writing to a database, a plain consumer is simpler and easier to reason about. Streams brings real operational weight (state store sizing, restore times, rebalance behaviour) that isn't justified by a `map` and a `filter`.
+
+</FollowUp>
+
+</Question>
+
+## Q119. How do you handle windowing and late-arriving data? [#q119]
+
+<Question id="q119">
+
+**Answer.** Window types: **tumbling** (fixed, non-overlapping), **hopping** (fixed, overlapping by an advance interval), **sliding** (windows defined by record proximity), and **session** (activity separated by an inactivity gap — the right model for user sessions and for grouping a burst of related payment attempts).
+
+Late data is governed by **grace period**: how long after a window closes you'll still accept records that belong to it. Kafka Streams uses **event time** by default (from the record timestamp), not processing time, so out-of-order arrival within the grace period is handled correctly. Records later than the grace period are dropped and counted in a metric you should be watching.
+
+`suppress(Suppressed.untilWindowCloses(...))` emits only the final result per window instead of an update per record — essential when the downstream is an alerting system or a customer-facing notification, because otherwise you emit a running total that keeps changing.
+
+**Why it matters.** The trade is fundamental: a longer grace period means more complete results and higher latency plus more state retained. There is no correct answer, only a business decision about how late a payment can arrive and still count toward the right day.
+
+</Question>
+
+## Q120. What do you monitor in a Kafka cluster? [#q120]
+
+<Question id="q120">
+
+**Answer.** Broker side:
+- **Under-replicated partitions** and **offline partitions** — the two most important cluster health numbers. Non-zero under-replicated means a replica is struggling; offline means data is unavailable.
+- **ISR shrink/expand rate** — flapping indicates network or GC problems.
+- **Active controller count** — must be exactly 1 across the cluster.
+- **Request handler idle ratio and network processor idle ratio** — the broker's saturation signals.
+- **Disk usage and growth rate per broker**, log flush latency.
+- **Leader imbalance** — one broker hosting a disproportionate number of leaders.
+- **Produce/fetch request latency percentiles.**
+
+Client side:
+- **Consumer lag** per group and per partition (Burrow or your own exporter), plus time lag.
+- **Producer**: record error rate, retry rate, buffer available bytes, batch size and compression ratio.
+- **Rebalance rate** per consumer group — a sudden spike is usually the root cause of a lag alert.
+- **DLT depth.**
+
+<FollowUp q="What's the single most useful alert?">
+
+Consumer lag *trend* on business-critical groups, expressed as time. It's the closest thing to a direct measure of "is the system doing its job", and it catches broker problems, consumer problems, and downstream problems alike.
+
+</FollowUp>
+
+</Question>
+
+## Q121. How would you size a Kafka cluster? [#q121]
+
+<Question id="q121">
+
+**Answer.** From four numbers: peak write throughput (MB/s), replication factor, retention period, and read fan-out.
+
+**Storage** = write MB/s × retention seconds × replication factor, plus headroom (I'd plan for 60–70% max utilisation, because a full disk takes a broker down and rebalancing needs space). 50 MB/s × 7 days × RF 3 ≈ 90 TB.
+
+**Network** = write × (RF − 1) for replication, plus write × consumer group count for reads. Read fan-out is the number people forget — five consumer groups on a 50 MB/s topic is 250 MB/s of egress, likely more than your ingest.
+
+**Brokers**: enough for the storage and network, plus enough that losing one (or an AZ) leaves you with capacity and a valid ISR. Minimum 3 for RF 3; realistically more for headroom. Spread across AZs with rack awareness.
+
+**Memory**: Kafka wants a modest JVM heap (6–8 GB is typical — it doesn't cache in heap) and as much OS page cache as possible, because consumers reading recent data should never touch disk.
+
+<FollowUp q="What's the most common sizing mistake?">
+
+Ignoring fan-out, and ignoring that a lagging consumer reads *old* data, which isn't in page cache — so it causes disk reads that compete with the write path. One backfilling consumer can degrade the whole cluster's latency, which is why tiered storage and consumer quotas exist.
+
+</FollowUp>
+
+</Question>
+
+## Q122. What is tiered storage and why does it matter? [#q122]
+
+<Question id="q122">
+
+**Answer.** Kafka can offload older log segments to object storage (S3/GCS) while keeping recent segments on local disk, presenting a single continuous log to clients. It decouples storage from compute: you can retain months or years without provisioning brokers for that capacity.
+
+The operational benefits are bigger than the cost saving. Broker recovery and rebalancing get dramatically faster, because a new broker only has to replicate the local tier instead of terabytes of history. And it makes long retention a realistic default, which changes what you can do — replaying six months of events to rebuild a projection stops being a special project.
+
+The trade-off: reads from the remote tier are much slower and have different cost characteristics, so a consumer replaying from the beginning behaves differently from one tailing the head.
+
+</Question>
+
+## Q123. Should you use Kafka as a database or for event sourcing? [#q123]
+
+<Question id="q123">
+
+**Answer.** Kafka is a good **event log** and a poor **database**. It gives you durable ordered retention, replay, and multiple independent readers — which is most of what event sourcing needs. What it lacks: arbitrary queries (you can only read a partition sequentially), point lookups by anything but offset, secondary indexes, and transactional reads across entities.
+
+So the workable pattern is Kafka as the event log plus **materialised views** — projections built by consumers into PostgreSQL, Elasticsearch, or a Kafka Streams state store queried via interactive queries. Read from the view, write to the log.
+
+Honest limitations to raise:
+- **Compaction is not a substitute for a database.** A compacted topic keyed by an unbounded key space grows forever.
+- **Schema evolution over years of retained events** is genuinely hard — you'll be deserialising 2019's schema in 2026, and upcasting is code you must maintain.
+- **GDPR erasure** in an immutable append-only log is a real problem; crypto-shredding is the usual answer (Q57).
+- Rebuilding a projection means replaying everything, which must be fast enough to be a viable recovery path.
+
+**Why it matters.** The strong answer is enthusiastic about the pattern and specific about the costs. Teams that adopt event sourcing without a plan for schema evolution and erasure regret it about eighteen months in.
+
+</Question>
+
+## Q124. Kafka Connect — when is it the right tool? [#q124]
+
+<Question id="q124">
+
+**Answer.** Connect is a framework for moving data between Kafka and other systems without writing consumer/producer code: source connectors (Debezium for CDC, JDBC) and sink connectors (JDBC, Elasticsearch, S3, BigQuery). It handles offset management, restarts, scaling across a worker cluster, and Single Message Transforms for light reshaping.
+
+Use it for standard integrations — CDC into Kafka, Kafka into a warehouse or search index — where a well-maintained connector exists. It saves a lot of undifferentiated code and gives you consistent operational behaviour.
+
+Don't use it when the logic is genuinely custom (Connect's SMTs are deliberately limited; complex logic belongs in Streams or a service), when you need per-record business decisions, or when a connector's semantics don't match your needs — sink connectors' delivery guarantees vary, and "exactly once" for a JDBC sink usually means idempotent upsert by key rather than a real transaction.
+
+<FollowUp q="What's the operational reality?">
+
+Connect is a distributed system with its own cluster, config topics, and failure modes. Connector task failures are quiet unless you monitor them — alert on connector and task state, not just the workers being up. And connector quality varies dramatically between the well-maintained ones and the community ones.
+
+</FollowUp>
+
+</Question>
+
+## Q125. How do you do Kafka across multiple datacentres? [#q125]
+
+<Question id="q125">
+
+**Answer.** Don't stretch a single cluster across high-latency links unless the latency is genuinely low (a metro-area multi-AZ setup is fine and normal; cross-region is not) — replication is synchronous to the ISR, so every `acks=all` write pays the round trip.
+
+For cross-region: **MirrorMaker 2** (built on Connect) replicates topics between clusters asynchronously, with configurable topic renaming, offset translation for consumer group failover, and cycle detection for active-active. Confluent's Cluster Linking does the same with byte-for-byte offset preservation, which makes consumer failover much cleaner.
+
+The hard parts aren't the replication, they're: **offsets don't map identically across clusters** without help (so a failed-over consumer may reprocess or skip); active-active topologies risk cycles and conflicting writes to the same key; and you must decide per topic whether you're doing DR (one-way, cold standby) or genuine active-active (much harder, needs conflict resolution and, usually, region-affinity for keys).
+
+<FollowUp q="What's your DR plan for Kafka?">
+
+Define the RPO honestly — asynchronous mirroring means the RPO is your mirroring lag, and there's no synchronous cross-region option that doesn't destroy write latency. Then decide: for an event backbone, the source of truth is usually the upstream database, so DR for Kafka can mean "re-emit from the outbox after failover" rather than replicating every byte. That's often simpler and more reliable than a mirrored cluster nobody has failed over to.
+
+</FollowUp>
+
+</Question>
+
+## Q126. What are the most common Kafka production incidents? [#q126]
+
+<Question id="q126">
+
+**Answer.**
+- **Consumer lag from a rebalance loop** — slow processing exceeding `max.poll.interval.ms`, so the consumer is evicted, rebalance, reprocess, evict again. The signature is lag climbing while consumers look healthy.
+- **A single hot partition** — poor key distribution (e.g. keying by a tenant where one tenant is 60% of volume). Lag on one partition, others fine.
+- **Disk full on a broker** — retention set too generously, or a consumer's replication falling behind. Brokers handle a full disk badly.
+- **Under-replicated partitions** from a slow or GC-thrashing broker, which then risks dropping below `min.insync.replicas` and rejecting writes.
+- **Poison message blocking a partition** (Q115).
+- **A consumer group offset reset** after inactivity, replaying everything from `earliest` — the "why did we send 400,000 duplicate emails" incident, which is really a missing idempotency incident.
+- **Schema incompatibility** breaking every consumer of a topic at once, because someone bypassed the registry or used the wrong compatibility mode.
+- **Producer buffer exhaustion** blocking application threads when brokers slow down, turning a Kafka degradation into an application-wide outage.
+
+**Why it matters.** Naming the *signature* of each — what the graphs look like — is what makes this an experience answer rather than a list.
+
+</Question>
+
+## Q127. How do you tune a consumer for throughput? [#q127]
+
+<Question id="q127">
+
+**Answer.** Increase `fetch.min.bytes` and `fetch.max.wait.ms` so the broker returns fuller batches instead of many small responses. Raise `max.partition.fetch.bytes` and `max.poll.records` so each poll does more work. Then — the biggest lever — **batch the downstream side effect**: one bulk insert of 500 rows instead of 500 individual inserts is usually a 20× improvement, and it's the reason most consumers are slow.
+
+Then decouple processing from polling: poll on one thread, hand work to a bounded executor, and manage offsets carefully so you only commit what's genuinely complete (the offset of the lowest incomplete record). This is where correctness bugs enter, so it needs care — but it's how you get parallelism beyond the partition count within a single consumer.
+
+Finally, make sure you're not fighting yourself: more consumers than partitions does nothing, and adding parallelism against a saturated database makes things worse.
+
+<FollowUp q="How do you parallelise within a partition without losing per-key ordering?">
+
+Hash the key to one of N in-process worker queues, so each key is always handled by the same worker in order, while different keys proceed in parallel. Then commit the offset only when all records up to that point are done. This gives you key-level ordering with intra-partition parallelism — the pattern used by parallel consumer libraries.
+
+</FollowUp>
+
+</Question>
+
+## Q128. What security controls does Kafka support? [#q128]
+
+<Question id="q128">
+
+**Answer.** **Encryption in transit** via TLS (note it disables zero-copy, costing throughput). **Authentication** via TLS mutual auth, SASL/SCRAM, SASL/GSSAPI (Kerberos), or SASL/OAUTHBEARER. **Authorisation** via ACLs on topics, consumer groups, and cluster operations — or RBAC in commercial distributions. **Quotas** per client/user for produce/fetch bandwidth and request rate, which double as a noisy-neighbour defence.
+
+**Encryption at rest** is not a Kafka feature — you use disk encryption, or you encrypt payloads at the application level, which is what you'd do for card data so brokers and operators never see plaintext. Application-level encryption also interacts with compaction and schemas, so it needs designing rather than bolting on.
+
+<FollowUp q="What's the practical governance problem?">
+
+Topic-level ACLs are coarse — a consumer either reads the whole topic or none of it. So a topic carrying PII plus non-PII forces you to grant broad access. The fix is at design time: separate topics by sensitivity, keep PII out of widely-consumed event streams, and reference it by ID so consumers that need it fetch it through an audited service.
+
+</FollowUp>
+
+</Question>
+
+## Q129. What's the difference between a Kafka consumer and a Kafka Streams application operationally? [#q129]
+
+<Question id="q129">
+
+**Answer.** A plain consumer is stateless from Kafka's perspective: restart it anywhere, it resumes from its committed offsets. Scaling is adding pods up to the partition count.
+
+A Streams application has **local state** on disk. That changes the operations profile substantially: restarting an instance on a fresh node means restoring the state store from the changelog topic, which for a large store can take a long time — during which those partitions aren't processed. Mitigations are standby replicas (`num.standby.replicas`), persistent volumes so restarts reuse local state, and `static membership` so a rolling restart doesn't trigger reassignment at all.
+
+You also inherit RocksDB tuning (memory, compaction, open files), changelog topic sizing, and the fact that repartition topics silently multiply your Kafka traffic.
+
+**Why it matters.** Teams adopt Streams for the programming model and get surprised by the operational model. Being able to name state restore time as a deployment concern is a strong signal.
+
+</Question>
+
+## Q130. How would you migrate a topic to a new schema or a new partition count? [#q130]
+
+<Question id="q130">
+
+**Answer.** For a **compatible schema change**, use the registry: add optional fields with defaults, upgrade in the order the compatibility mode requires, done.
+
+For a **breaking change or a partition-count change**, treat it as expand/contract with a new topic:
+1. Create `payments.v2` with the new schema/partitioning.
+2. Producers dual-write to both, or a Streams job mirrors v1 → v2 with the transformation.
+3. Migrate consumers one at a time to v2, verifying results against v1.
+4. Once all consumers are on v2, stop producing to v1 and let it age out by retention.
+
+The tricky part is the cutover for stateful consumers, which may need their state rebuilt from v2 — so plan the replay, and if the topic is compacted, verify that replaying it produces the same state.
+
+<FollowUp q="How do you verify the migration?">
+
+Run both paths in parallel and compare outputs — a reconciliation job asserting that v1-derived and v2-derived results match for a period. In financial systems this dual-run verification is standard and it's what makes the cutover a non-event.
+
+</FollowUp>
+
+</Question>
+
+## Q131. Explain the CAP position of Kafka. [#q131]
+
+<Question id="q131">
+
+**Answer.** Kafka is a CP-leaning system per partition, with the trade-off exposed as configuration. With `acks=all`, `min.insync.replicas=2`, RF=3, and `unclean.leader.election=false`, a partition becomes **unavailable for writes** rather than accepting a write that might be lost — that's choosing consistency over availability under partition. Flip `unclean.leader.election` to true and you've chosen availability, accepting potential data loss.
+
+Reads are bounded by the high watermark, so consumers never see a record that isn't replicated to the ISR — that's the consistency guarantee on the read side.
+
+**Why it matters.** It's a good example of the general point (Q44) that CAP isn't a property of a system but a per-configuration, per-operation trade — and Kafka makes it unusually explicit.
+
+</Question>
+
+## Q132. What's the relationship between Kafka partitions and database sharding? [#q132]
+
+<Question id="q132">
+
+**Answer.** Structurally the same idea and the same failure modes: a key function distributes data across independent units, and everything follows from key choice. Both give you parallelism within a unit and ordering/atomicity only within a unit. Both suffer hot spots from skewed keys. Both make cross-unit operations expensive. And both make changing the unit count painful because the key mapping changes.
+
+The useful consequence: aligning them is powerful. If your Kafka partition key and your database shard key are the same (`account_id`), then a consumer for a partition talks to one shard, which means local transactions, no cross-shard coordination, and cache locality. Misaligning them means every message fans out across shards.
+
+**Why it matters.** This is the kind of cross-domain observation that reads as senior — recognising that partitioning is one idea appearing in four different systems, so the reasoning transfers.
+
+</Question>
+
+## Q133. When is Kafka the wrong choice? [#q133]
+
+<Question id="q133">
+
+**Answer.**
+- **Low volume.** Running a Kafka cluster (or paying for a managed one) for 100 messages a second is a lot of operational surface for something a database table or a managed queue would do.
+- **You need per-message operations** — priorities, individual delays, selective acknowledgement, per-message TTL. Kafka has none of these, and reimplementing them in consumers is painful.
+- **Request/reply.** People do build it, but it's an awkward fit; use HTTP or gRPC.
+- **You need a queryable store.** Kafka is not a database (Q123).
+- **Very large messages.** Kafka is tuned for records in the kilobytes; multi-megabyte payloads hurt broker memory and replication. Use the claim-check pattern — put the blob in S3 and publish the reference.
+- **Strict global ordering across all data** — that means one partition and no parallelism.
+
+<FollowUp q="What's the simplest thing that could work?">
+
+For a lot of internal async work, a database table with `SELECT ... FOR UPDATE SKIP LOCKED` (Q29) is enough, and it comes with transactional enqueue for free. I'd want to see the volume, fan-out and replay requirements before adding a broker at all.
+
+</FollowUp>
+
+</Question>
+
+## Q134. Design an event-driven payments platform on Kafka. [#q134]
+
+<Question id="q134">
+
+**Answer.** **Topics** by domain and lifecycle, not by consumer: `payments.transaction.v1` (state changes), `payments.ledger.v1` (accounting entries), `payments.notification-request.v1` (commands). Keyed by `account_id` (or `merchant_id`) so per-account ordering holds and the partition key aligns with the database shard key.
+
+**Producing**: the payment service commits the business change and an outbox row atomically, and a relay (Debezium or a poller) publishes. That eliminates dual-write, and the outbox row is the intentional event — not a raw table change — so the topic's schema is a designed contract rather than an accident of the schema.
+
+**Consuming**: independent groups for the ledger projection, fraud scoring, notifications, the warehouse sink, and reconciliation. Each is idempotent, deduping on the event ID in the same transaction as its side effect. Retry topics with backoff for transient failures; a DLT with alerting for the rest.
+
+**Schema**: Avro with a registry, `BACKWARD_TRANSITIVE`, all new fields defaulted. No PII in the event payload — a customer reference that consumers resolve through an audited service, which also solves the erasure problem.
+
+**Durability**: RF 3 across AZs with rack awareness, `min.insync.replicas=2`, `acks=all`, no unclean election.
+
+**Observability**: lag as *time* per group, DLT depth, outbox lag, and an end-to-end trace ID propagated in headers from the HTTP request through every consumer.
+
+**And the reconciliation**: a periodic job comparing the ledger projection against the transactional source, alerting on any divergence. In a financial system, the assumption that the pipeline is working is not a substitute for checking that it is.
+
+</Question>
+
+## Q135. Kafka vs RabbitMQ vs SQS vs a database table — give me the decision tree. [#q135]
+
+<Question id="q135">
+
+**Answer.**
+- **Do you need replay, multiple independent consumers, or retention of events as a historical record?** → Kafka. Nothing else does this well.
+- **Do you need complex routing, per-message priorities/delays/TTL, or fine-grained per-message acknowledgement?** → RabbitMQ.
+- **Do you just need a reliable queue with minimal operations, at cloud scale, and you're on AWS?** → SQS (with FIFO queues if you need ordering and dedup, accepting the lower throughput ceiling). The lowest operational burden by a wide margin.
+- **Is the volume modest, the consumers are yours, and the work is already transactional with your database?** → a table with `SKIP LOCKED`. Zero new infrastructure, transactional enqueue, and full queryability.
+- **Is it a broadcast where loss is acceptable?** → Redis pub/sub, or just an HTTP call.
+
+**The meta-answer:** start from the guarantees you need (ordering scope, delivery semantics, retention, fan-out, latency) and the operational capacity you have, not from the technology. And be willing to say that the boring option is correct — a lot of "we need Kafka" is really "we need an async boundary", and the cost of running a broker nobody on the team has operated before is a real engineering cost that belongs in the comparison.
+
+</Question>
