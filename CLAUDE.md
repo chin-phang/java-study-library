@@ -220,6 +220,28 @@ banks. `prerequisites`/`unlocks` are meant to build a dependency graph rendered 
 a study path on the index — **that part is still not built**; the fields are
 recorded but nothing reads them yet.
 
+### The dependency graph — settled conventions
+
+Decided 2026-09-10, at the frontmatter review gate. Both are cheap now and
+expensive to reverse once a dozen pages have declared them.
+
+- **`prerequisites: []` is legitimate.** Some concepts are genuine roots —
+  generics and type erasure, B-trees and selectivity — and depend on nothing else
+  in the library. Do not invent a parent just to avoid an empty list.
+- **`unlocks` may name pages that do not exist yet.** It is a roadmap, not a link
+  list. `unlocks: [pecs, generic-api-design]` is fine before either page is
+  written.
+
+The consequence lands on whoever builds the study-path renderer: **it must
+tolerate dangling edges.** An `unlocks` target that resolves to no page is normal
+and must not throw, silently drop the node, or render as a broken link — show it
+as unwritten, or skip it deliberately. Assume nothing resolves.
+
+One asymmetry to consider when that work happens, not yet decided: a dangling
+`unlocks` is a promise, but a dangling `prerequisites` is a dead end — it tells a
+reader to study something first that they cannot read. Worth treating differently,
+and worth a check that flags one but not the other.
+
 ### Bidirectional linking
 
 **Built in `35cb3bb`. One declaration drives both directions**, so they cannot
