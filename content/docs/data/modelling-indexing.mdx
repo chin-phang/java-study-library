@@ -1,0 +1,249 @@
+---
+title: Data Modelling & Indexing
+description: B-trees, composite and covering indexes, keys, constraints, temporal data.
+questionRange: Q1–Q15
+tags: [data, postgres, indexing, modelling]
+---
+
+## Q1. When do you denormalise, and what do you give up? [#q1]
+
+<Question id="q1">
+
+**Answer.** Normalise by default — 3NF gives you one place to update each fact, which eliminates whole classes of anomaly. Denormalise deliberately when you have a *measured* read problem that can't be solved by indexing or a better query: a join that's hot and expensive, an aggregate recomputed on every page load, or a fan-out read across shards.
+
+What you give up is a single source of truth. Every denormalised copy is a cache with no invalidation protocol unless you build one, so you now need a way to keep it correct — updating both in one transaction, a trigger, a materialised view with a refresh policy, or an async projection you're willing to have be stale.
+
+**Why it matters.** The senior framing: denormalisation is not a modelling style, it's a specific trade of write complexity and consistency risk for read latency. If you can't name what breaks when the copy goes stale, you're not ready to make the trade.
+
+<FollowUp q="Where would you denormalise in a payments schema?">
+
+A counter or running balance is the classic case — computing a balance by summing a million ledger entries per request doesn't scale, so you keep a materialised balance row updated in the same transaction as the entry insert, plus a reconciliation job that recomputes from entries and alerts on drift. Denormalise, but keep the derivation authoritative and verify against it.
+
+</FollowUp>
+
+</Question>
+
+## Q2. Surrogate vs natural keys, and `bigint` vs UUID. [#q2]
+
+<Question id="q2">
+
+**Answer.** Natural keys (an ISIN, an email, a country code) are meaningful but change — people change email addresses, standards bodies reissue codes — and a changing primary key cascades through every foreign key. Surrogate keys are stable and opaque, which is why they're the default; keep the natural key as a `UNIQUE` constraint so you still get the integrity guarantee.
+
+`bigint` sequences: compact (8 bytes), sequential so inserts go to the end of the index (good locality, minimal page splits), but they're a centralised allocation point and they leak volume information (a competitor can count your orders by placing two).
+
+UUIDs: 16 bytes, generatable client-side without a round trip (which matters for offline clients, sharding, and for setting an entity's identity before persisting — see the JPA `equals` problem). The classic objection is that random UUIDv4 destroys index locality: every insert lands in a random leaf page, causing page splits and a working set that can't stay cached. **UUIDv7** fixes this — it's timestamp-prefixed, so it's roughly sequential while remaining globally unique. That's my default for new distributed systems.
+
+<FollowUp q="Why is random UUID insertion so much worse in MySQL than PostgreSQL?">
+
+InnoDB tables are clustered on the primary key, so a random PK means the *entire row* is inserted at a random position in the table, not just an index entry — massive write amplification and fragmentation. PostgreSQL's heap tables store rows in insertion order regardless of PK, so only the index suffers. If you must use UUIDv4 in MySQL, use an auto-increment PK and a unique index on the UUID.
+
+</FollowUp>
+
+</Question>
+
+## Q3. Explain how a B-tree index works and why it's the default. [#q3]
+
+<Question id="q3">
+
+**Answer.** A balanced tree where internal nodes hold key ranges and pointers, and leaf nodes hold keys plus row pointers (a heap TID in PostgreSQL, the primary key in InnoDB secondary indexes). Height is typically 3–4 even for hundreds of millions of rows because fan-out per page is large, so a lookup is 3–4 page reads — and the upper levels are almost always cached.
+
+It's the default because it supports the widest range of operations with one structure: equality, range scans (`>`, `BETWEEN`), prefix matching (`LIKE 'abc%'`), ordering (an index scan can satisfy `ORDER BY` without a sort), and `MIN`/`MAX` as a single-leaf lookup. Hash indexes beat it on pure equality, but nothing else.
+
+<FollowUp q="What is index selectivity and why does it decide whether the index is used?">
+
+Selectivity is the fraction of rows a predicate matches. Reading via an index costs a tree descent *plus a random heap fetch per matching row*; a sequential scan reads pages in order at much higher throughput. So above roughly 5–20% selectivity (engine and hardware dependent), the sequential scan wins and the planner correctly ignores your index. An index on a `status` column with three values is usually useless on its own — which is why people are surprised their index "isn't working".
+
+</FollowUp>
+
+</Question>
+
+## Q4. Composite index column order — how do you decide? [#q4]
+
+<Question id="q4">
+
+**Answer.** The leftmost-prefix rule: an index on `(a, b, c)` can serve predicates on `a`, `(a,b)`, and `(a,b,c)`, but not on `b` alone or `(b,c)`. So order by how the queries use it, not by cardinality alone.
+
+The practical ordering heuristic: **equality columns first, then the range/sort column last**. A query `WHERE tenant_id = ? AND created_at > ? ORDER BY created_at` wants `(tenant_id, created_at)` — putting `created_at` first means the engine can't use `tenant_id` to narrow, and can't produce sorted output within a tenant. Once you hit a range predicate, columns after it in the index can no longer be used for seeking, only for filtering.
+
+**Why it matters.** This is the single highest-leverage indexing skill. Most "we need more indexes" problems are actually "we need the right column order in one index" — and fewer, wider indexes beat many narrow ones because each index is write amplification.
+
+<FollowUp q="How many indexes is too many?">
+
+Every index is maintained on every insert, update to an indexed column, and delete. On a write-heavy table, ten indexes can double or triple write cost and inflate WAL. Audit with `pg_stat_user_indexes` (or `sys.schema_unused_indexes` in MySQL) for indexes with zero scans and drop them. Also look for redundant prefixes: if you have `(a,b)` and `(a)`, the second is usually dead weight.
+
+</FollowUp>
+
+</Question>
+
+## Q5. What is a covering index / index-only scan? [#q5]
+
+<Question id="q5">
+
+**Answer.** If every column a query needs is present in the index, the engine can answer entirely from the index and skip the heap fetch — removing the random I/O that usually dominates. PostgreSQL calls this an index-only scan; you can add non-key payload columns with `INCLUDE (...)` so they don't bloat the tree's comparison keys or the uniqueness semantics.
+
+PostgreSQL caveat: index-only scans still need to check tuple visibility, so they consult the visibility map. If the table has recently been updated and isn't vacuumed, most pages aren't marked all-visible and you fall back to heap fetches — an index-only scan that isn't. That's why `EXPLAIN ANALYZE` shows `Heap Fetches: N`, and why aggressive autovacuum matters for read performance, not just space.
+
+<FollowUp q="Why is this less of a thing in InnoDB?">
+
+Because secondary indexes already contain the primary key, an index on `(a)` covers any query selecting `a` and the PK. And the clustered index *is* the table, so a PK lookup never has a separate heap fetch at all.
+
+</FollowUp>
+
+</Question>
+
+## Q6. Clustered vs non-clustered indexes — how do PostgreSQL and InnoDB differ structurally? [#q6]
+
+<Question id="q6">
+
+**Answer.** InnoDB stores rows *inside* the primary key B-tree — the clustered index is the table. Secondary indexes store the indexed columns plus the primary key value, so a secondary index lookup that needs other columns does a second descent into the clustered index ("bookmark lookup"). Consequences: PK lookups are extremely fast, PK choice determines physical order, a wide PK bloats every secondary index, and random PKs fragment the table.
+
+PostgreSQL uses heap tables — rows live in insertion order in an unordered heap, and *all* indexes (including the PK) are secondary, pointing at heap tuple IDs. Consequences: no privileged index, uniform cost, but every index lookup needs a heap fetch unless it's index-only. `CLUSTER` physically reorders a table by an index once, but it doesn't maintain that order.
+
+**Why it matters.** It explains most engine-specific performance advice you'll read. It also explains why PostgreSQL updates are more expensive (a new tuple version means updating *every* index, unless HOT applies) while InnoDB updates in place with an undo log.
+
+</Question>
+
+## Q7. When does adding an index make things worse? [#q7]
+
+<Question id="q7">
+
+**Answer.** Several ways. Write amplification on every insert/update/delete. Storage and cache pressure — indexes compete with data for the buffer pool, so a rarely-used index evicts hot pages. Planner confusion — more choices means more chances to pick badly, especially with correlated columns. Lock and maintenance cost — building it locks writes unless you use `CREATE INDEX CONCURRENTLY` (which is slower, can fail and leave an invalid index, and can't run in a transaction). And in PostgreSQL, more indexes means updates are less likely to qualify for HOT (heap-only tuple) optimisation, making every update more expensive.
+
+There's also the case where the index is used but shouldn't be: a low-selectivity index scan that does a million random heap fetches is far slower than a sequential scan the planner would have chosen with better statistics.
+
+</Question>
+
+## Q8. Explain partial and functional (expression) indexes. [#q8]
+
+<Question id="q8">
+
+**Answer.** A **partial index** has a `WHERE` clause and only indexes matching rows: `CREATE INDEX ON payments (created_at) WHERE status = 'PENDING'`. If 0.1% of rows are pending, the index is tiny, stays cached, and costs almost nothing to maintain — perfect for a queue-like access pattern over a huge table.
+
+A **functional index** indexes an expression: `CREATE INDEX ON users (lower(email))`. This is the fix for the most common "why isn't my index used" case — a predicate like `WHERE lower(email) = ?` cannot use a plain index on `email`, because the engine can't invert the function.
+
+<FollowUp q="What else silently disables index usage?">
+
+Implicit type casts (`WHERE bigint_col = '123'` may be fine, but `WHERE varchar_col = 123` casts the *column*), leading wildcards (`LIKE '%foo'`), `OR` across different columns (sometimes rescued by a bitmap OR), functions applied to the column, and a mismatched collation. `EXPLAIN` tells you immediately; guessing does not.
+
+</FollowUp>
+
+</Question>
+
+## Q9. When would you use something other than a B-tree? [#q9]
+
+<Question id="q9">
+
+**Answer.**
+- **Hash** — equality only, smaller and slightly faster than B-tree for that case. Rarely worth it in PostgreSQL now that they're WAL-logged, but valid for large equality-only keys.
+- **GIN** — inverted index for composite values: full-text search, `jsonb` containment (`@>`), array membership. Fast reads, expensive writes (mitigate with the pending list / `fastupdate`).
+- **GiST** — extensible, for geometric data, ranges, nearest-neighbour, and exclusion constraints (e.g. "no two bookings for the same room with overlapping time ranges" — a constraint you genuinely cannot express otherwise).
+- **BRIN** — block range index: stores min/max per block range. Tiny (kilobytes for a billion rows) and only useful when physical order correlates with the column, which is exactly the case for append-only time-series tables. Enormous win for that shape, useless otherwise.
+- **Bloom** — cheap multi-column filtering when queries filter on arbitrary subsets of many columns.
+
+<FollowUp q="How do you index JSON?">
+
+`jsonb` with a GIN index supports containment and key-existence queries. But if a field inside the JSON is queried constantly with a range or equality predicate, a functional B-tree index on `(payload->>'customer_id')` is usually much better — and the real question is why that field isn't a proper column. Schemaless is a good fit for genuinely variable payloads and a bad fit for fields you filter on daily.
+
+</FollowUp>
+
+</Question>
+
+## Q10. Should foreign keys and constraints be enforced in the database or the application? [#q10]
+
+<Question id="q10">
+
+**Answer.** In the database. The database is the only place that sees *every* writer — your service, the batch job, the migration script, the on-call engineer with psql, the data team's backfill. Application-layer enforcement is a convention; a constraint is a guarantee.
+
+The arguments against are real but narrower than people claim: FK checks cost a lookup on write (usually indexed and cheap), they can cause lock contention on the parent row under high concurrency, they complicate sharding (you can't enforce across shards), and they complicate bulk loads and deletion order. The right response to most of them is to keep the constraints and manage the specific case — disable and revalidate during a bulk load, use `ON DELETE` policies deliberately, and accept application-level checks only where the DB genuinely cannot enforce them (cross-shard, cross-service).
+
+**Why it matters.** Every system I've seen with "we enforce it in the application" has orphan rows. The interviewer is checking whether you've cleaned up that data.
+
+<FollowUp q="What about `CHECK` constraints and `NOT NULL`?">
+
+Cheap and worth having — they're evaluated in-row with no extra lookup. `NOT NULL` also helps the planner. My rule: make the schema reject data that would be nonsense, so a bug produces a loud constraint violation at the point of the bug rather than a quiet corruption discovered in a report six months later.
+
+</FollowUp>
+
+</Question>
+
+## Q11. Explain three-valued logic and the traps around NULL. [#q11]
+
+<Question id="q11">
+
+**Answer.** SQL has TRUE, FALSE and UNKNOWN. Any comparison with NULL yields UNKNOWN, and a `WHERE` clause only keeps rows evaluating to TRUE. So `WHERE col != 'x'` silently excludes rows where `col IS NULL` — one of the most common quiet bugs in reporting.
+
+Other traps: `NOT IN (subquery)` returns *no rows* if the subquery yields a single NULL, because `x NOT IN (1, NULL)` is UNKNOWN, never TRUE. Aggregates skip NULLs, so `COUNT(col)` and `COUNT(*)` differ, and `AVG` divides by the non-null count. `UNIQUE` constraints allow multiple NULLs in most engines (they're not equal to each other). And `NULL = NULL` is UNKNOWN, while `NULL IS NOT DISTINCT FROM NULL` is TRUE — that's the operator you actually want when comparing nullable columns.
+
+<FollowUp q="How do you avoid all this?">
+
+Declare `NOT NULL` wherever the domain allows and use `NOT EXISTS` instead of `NOT IN` for anti-joins — it has the correct semantics with NULLs *and* usually a better plan.
+
+</FollowUp>
+
+</Question>
+
+## Q12. Which column types would you argue about in a schema review? [#q12]
+
+<Question id="q12">
+
+**Answer.**
+- **Money** — `NUMERIC(19,4)` or an integer minor-units column. Never `float`/`double`; the rounding error is real money. (PostgreSQL's `money` type is locale-dependent — avoid it.)
+- **Timestamps** — `timestamptz` always, not `timestamp`. `timestamptz` stores a UTC instant and converts on the way in and out; `timestamp` stores a wall-clock reading with no zone, which is almost never what an event timestamp means. This is the single most common schema mistake I see.
+- **Strings** — in PostgreSQL, `text` with a `CHECK` on length rather than `varchar(n)` (there's no performance difference and changing the constraint is easier). In MySQL, mind the character set — `utf8` is a 3-byte impostor; you want `utf8mb4`.
+- **Enums** — a lookup table with an FK is more flexible than a native enum type (which is painful to alter) and more self-documenting than a bare string.
+- **`jsonb` vs columns** — columns for anything you filter, sort, or constrain on; JSON for genuinely open-ended payloads (a raw webhook body, a provider's response you want to keep verbatim).
+- **Booleans** — a nullable boolean has three states, which usually means it should be an enum or a timestamp (`deleted_at` rather than `is_deleted`).
+
+</Question>
+
+## Q13. Soft deletes: good idea or bad? [#q13]
+
+<Question id="q13">
+
+**Answer.** It depends what you're really asking for, and the honest answer is that soft deletes are usually the wrong implementation of a real requirement.
+
+The costs are underestimated: every query must filter `WHERE deleted_at IS NULL` or return ghost data (and someone will forget); unique constraints break (you can't re-register an email that's soft-deleted without a partial unique index); indexes bloat with rows nobody reads; foreign keys still point at "deleted" rows; and GDPR/PDPA erasure requirements mean you may legally *have* to actually delete.
+
+Better options depending on the requirement: an **audit/history table** if you need the record of what happened; an **archive table** with a real move if you need retention with clean live tables; a **status column** if the row is genuinely still part of the domain (a cancelled order isn't deleted, it's cancelled); and a real `DELETE` when the answer is "we just wanted an undo button" — which is better served by a short-lived recycle bin.
+
+<FollowUp q="If you must, how do you do it well?">
+
+`deleted_at timestamptz NULL` (not a boolean — you want to know when), partial indexes with `WHERE deleted_at IS NULL` so live queries stay fast, partial unique indexes for the uniqueness problem, and a view or repository-level enforcement so no query can accidentally omit the filter.
+
+</FollowUp>
+
+</Question>
+
+## Q14. How do you model temporal data — "what was the fee schedule on 3 March"? [#q14]
+
+<Question id="q14">
+
+**Answer.** Validity intervals: a row per version with `valid_from` and `valid_to` (half-open, `[from, to)` — inclusive start, exclusive end, so intervals compose without off-by-one). A current-row query is `WHERE valid_from <= now() AND (valid_to IS NULL OR valid_to > now())`. In PostgreSQL, `tstzrange` with a GiST exclusion constraint prevents overlapping versions structurally, which is far better than hoping the application doesn't create them.
+
+**Bitemporal** adds a second axis: *valid time* (when the fact was true in the world) and *transaction time* (when we recorded it). You need both when you must answer "what did we believe on 3 March about the rate that applied on 1 March" — which is exactly the question auditors and regulators ask after a backdated correction. In finance this comes up constantly, and retrofitting it is painful, so it's worth deciding up front.
+
+<FollowUp q="How does this interact with reporting?">
+
+Reports must specify their as-of times explicitly, or two runs of the same report produce different numbers and nobody can tell whether that's a bug or a correction. Making as-of an explicit parameter is what makes financial reporting reproducible.
+
+</FollowUp>
+
+</Question>
+
+## Q15. OLTP vs OLAP — how does the modelling differ, and where do you draw the line? [#q15]
+
+<Question id="q15">
+
+**Answer.** OLTP: normalised, narrow rows, many small indexed lookups, high concurrency, short transactions, row-oriented storage. OLAP: denormalised star/snowflake schemas (fact tables with dimension keys), few large scans, aggregations over billions of rows, columnar storage with compression and vectorised execution.
+
+They conflict directly — indexes that help point lookups don't help full scans, and a big analytical query on your OLTP primary will consume the buffer pool, hold snapshots open (blocking vacuum), and add latency to customer-facing traffic.
+
+The line I draw: analytics never runs on the OLTP primary. Route it to a read replica for light reporting, and to a real warehouse (fed by CDC or batch ETL) for anything heavy. The transitional stage — "just point the BI tool at the replica" — works longer than people expect and fails suddenly when a dashboard query starts taking twenty minutes.
+
+<FollowUp q="What about HTAP systems that claim to do both?">
+
+They exist and can be a good fit at moderate scale, but the trade is usually cost and operational maturity. I'd want to see the analytical workload isolated by resource governance, and I'd still test what a runaway query does to transactional p99 before believing the marketing.
+
+</FollowUp>
+
+</Question>
