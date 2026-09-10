@@ -1,0 +1,334 @@
+---
+title: Generational GC and Why Allocation Is Cheap
+concept: generational-gc
+tier: foundational
+prerequisites: [jvm-memory]
+unlocks: [gc-tuning, escape-analysis, latency-troubleshooting, memory-leaks]
+questions: [java/jvm-memory-gc#q73, java/jvm-memory-gc#q74, java/jvm-memory-gc#q77, java/jvm-memory-gc#q80, java/streams#q47]
+estimatedStudyTime: 3h
+---
+
+> **Recall layer.** The interview answers are
+> [Q73](/docs/java/jvm-memory-gc#q73) and
+> [Q77](/docs/java/jvm-memory-gc#q77). This page builds the model.
+
+## 1. The problem it exists to solve
+
+Two services. Service A allocates 2 GB per second of short-lived objects.
+Service B allocates 50 MB per second. Service B spends four times as much time
+in GC and has worse pause times.
+
+Everyone's instinct — "allocation is expensive, reduce allocation" — predicts
+the opposite. The instinct is wrong, and the reason it's wrong is the single
+most useful thing to understand about the JVM's collectors.
+
+Service B holds onto its objects. Service A doesn't.
+
+**GC cost scales with the volume of data that survives, not with the volume
+allocated.** Garbage is nearly free. Survivors are expensive. Once you have that
+inverted correctly, most GC advice you'll read sorts itself into useful and
+useless.
+
+## 2. Allocation is a pointer bump
+
+Start with why allocating is cheap, because it's not obvious coming from C.
+
+`malloc` has to find a suitably sized free block in a fragmented heap — search a
+free list, split a block, update bookkeeping. The JVM does none of that,
+because a copying collector leaves Eden **contiguous and empty** after every
+collection. So allocation is:
+
+```
+if (top + size > end) slowPath();
+result = top;
+top += size;
+```
+
+A bounds check and an add. Roughly ten instructions, and the JIT inlines it into
+your code — there is no call.
+
+Better still, each thread gets its own **TLAB** (Thread-Local Allocation
+Buffer), a private slab carved out of Eden. So `top` is thread-local and the
+bump needs no atomic operation and no lock. Threads only synchronise when a TLAB
+is exhausted and a new one is requested.
+
+The consequence: allocating a small object in Java is *faster than `malloc`*,
+and the "object pooling is faster" instinct inherited from C++ is usually wrong
+on the JVM. Pooling replaces a pointer bump with a data structure, and it
+promotes objects into the old generation where they cost you at every collection
+(section 4).
+
+## 3. The weak generational hypothesis
+
+The empirical observation the whole design rests on:
+
+> **Most objects die young.** The longer an object has lived, the longer it is
+> likely to continue living.
+
+Measured across real workloads, typically 90–98% of objects are unreachable by
+the next collection. A request handler allocates parameter objects, strings,
+intermediate collections, a response — and all of it is garbage the moment the
+response is written.
+
+That suggests a specific strategy: **don't trace the whole heap to find a few
+survivors.** Instead, split the heap and collect the young part frequently.
+
+### Why a copying collector makes garbage free
+
+A young collection uses copying (Cheney-style): trace from the roots, and copy
+every *live* object out of Eden into a survivor space. When that's done,
+everything remaining in Eden is garbage — and you reclaim it by **doing
+nothing**. Just reset the allocation pointer to the start.
+
+Read that again, because it's the crux: dead objects are never visited, never
+touched, never individually freed. The collector's work is proportional to the
+number of live objects, and completely independent of how much garbage there is.
+
+```
+minor GC cost ≈ f(live objects in Eden)
+              ≈ 0 when everything died
+```
+
+You also get compaction for free — survivors are copied into a contiguous
+block — which is why Java heaps don't fragment the way `malloc` heaps do.
+
+So Service A, allocating 2 GB/s of objects that all die, does frequent
+collections that each find almost nothing to copy. Cheap. Service B allocates
+less but promotes steadily, so every collection copies real data and the old
+generation keeps growing toward a much more expensive collection.
+
+## 4. Ageing, promotion, and how it goes wrong
+
+Objects don't go straight to the old generation. The layout is Eden plus two
+survivor spaces, S0 and S1, one always empty:
+
+1. Allocate in Eden.
+2. Minor GC: copy live objects from Eden **and** the occupied survivor space
+   into the empty survivor space. Increment each object's age.
+3. Swap the survivor roles. Eden is now empty.
+4. When an object's age passes the **tenuring threshold**, promote it to the old
+   generation.
+
+Age is stored in a few bits of the object header's mark word — which is why the
+maximum tenuring threshold is 15.
+
+Two failure modes matter:
+
+**Premature promotion.** If the survivor space is too small to hold the
+survivors of one collection, objects are promoted immediately regardless of age.
+Now short-lived objects are in the old generation, where only a major
+collection can reclaim them. The old gen fills, and you pay for a big
+collection to clean up things that would have died in Eden for free. This is a
+very common misconfiguration and it presents as "old gen keeps growing" without
+a leak.
+
+**Allocation rate outrunning the collector.** With G1, if evacuation can't find
+free regions for survivors, you get *evacuation failure* — expensive in-place
+handling, and repeated failures degrade to a full GC
+([Q74](/docs/java/jvm-memory-gc#q74)).
+
+### The write barrier and remembered sets
+
+There's a problem with collecting the young generation independently: an old
+object may hold a reference to a young one, and that reference is a root you
+must not miss. Tracing the old generation to find them would defeat the purpose.
+
+So the JVM maintains a **card table**: the heap is divided into cards (typically
+512 bytes), and every reference-field write executes a tiny **write barrier**
+that marks the card dirty. At collection time, only dirty cards are scanned for
+old→young references.
+
+This is why every `obj.field = other` in Java carries a small hidden cost, and
+why G1's **remembered sets** — per-region records of incoming references — can
+consume a meaningful fraction of the heap on large, reference-dense workloads.
+It's also the mechanism behind generational ZGC's improvement in Java 21: adding
+generations let ZGC stop scanning everything on every cycle.
+
+## 5. What this means in practice
+
+**"Reduce allocation" is usually the wrong advice.** The right question is
+"what is surviving that shouldn't?" A cache with no eviction, a growing static
+collection, a `ThreadLocal` on a pooled thread, an oversized batch held across
+a transaction — those cost you. A million short-lived `Integer` boxes usually do
+not.
+
+**Two numbers tell you almost everything**
+([Q77](/docs/java/jvm-memory-gc#q77)):
+
+| Number | Meaning |
+|---|---|
+| Allocation rate (MB/s) | How fast Eden fills → how *often* you collect |
+| Promotion rate (MB/s) | How much survives → how *expensive* each collection is, and how fast old gen fills |
+
+High allocation with low promotion is healthy. Low allocation with steady
+promotion is the shape of a problem.
+
+**And the JIT may delete the allocation entirely.** If escape analysis proves an
+object can't be observed outside the compiled unit, C2 performs scalar
+replacement — the object's fields become registers and no allocation happens at
+all ([Q80](/docs/java/jvm-memory-gc#q80)). This is fragile (it depends on
+inlining succeeding), but it's another reason micro-optimising allocation by
+hand often achieves nothing measurable.
+
+## 6. What this does *not* cover
+
+- **Old generation collection.** Different algorithms entirely — G1's concurrent
+  mark plus mixed evacuation, ZGC's concurrent relocation with load barriers.
+  Generational theory tells you how to *avoid* needing them, not how they work.
+- **Humongous objects.** In G1, anything over half a region bypasses Eden
+  entirely and is allocated in contiguous old-gen regions. A workload allocating
+  8 MB byte arrays with a 4 MB region size never benefits from any of this.
+- **Non-generational collectors.** Pre-21 ZGC and Shenandoah were
+  single-generation; the hypothesis still held, they just couldn't exploit it.
+- **Pause time.** Generational design reduces GC *work*. Pause length also
+  depends on safepoint arrival ([Q78](/docs/java/jvm-memory-gc#q78)), which is
+  a separate mechanism and a common source of "the GC log says 10ms but the
+  request took 500ms".
+
+## 7. Lab: prove garbage is free
+
+### Lab 1 — allocate enormously, pay almost nothing
+
+```java
+public class Churn {
+    public static void main(String[] a) {
+        long n = 0;
+        for (int i = 0; i < 200_000_000; i++) {
+            byte[] b = new byte[64];   // dies immediately
+            n += b.length;
+        }
+        System.out.println(n);
+    }
+}
+```
+
+```bash
+java -Xmx256m -Xlog:gc Churn
+```
+
+You allocated ~12 GB through a 256 MB heap. Count the collections and add up the
+pause times. Then change `byte[64]` to `byte[640]` and re-run — ten times the
+allocation, and GC time barely moves, because the survivor count is still zero.
+
+### Lab 2 — now make them survive
+
+```java
+public class Survive {
+    static final List<byte[]> KEEP = new ArrayList<>();
+    public static void main(String[] a) {
+        for (int i = 0; i < 2_000_000; i++) {
+            byte[] b = new byte[64];
+            if (i % 4 == 0) KEEP.add(b);      // 25% survive
+        }
+        System.out.println(KEEP.size());
+    }
+}
+```
+
+Same allocation volume as a portion of Lab 1, far more GC time. **Run both and
+compare — that contrast is the entire page.**
+
+### Lab 3 — watch promotion in the log
+
+```bash
+java -Xmx512m -Xlog:gc*,gc+heap=debug,gc+age=trace -jar yourapp.jar
+```
+
+Find the age histogram lines. Watch objects age from 1 to the tenuring
+threshold. Then shrink the survivor space:
+
+```bash
+java -Xmx512m -XX:+UseParallelGC -XX:SurvivorRatio=64 -Xlog:gc*,gc+age=trace ...
+```
+
+Observe objects promoted at age 1 — premature promotion, reproduced
+deliberately.
+
+### Lab 4 — measure your real allocation rate
+
+On a running service:
+
+```bash
+jcmd <pid> JFR.start duration=60s filename=alloc.jfr settings=profile
+```
+
+Open in JDK Mission Control and look at TLAB allocation by call site. Compare
+allocation rate against promotion rate. On most services the top allocator is a
+surprise — logging, serialisation, or a stream pipeline nobody suspected.
+
+### Lab 5 — see escape analysis delete an allocation
+
+```java
+static double dist(double x1, double y1, double x2, double y2) {
+    Point d = new Point(x1 - x2, y1 - y2);
+    return Math.sqrt(d.x * d.x + d.y * d.y);
+}
+```
+
+Benchmark with JMH and `-prof gc`. Look at `gc.alloc.rate.norm` — bytes
+allocated per operation. Then re-run with `-XX:-DoEscapeAnalysis` and compare.
+Watching that number go from 0 to 16 B/op is the clearest possible proof.
+
+**If you do one thing from this page, run Labs 1 and 2 back to back.** Same
+allocation volume, wildly different GC cost, and the difference is one
+`if` statement.
+
+## 8. Leading on this
+
+**Reframe the team's GC conversations.** When someone says "we have a GC
+problem", the useful next question is "is it allocation rate or promotion
+rate?" Those have completely different fixes, and conflating them sends people
+optimising away short-lived objects while a cache with no eviction quietly
+grows. GC is a symptom reporter, not usually the disease.
+
+**Ban object pooling without a benchmark.** It is the most common
+performance-motivated change that makes things worse: you replace a ten-
+instruction pointer bump with a concurrent data structure, and you move objects
+into the old generation. Pooling is right for genuinely expensive resources —
+connections, threads, direct buffers — and wrong for ordinary objects.
+
+**Make GC logging non-negotiable and always on.** It's nearly free and it's the
+difference between diagnosing a production incident from evidence and guessing.
+Same argument as heap dumps on OOM: you cannot add it after the fact.
+
+**Resist flag-tuning as a first response.** The instinct to copy a
+twenty-flag configuration from a blog post is strong and almost always wrong —
+`-Xmn` fighting G1's adaptive sizing is the classic example. Change one thing,
+measure, keep or revert.
+
+**Teach the hypothesis, not the flags.** An engineer who understands that cost
+scales with survivors will make better decisions about caching, batch sizes and
+object lifetimes than one who has memorised `MaxGCPauseMillis`. The flags change
+between JDK versions; the hypothesis doesn't.
+
+## 9. Where to go deeper
+
+- Jones, Hosking & Moss, *The Garbage Collection Handbook* — the reference.
+  Chapters on copying collection and generational hypothesis are the relevant
+  ones.
+- Ungar (1984), "Generation Scavenging" — the original paper. Short, readable,
+  and it's satisfying to see the hypothesis stated before it became folklore.
+- JEP 439 (Generational ZGC) — the motivation section is an excellent modern
+  restatement of why generations pay off.
+- Aleksey Shipilëv, "JVM Anatomy Quarks" on TLABs and allocation — precise and
+  short.
+- Oracle's unified logging (`-Xlog`) documentation, so you can construct the
+  exact log you want rather than copying one.
+
+## 10. Self-check
+
+1. Why is allocating an object in Java often faster than `malloc`, and what
+   property of the collector makes that possible?
+2. Service A allocates 40× more than Service B and spends less time in GC.
+   Explain, in terms of what a minor collection actually does.
+3. What is a TLAB and what specifically does it eliminate?
+4. Describe premature promotion: what causes it, what it looks like in a GC log,
+   and why it makes old-gen collections more frequent.
+5. Why does every reference-field assignment in Java carry a hidden cost, and
+   what would break without it?
+6. You see old-gen occupancy climbing steadily after every collection. Give two
+   distinct explanations and how you'd tell them apart.
+7. Why is object pooling usually counterproductive on the JVM, and name the
+   cases where it isn't.
+8. A GC log shows a 10 ms pause but the request took 500 ms. What mechanism
+   might explain the gap?
