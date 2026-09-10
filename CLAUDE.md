@@ -181,12 +181,28 @@ Every concept page follows its section pattern:
 7. **Leading on this** — conventions to set, what to look for in review, how to
    teach it, what architectural choice makes the problem smaller.
 8. **Where to go deeper** — primary sources, specifications, named authors.
-9. **Self-check** — 5–7 questions answerable only if the model is built. Prefer
+9. **Self-check** — 5–8 questions answerable only if the model is built. Prefer
    "why does X break Y" over "what is X". Mark them up with `<SelfCheck>` — see
    **The Question component**.
 
+   *Widened from 5–7 on 2026-09-10.* The JMM page has 6; all twelve later drafts
+   independently landed on 8. Twelve pages agreeing against the spec means the
+   spec was wrong, not the pages.
+
 Sections 6 and 7 are what distinguish this library from the reference Q&A.
 If a page is missing either, it isn't finished.
+
+Section numbers are a pattern, not a template — the middle expands with the
+subject. The drafts run 9–11 sections and 1,900–2,500 words, and the last four
+are always Lab, Leading on this, Where to go deeper, Self-check. That tail is the
+part to hold fixed.
+
+**Open: do concept pages get their own diagrams?** None of the twelve drafts has
+one, which is consistent with "link to the reference diagram rather than copy it"
+— but several want a picture that exists on no reference answer: the B-tree
+descent, generational promotion and ageing, the log as a replication stream. The
+rule as written only covers the duplication case. Decide before converting them,
+because adding diagrams afterwards means re-opening twelve files.
 
 ## Frontmatter
 
