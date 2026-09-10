@@ -1,0 +1,171 @@
+---
+title: "Microservices: Communication & Integration"
+description: Versioning, contract testing, cascading failure, discovery, service mesh, webhooks.
+questionRange: Q79–Q88
+tags: [design, microservices, integration]
+---
+
+## Q79. How do you version a service API? [#q79]
+
+<Question id="q79">
+
+**Answer.** Prefer not to. Additive changes — new optional fields, new endpoints — break nobody, provided clients are built to ignore unknown fields (and you should mandate that in your API guidelines, since it's the single cheapest compatibility measure available).
+
+When a breaking change is unavoidable: version in the URI path (`/v2/payments`) for visibility and simplicity, or by content negotiation for finer granularity. Then run both concurrently, instrument usage per version *per consumer*, publish a deprecation timeline with `Deprecation` and `Sunset` headers, and remove only when usage is zero.
+
+For internal service-to-service, a schema registry with enforced compatibility rules (Q117 in the data bank) is better than URI versioning — it catches the break at build time rather than at runtime.
+
+<FollowUp q="What counts as a breaking change?">
+
+Removing or renaming a field; changing a type; making an optional field required; tightening validation; changing the meaning of an existing field (the sneaky one — same shape, different semantics, and no tooling catches it); changing error codes clients branch on; and changing default behaviour. Adding an optional field is safe *only* if clients tolerate unknowns.
+
+</FollowUp>
+
+</Question>
+
+## Q80. Explain consumer-driven contract testing. [#q80]
+
+<Question id="q80">
+
+**Answer.** Each consumer declares its expectations of a provider as a contract — the requests it makes and the responses it needs. Those contracts are published to a broker (Pact Broker or similar), and the provider's build verifies it satisfies every registered consumer contract. If a provider change would break a consumer, the *provider's* build fails, before deployment.
+
+This solves the central integration problem in microservices: you can't run end-to-end tests across twenty services for every commit, but you also can't deploy blind. Contract tests give you integration confidence with unit-test speed and no shared environment.
+
+The important property is the direction: contracts are written by consumers, expressing what they actually use, not by providers guessing. A provider that changes a field no consumer reads is free to do so.
+
+<FollowUp q="What are the practical difficulties?">
+
+Organisational more than technical: the provider team must treat a failing contract verification as a real failure, not someone else's problem, and that requires agreement about who owns compatibility. Also, contracts capture syntax and examples, not semantics — a provider can satisfy every contract while changing what a field *means*.
+
+</FollowUp>
+
+</Question>
+
+## Q81. How do you prevent cascading failure across services? [#q81]
+
+<Question id="q81">
+
+**Answer.** Layered defences, each covered in the data/messaging bank (Q125–Q126) but composed here:
+
+- **Timeouts everywhere**, forming a decreasing budget down the call chain. A missing socket timeout is the most common root cause of a total outage.
+- **Circuit breakers** so a failing dependency stops consuming your threads and stops adding load to its recovery.
+- **Bulkheads** — a separate thread pool or semaphore per dependency, so one slow downstream can't consume all your capacity.
+- **Retries with jittered backoff and a retry budget**, only for idempotent operations.
+- **Load shedding** — reject early with 429/503 when saturated, rather than queueing until you fall over.
+- **Fallbacks** that are genuinely useful (cached or degraded response), not just faster failure. In payments, never a fallback that assumes success.
+- **Asynchronous communication** where the caller doesn't need the answer, which removes the availability coupling entirely.
+
+**Why it matters.** The pattern to articulate is that **retries are load**, and the thing you're retrying is already overloaded. Most cascading failures are amplified by the client's own recovery behaviour.
+
+</Question>
+
+## Q82. How does service discovery work, and do you need it? [#q82]
+
+<Question id="q82">
+
+**Answer.** Services need to find each other's instances, which change constantly with autoscaling and deployment.
+
+- **Client-side discovery** — the client queries a registry (Consul, Eureka) and load-balances itself. More control, more client complexity, language-specific libraries.
+- **Server-side discovery** — the client calls a stable address and a load balancer or the platform routes it. Simpler clients.
+- **Platform-provided** — Kubernetes services with DNS. The client calls `payments-service` and the platform resolves and balances. This is what most teams should use, because it's already there.
+
+**Do you need explicit tooling?** Usually not any more. Kubernetes gives you discovery and load balancing for free; a service mesh adds smarter balancing, retries and mTLS on top. Running Eureka or Consul yourself is a decision that needs a reason in 2026.
+
+</Question>
+
+## Q83. What is a service mesh, and when is it worth it? [#q83]
+
+<Question id="q83">
+
+**Answer.** A dedicated infrastructure layer handling service-to-service communication, implemented as sidecar proxies (Istio/Envoy, Linkerd) or increasingly as a node-level or ambient proxy. It provides mTLS between services, retries, timeouts, circuit breaking, load balancing, traffic shifting for canaries, and uniform telemetry — all without application code.
+
+The appeal is that these concerns become consistent and language-agnostic. In a polyglot estate, that's a genuine win: you don't reimplement Resilience4j in Go and Python.
+
+**When it's worth it:** many services, multiple languages, a strong requirement for mTLS everywhere (common in regulated environments), and a platform team to operate it. Below that, the operational complexity — an extra proxy per pod, a control plane, upgrade cycles, and debugging that now includes the mesh — exceeds the benefit. Resilience4j plus Kubernetes services covers a lot.
+
+<FollowUp q="What are the failure modes?">
+
+The sidecar becomes part of every request path, so a mesh misconfiguration is a total outage. Latency is added at every hop. And debugging gains a layer: "is this the app, the sidecar, or the control plane?" is a question you'll be asking at 3am.
+
+</FollowUp>
+
+</Question>
+
+## Q84. How do you propagate context — auth, tenant, trace — across services? [#q84]
+
+<Question id="q84">
+
+**Answer.** Standardised headers, injected and extracted by shared middleware rather than by application code. `traceparent`/`tracestate` (W3C) for tracing, an auth token, a tenant identifier, and a correlation ID for the business transaction.
+
+Three things that make it work in practice:
+- **Propagate across asynchronous boundaries too** — into message headers, and back out in the consumer. This is where most implementations break, and it's exactly where you most need the trace.
+- **Never trust propagated identity from an untrusted source.** A tenant header from an internal service is fine only if the perimeter validated it; a gateway that strips and re-adds identity headers is the standard approach.
+- **Bound what you propagate.** Context headers grow without discipline, and they end up in logs.
+
+<FollowUp q="How does this interact with virtual threads?">
+
+`ThreadLocal`-based context (MDC, Spring Security's context holder) is expensive when you have a million threads, and `InheritableThreadLocal` copies a map to every child. Java 21's `ScopedValue` is the intended replacement (Q91 in the Java bank), and framework support for context propagation across async boundaries is worth checking before adopting virtual threads in a service that depends heavily on MDC.
+
+</FollowUp>
+
+</Question>
+
+## Q85. How do you handle a slow or unreliable third-party provider? [#q85]
+
+<Question id="q85">
+
+**Answer.** Treat it as permanently unreliable and design accordingly:
+
+- **Aggressive, explicit timeouts** — shorter than your own SLA, not the provider's default.
+- **Circuit breaker with a meaningful fallback** — for a payment provider, that might mean failing over to a secondary acquirer, which turns an outage into a routing decision.
+- **Bulkhead** — cap concurrent calls so a provider slowdown can't consume your capacity.
+- **Asynchronous where possible** — accept the request, acknowledge to the user, process against the provider in the background with retries.
+- **Idempotency keys** on every call (Q121 in the data bank), because you *will* time out without knowing the outcome.
+- **A reconciliation process** — the only reliable way to resolve "unknown" outcomes is to ask the provider later what actually happened, and to have a scheduled job that does so.
+- **Contract tests against their sandbox**, run on a schedule outside the main pipeline.
+
+**Why it matters.** In payments this is the daily reality, and the reconciliation point is the one that separates people who've operated these integrations from people who've read about resilience patterns. Retries and circuit breakers handle failures you can see; reconciliation handles the ones you can't.
+
+</Question>
+
+## Q86. Webhooks: how do you design them well, on both sides? [#q86]
+
+<Question id="q86">
+
+**Answer.** **As a producer:** sign every payload (HMAC over the raw body, with a timestamp to prevent replay); include an event ID and event type; deliver at-least-once with exponential backoff over hours or days; expose a delivery log and a manual replay; version the payload; and keep it small, with a reference the consumer can fetch for detail. Send events, not commands.
+
+**As a consumer:** verify the signature before parsing; respond 2xx **fast** and process asynchronously (queue it) — providers time out and retry, so slow processing generates duplicates; dedupe on the event ID; tolerate out-of-order delivery by checking state rather than assuming sequence; and never trust the payload as the source of truth for anything financial — treat it as a notification to go and fetch authoritative state.
+
+**Why it matters.** Webhook handling is where at-least-once delivery meets an HTTP endpoint someone wrote quickly, and it's a very common source of duplicate-processing incidents.
+
+</Question>
+
+## Q87. What's the difference between an API contract and an event contract, in terms of ownership? [#q87]
+
+<Question id="q87">
+
+**Answer.** An **API contract** is owned by the provider and shaped by consumer needs through negotiation; the provider knows who its consumers are and can measure usage per consumer.
+
+An **event contract** is subtler: the publisher doesn't necessarily know who consumes, consumers can appear without asking, and the events are typically retained, so old versions live in the log for as long as retention allows. That makes an event schema a *more* public and *longer-lived* commitment than an API.
+
+The practical implications: use a schema registry with enforced compatibility; never publish internal domain events directly as integration events (Q49); design event payloads for consumers you haven't met; and be very deliberate about what you promise, because you'll be deserialising this year's events in three years' time.
+
+</Question>
+
+## Q88. Should services share a database? Ever? [#q88]
+
+<Question id="q88">
+
+**Answer.** Default no — a shared database is the strongest coupling available. Every service's schema becomes every other service's contract, nobody can change a table without coordinating, migrations require synchronised deployment, and one service's runaway query degrades everyone. It's the defining characteristic of a distributed monolith.
+
+The narrow legitimate exceptions: during a **migration** (extracting a service, with a documented plan and end date); a **read-only replica** for reporting where the schema is treated as a published contract with its own compatibility rules; and services that are genuinely one bounded context deployed separately for scaling reasons, owned by one team.
+
+Every one of those needs a stated reason and an owner. "It was easier" isn't one.
+
+<FollowUp q="What if a service needs another's data?">
+
+Options in order of preference: ask via its API (simple, always fresh, adds a synchronous dependency); subscribe to its events and keep a local read model (fast, no runtime dependency, eventually consistent, duplicated storage); or, if the query genuinely spans services, build a dedicated read model fed by events (CQRS, Q95). What you don't do is read its tables.
+
+</FollowUp>
+
+</Question>
