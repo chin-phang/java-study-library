@@ -1,0 +1,319 @@
+---
+title: JVM Memory and What -Xmx Doesn't Bound
+concept: jvm-memory
+tier: foundational
+prerequisites: []
+unlocks: [generational-gc, gc-tuning, memory-leaks, off-heap-memory, classloader-leaks]
+questions: [java/jvm-memory-gc#q71, java/jvm-memory-gc#q72, java/jvm-memory-gc#q76, java/jvm-memory-gc#q81, java/jvm-memory-gc#q83, java/jvm-memory-gc#q86]
+estimatedStudyTime: 3h
+---
+
+> **Recall layer.** The interview answer is [Q71](/docs/java/jvm-memory-gc#q71).
+> This page is for the model that generates it.
+
+## 1. The problem it exists to solve
+
+Your service runs with `-Xmx1500m` in a container limited to 2 GB. It has no
+memory leak — the heap graph is flat, sawtoothing between 400 MB and 900 MB,
+week after week. Then Kubernetes kills it. Exit code 137.
+
+You increase the limit to 3 GB. It survives longer and dies again.
+
+There is no heap dump, because the JVM never threw `OutOfMemoryError` — the
+kernel's OOM killer terminated the process from outside. From the JVM's
+perspective nothing was wrong. From the kernel's perspective the process was
+using 2.1 GB.
+
+The gap between those two views is the subject of this page. **`-Xmx` bounds the
+Java heap. It does not bound the process.** Almost everyone knows this sentence
+and very few can enumerate what else is in there, which is why this failure is
+so common.
+
+## 2. The regions, and who owns each
+
+Split them by *who allocates* rather than by the JLS's categories, because that
+is what determines which knob controls them.
+
+These regions, and which of them `-Xmx` does not bound, are drawn as a diagram on
+the reference answer: [Q71](/docs/java/jvm-memory-gc#q71).
+
+### Bounded by `-Xmx`
+
+**The Java heap.** Every object and array. Divided into generations for most
+collectors. This is the only region `-Xmx` controls, and on a typical service it
+is somewhere between 40% and 70% of total process memory.
+
+### Native, per-thread
+
+**Thread stacks.** Each thread reserves `-Xss` — 1 MB by default on 64-bit
+Linux. Reserved is not committed, so a thread that uses 80 KB of stack costs
+~80 KB of resident memory, not 1 MB. But the *reservation* consumes virtual
+address space, and the committed portion is real.
+
+The arithmetic that catches people: 200 platform threads at ~100 KB actual usage
+is 20 MB — fine. 2,000 threads is 200 MB, and now your container budget is
+wrong. This is one of the concrete reasons virtual threads matter: their stacks
+live on the heap and grow on demand, so a million of them do not cost a million
+stack reservations.
+
+### Native, JVM-internal
+
+**Metaspace.** Class metadata — the runtime representation of every loaded
+class, its methods, its constant pool. Native memory since Java 8, when it
+replaced PermGen. **Unbounded by default.** `-XX:MaxMetaspaceSize` is unset, so
+a classloader leak grows until the machine says no. A Spring Boot service
+typically loads 15,000–25,000 classes and sits at 80–150 MB.
+
+**Code cache.** JIT-compiled native code. Default max 240 MB with tiered
+compilation. Exhausting it is a subtle disaster: the JVM logs a warning,
+*disables the compiler*, and continues running interpreted at roughly 1/20th
+speed. The service is up, responding, and inexplicably slow.
+
+**GC's own structures.** Not free. G1's remembered sets and card table scale
+with heap size and cross-region reference density — on a large heap this can be
+several percent of `-Xmx` again, in *native* memory. ZGC needs its own
+metadata and relocation headroom.
+
+**Compiler and symbol tables**, JNI handles, the string table, the JVM's own C++
+heap.
+
+### Native, application-controlled
+
+**Direct byte buffers.** `ByteBuffer.allocateDirect`, and everything built on
+it — Netty, NIO, most drivers. Bounded by `-XX:MaxDirectMemorySize`, which
+**defaults to the value of `-Xmx`**. That default is the trap: with `-Xmx1500m`
+you have implicitly permitted another 1500 MB of direct memory, so the JVM's own
+limits allow a 3 GB process before anything complains.
+
+**Memory-mapped files.** `MappedByteBuffer` maps into the address space; pages
+count as resident when touched.
+
+**Native libraries.** Anything JNI: compression codecs, crypto providers, a
+native database driver, an agent.
+
+### The formula
+
+```
+RSS ≈ heap
+    + metaspace + code cache + GC structures + JVM internals
+    + (threads × committed stack)
+    + direct buffers + mapped files + native libs
+    + malloc arena overhead
+```
+
+For a typical Spring Boot service the non-heap total lands somewhere between
+300 MB and 700 MB. That is the number people forget to budget.
+
+**So the container sizing rule** is not `limit = Xmx + a bit`. Use
+`-XX:MaxRAMPercentage=70` and let the JVM derive the heap from the cgroup limit,
+leaving headroom for everything above. Verify with `-XX:+PrintFlagsFinal` that
+`MaxHeapSize` is what you expect — do not assume.
+
+## 3. Why `RSS` and heap usage diverge
+
+Three separate mechanisms, and confusing them causes wrong conclusions.
+
+**Reserved vs committed vs used.** The JVM reserves address space up front
+(cheap, virtual), commits pages as needed (real memory), and *uses* some of what
+it committed. `-Xmx` caps reservation. RSS reflects commitment. A heap graph
+showing 400 MB used may sit inside 900 MB committed.
+
+**The JVM rarely returns memory to the OS.** Historically, once committed, heap
+stayed committed. G1 only uncommits at full GC or when idle
+(`-XX:+G1PeriodicGCInvokesConcurrent`); ZGC and Shenandoah are better at it.
+So RSS is a high-water mark, not a current reading, which is why "memory only
+goes up" is normal and not necessarily a leak.
+
+**glibc malloc arenas.** Native allocations go through per-thread arenas that
+fragment and hold freed memory. On a many-core machine glibc creates up to
+`8 × cores` arenas, each able to hold tens of megabytes. Setting
+`MALLOC_ARENA_MAX=2` is a well-known and sometimes dramatic RSS reduction for
+JVM containers.
+
+## 4. What this does *not* explain
+
+Not every kill is native memory. Before reaching for NMT, rule out:
+
+- **A genuine heap leak** where `-Xmx` is simply set too high for the limit.
+  Check the heap-after-full-GC trend first; if it climbs monotonically, it's a
+  leak and this page is the wrong tool.
+- **Page cache accounting.** In cgroup v1, page cache from file I/O counts
+  toward the limit. A service writing large logs can be killed for the kernel's
+  cache. cgroup v2 handles this better, but check which you're on.
+- **A sidecar.** The limit may be on the pod, not your container.
+- **Fork.** Any `Runtime.exec` briefly doubles the address space.
+
+## 5. How this connects to everything else
+
+Object layout drives all of it. A 64-bit JVM object is a 12-byte header
+(8-byte mark word + 4-byte class pointer with compressed oops), then fields,
+padded to 8 bytes — so `new Object()` is 16 bytes and an `Integer` is 16 bytes
+to hold 4 bytes of data ([Q72](/docs/java/jvm-memory-gc#q72)).
+
+References are 4 bytes with compressed oops, which the JVM enables automatically
+below roughly 32 GB. Cross that threshold and every reference becomes 8 bytes,
+so a 33 GB heap can hold *less live data* than a 31 GB one. That single fact
+determines the shape of most large-JVM deployments: stay under the threshold, or
+shard the process.
+
+## 6. Lab: find the memory you can't see
+
+### Lab 1 — prove `-Xmx` isn't the process
+
+```bash
+java -Xmx256m -XX:+PrintFlagsFinal -version | grep -iE "MaxHeapSize|MaxDirectMemorySize|MaxMetaspaceSize|ReservedCodeCacheSize"
+```
+
+Note that `MaxDirectMemorySize` mirrors `MaxHeapSize`, and `MaxMetaspaceSize`
+is effectively unlimited. You have just seen the JVM's own defaults permit far
+more than 256 MB.
+
+### Lab 2 — Native Memory Tracking
+
+```bash
+java -Xmx256m -XX:NativeMemoryTracking=summary -jar yourapp.jar
+jcmd <pid> VM.native_memory summary
+```
+
+Read the categories: Java Heap, Class (metaspace), Thread, Code, GC, Compiler,
+Internal, Symbol. Add the committed column and compare it to `RSS`:
+
+```bash
+ps -o rss= -p <pid>
+```
+
+The delta is malloc overhead and mappings NMT doesn't track. Do this on a real
+service, not a hello-world — the proportions are the lesson.
+
+### Lab 3 — make thread stacks visible
+
+```java
+public class StackCost {
+    public static void main(String[] a) throws Exception {
+        for (int i = 0; i < 2000; i++) {
+            new Thread(() -> { try { Thread.sleep(600_000); } catch (Exception e) {} }).start();
+        }
+        Thread.sleep(600_000);
+    }
+}
+```
+
+Run with `-Xmx64m -XX:NativeMemoryTracking=summary`. Watch RSS. The heap is
+almost empty and the process is hundreds of megabytes. Then run the same thing
+with `Thread.ofVirtual().start(...)` and compare — that contrast is the clearest
+demonstration of what virtual threads actually change.
+
+### Lab 4 — leak native memory without touching the heap
+
+```java
+List<ByteBuffer> keep = new ArrayList<>();
+while (true) { keep.add(ByteBuffer.allocateDirect(16 * 1024 * 1024)); Thread.sleep(200); }
+```
+
+With a generous `-Xmx`, watch RSS climb while the heap graph stays flat. You are
+now reproducing the failure from section 1 deliberately, which is the point —
+you will recognise the shape of that graph in production.
+
+### Lab 5 — the container kill
+
+Run any of the above under a memory limit and observe the difference between
+`OutOfMemoryError` (JVM-thrown, heap dump possible) and exit 137 (kernel-thrown,
+nothing). Confirm with `dmesg | grep -i oom` or the pod's `lastState`.
+
+**If you do one thing from this page, do Lab 2 against your real service.** Most
+engineers have never looked at their own NMT summary, and the proportions are
+almost always surprising.
+
+## 7. Leading on this
+
+**Set the flags once, centrally.** `-XX:MaxRAMPercentage`,
+`HeapDumpOnOutOfMemoryError`, `ExitOnOutOfMemoryError`, GC logging, and NMT in
+non-production belong in a shared base image or a platform-provided template,
+not copy-pasted per service. A team where every service has different, mostly
+cargo-culted flags cannot reason about any of them
+([Q86](/docs/java/jvm-memory-gc#q86)).
+
+**Alert on RSS against the limit, not on heap.** Heap-based alerting misses
+exactly the failure mode described here. The useful alert is
+`container_memory_working_set_bytes / limit`, plus a separate panel for heap so
+you can tell the two apart at a glance.
+
+**Insist a heap dump is possible before you need one.** `HeapDumpOnOutOfMemoryError`
+with a writable path on a volume that survives pod restart. Teams discover this
+is missing during the incident, which means the incident produces no evidence
+and recurs.
+
+**Teach the distinction once.** "`-Xmx` bounds the heap, not the process" is a
+five-minute whiteboard conversation that prevents a whole category of incident.
+It is a good example of the highest-leverage kind of teaching: a single sentence
+plus the formula in section 2.
+
+**Push back on `-Xmx` sized to the container.** The most common misconfiguration
+is `limit = 2Gi, -Xmx2g`, which guarantees the kill. It looks careful. It is the
+bug.
+
+## 8. Where to go deeper
+
+- JEP 122 (PermGen removal) and the Metaspace design notes — why the change was
+  made and what it fixed.
+- `jcmd` documentation: `VM.native_memory`, `GC.heap_info`,
+  `GC.class_histogram`, `VM.flags`.
+- Aleksey Shipilëv, "JVM Anatomy Quarks" — short, precise pieces on object
+  layout, compressed oops, and thread stacks.
+- The JOL (Java Object Layout) tool, for exact per-object sizing.
+- Brendan Gregg on Linux memory: RSS vs PSS vs WSS, and why RSS is a
+  poor-but-usual proxy.
+
+## 9. Self-check
+
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 The regions, and who owns each; §6 Lab 2 — Native Memory Tracking.">
+
+A service with `-Xmx1g` is OOM-killed at a 2 GB container limit, and the heap
+never exceeds 600 MB. List five places the other gigabyte could be.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§2 Native, application-controlled.">
+
+Why does `MaxDirectMemorySize` defaulting to `-Xmx` make container sizing
+harder rather than safer?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§2 Native, JVM-internal.">
+
+What happens when the code cache fills, and why is it worse than an
+exception?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§5 How this connects to everything else.">
+
+Explain why a 33 GB heap can hold less live data than a 31 GB heap.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§3 Why RSS and heap usage diverge; §4 What this does not explain.">
+
+Your RSS graph rises steadily and never falls, but heap-after-full-GC is
+flat. Is this a leak? What would you check next?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§2 The formula; §6 Lab 5 — the container kill.">
+
+Why does `-Xmx2g` in a 2 GiB container reliably fail, and what should be set
+instead?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§3 Why RSS and heap usage diverge.">
+
+What does `MALLOC_ARENA_MAX=2` change, and why is it native rather than a JVM
+flag?
+
+</SelfCheckItem>
+
+</SelfCheck>
