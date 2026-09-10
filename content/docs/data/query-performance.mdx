@@ -36,6 +36,17 @@ I also watch for spills: `Sort Method: external merge Disk: 250MB` means `work_m
 - **Index-only scan** — all needed columns are in the index; no heap fetch (subject to the visibility map, Q5).
 - **Bitmap heap scan** — the middle ground. Scan the index, build a bitmap of *pages* to visit, sort it, then read those pages in physical order. This converts random I/O into something closer to sequential, and it lets the planner combine multiple indexes with `BitmapAnd`/`BitmapOr`. It loses index ordering, so it usually implies a separate sort.
 
+```mermaid
+flowchart TD
+  A["selective predicate"] --> B["descend the B-tree: root, internal, leaf"]
+  B --> C{"all needed columns in the index?"}
+  C -->|no| D["index scan: random heap fetch per matching row"]
+  C -->|yes| E{"pages marked all-visible in the visibility map?"}
+  E -->|no| D
+  E -->|yes| F["index-only scan: no heap fetch at all"]
+  D --> G["many matches: bitmap heap scan sorts pages, reads in physical order"]
+```
+
 **Why it matters.** Knowing that bitmap scans exist explains why the planner sometimes uses two mediocre indexes together instead of one good one, and why adding the right composite index eliminates a `BitmapAnd` and a sort in one move.
 
 </Question>

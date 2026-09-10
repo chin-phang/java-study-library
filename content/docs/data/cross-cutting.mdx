@@ -19,6 +19,17 @@ Relay, two options:
 
 Either way, delivery is **at-least-once** — a crash between publish and mark-published republishes — so consumers must dedupe on the event ID.
 
+```mermaid
+flowchart TD
+  A["one local transaction: business change + outbox insert"] --> B["outbox row with published_at null"]
+  B --> C{"relay"}
+  C -->|polling| D["SELECT unpublished FOR UPDATE SKIP LOCKED, publish, mark"]
+  C -->|CDC| E["Debezium tails the WAL for outbox inserts"]
+  D --> F["broker, keyed by aggregate id to preserve per-aggregate order"]
+  E --> F
+  F --> G["at-least-once, so the consumer dedupes on event id"]
+```
+
 Housekeeping people forget: delete or partition-drop published rows (the table grows fast and its index matters), alert on the **age of the oldest unpublished row** (the single best health metric for the pattern), and preserve ordering per aggregate by publishing with the aggregate ID as the Kafka key.
 
 <FollowUp q="Why not just publish the CDC stream of the business tables directly?">

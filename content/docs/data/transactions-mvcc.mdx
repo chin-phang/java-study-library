@@ -38,6 +38,20 @@ WAL is written and `fsync`ed before commit is acknowledged. It leaks when: `sync
 
 The canonical write skew: two doctors both on call, each transaction checks "is at least one other doctor on call?" (yes), and each takes themselves off call. Both commit; nobody is on call. The financial version: two withdrawals from linked accounts where the overdraft rule spans both.
 
+```mermaid
+sequenceDiagram
+    participant A as Txn 1
+    participant DB as on_call
+    participant B as Txn 2
+    A->>DB: read: 2 on call, ok
+    B->>DB: read: 2 on call, ok
+    A->>DB: write: A off call
+    B->>DB: write: B off call
+    A->>DB: COMMIT
+    B->>DB: COMMIT
+    Note over DB: no conflict, nobody on call
+```
+
 **Why it matters.** Write skew is the anomaly that catches senior engineers, because "we use REPEATABLE READ" feels safe and isn't. The fixes are `SERIALIZABLE`, materialising the conflict (lock a parent row so the transactions actually collide), or a constraint that expresses the invariant.
 
 <FollowUp q="How does PostgreSQL implement `SERIALIZABLE`?">
@@ -55,6 +69,16 @@ Serializable Snapshot Isolation — optimistic. It tracks read/write dependencie
 **Answer.** Every row version (tuple) carries `xmin` (the transaction that created it) and `xmax` (the transaction that deleted or superseded it). A transaction takes a snapshot — the set of transaction IDs committed at its start — and a tuple is visible if `xmin` is committed-and-visible in that snapshot and `xmax` is not.
 
 So an `UPDATE` doesn't modify in place: it writes a *new* tuple and marks the old one's `xmax`. Readers never block writers and writers never block readers, which is MVCC's whole selling point. The costs are: dead tuples accumulate and must be reclaimed (VACUUM), and every index must be updated to point at the new tuple unless the **HOT** (heap-only tuple) optimisation applies — which requires the new version to fit on the same page and no indexed column to change.
+
+```mermaid
+flowchart TD
+  A["UPDATE a row"] --> B["old tuple: xmax set — invisible to later snapshots"]
+  A --> C["new tuple: xmin = this txn, xmax null"]
+  C --> D{"fits the same page and no indexed column changed?"}
+  D -->|yes| E["HOT update: no index entries written"]
+  D -->|no| F["every index rewritten to point at the new tuple"]
+  B --> G["dead tuple reclaimed later by VACUUM"]
+```
 
 <FollowUp q="Why does an update-heavy table with many indexes perform badly?">
 

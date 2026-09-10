@@ -11,6 +11,16 @@ tags: [data, rabbitmq, messaging]
 
 **Answer.** Publishers never publish to queues — they publish to an **exchange** with a **routing key**. The exchange applies its type's rules against its **bindings** to decide which **queues** receive a copy. Consumers subscribe to queues. That indirection is the point: publishers know nothing about who consumes, and you can add or remove consumers by changing bindings without touching the producer.
 
+```mermaid
+flowchart TD
+  P["publisher: publish with a routing key"] --> X["exchange"]
+  X --> B["bindings, matched by the exchange type"]
+  B --> Q1["queue A"]
+  B --> Q2["queue B"]
+  Q1 --> C1["consumer"]
+  Q2 --> C2["consumer"]
+```
+
 The default exchange (`""`) is a direct exchange with an implicit binding from every queue to its own name, which is why `basicPublish("", "my-queue", msg)` appears to publish straight to a queue. Convenient, and a habit that hides the model from people until they need routing.
 
 A **connection** is a TCP connection; **channels** are lightweight multiplexed sessions within it. Open one connection per process (or a small pool) and a channel per thread — never a connection per message, and never share a channel across threads.
@@ -92,6 +102,15 @@ AMQP transactions (`tx.select`/`tx.commit`) are synchronous and roughly 250× sl
 The naive retry — nack with `requeue=true` — is a trap: the message goes straight back to the head of the queue and is redelivered immediately, in a tight loop, at full CPU, forever.
 
 The standard delayed-retry pattern is a **wait queue**: the main queue dead-letters to a retry queue that has a message TTL and *no consumer*, and whose own DLX points back at the main exchange. Messages sit there for the TTL, expire, and get routed back. Chain several with increasing TTLs (5s, 30s, 5m) for exponential backoff, count attempts from the `x-death` header, and after N attempts route to a real dead-letter queue for human inspection.
+
+```mermaid
+flowchart TD
+  M["main queue"] --> N["consumer nacks with requeue=false"]
+  N --> A{"x-death count still below N?"}
+  A -->|yes| R["retry queue: TTL set, no consumer"]
+  R -->|"TTL expires, its DLX routes back"| M
+  A -->|no| D["dead-letter queue: monitored, replayable"]
+```
 
 Alternatively, the **delayed message exchange plugin** lets you set a per-message delay directly, which is much simpler if you can install plugins.
 

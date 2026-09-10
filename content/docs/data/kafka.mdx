@@ -95,6 +95,16 @@ Latency (consumers can only read up to the last stable offset, so an in-flight t
 
 **Answer.** Consumers in a group send a `JoinGroup` to the **group coordinator** (a broker). One member becomes the leader and computes the partition assignment; the coordinator distributes it via `SyncGroup`. Each partition is owned by exactly one consumer in the group, so group parallelism is capped at the partition count — extra consumers idle.
 
+```mermaid
+flowchart TD
+  A["consumers send JoinGroup to the group coordinator"] --> B["one member becomes leader, computes the assignment"]
+  B --> C["coordinator distributes it via SyncGroup"]
+  C --> D["each partition owned by exactly one consumer"]
+  D --> E{"more consumers than partitions?"}
+  E -->|yes| F["the surplus consumers sit idle"]
+  E -->|no| G["every consumer owns at least one partition"]
+```
+
 Rebalances trigger when a member joins, leaves, or is deemed dead (missed heartbeats past `session.timeout.ms`, or exceeded `max.poll.interval.ms` between polls).
 
 **Eager** rebalancing is stop-the-world: every consumer revokes *all* partitions, then the new assignment is computed and distributed. On a large group with state, that's a multi-second consumption outage every time one pod restarts. **Cooperative incremental** rebalancing (`CooperativeStickyAssignor`) only revokes the partitions that actually need to move, so most consumers keep working throughout. It's the default for Streams and the right choice for consumers too.
@@ -210,6 +220,16 @@ Refinements worth mentioning:
 **Answer.** Each partition has a leader and `replication.factor - 1` followers. Followers issue fetch requests to the leader exactly like consumers do, and the leader tracks each follower's fetch position. A follower within `replica.lag.time.max.ms` is in the ISR.
 
 The **high watermark** is the highest offset replicated to all ISR members. Consumers can only read up to the high watermark — this is what prevents you from reading a message that could still be lost if the leader fails. The **log end offset** is the leader's latest appended offset; the gap between the two is un-replicated data.
+
+```mermaid
+flowchart TD
+  L["leader: log end offset, say 105"] --> F["followers fetch from the leader, exactly like consumers"]
+  F --> I["a follower within replica.lag.time.max.ms stays in the ISR"]
+  I --> H["high watermark = highest offset held by every ISR member, say 103"]
+  H --> C["consumers may read up to 103 only"]
+  H --> U["104-105 not yet replicated, so not yet readable"]
+  C --> E["leader fails: new leader from the ISR already holds 103, no acked data lost"]
+```
 
 On leader failure, the controller elects a new leader from the ISR. Because the new leader has everything up to the high watermark, no acknowledged (`acks=all` with `min.insync.replicas`) data is lost. Follower truncation and leader epochs handle the edge cases where a returning replica has divergent data.
 
