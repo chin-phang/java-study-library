@@ -197,12 +197,14 @@ subject. The drafts run 9–11 sections and 1,900–2,500 words, and the last fo
 are always Lab, Leading on this, Where to go deeper, Self-check. That tail is the
 part to hold fixed.
 
-**Open: do concept pages get their own diagrams?** None of the twelve drafts has
-one, which is consistent with "link to the reference diagram rather than copy it"
-— but several want a picture that exists on no reference answer: the B-tree
-descent, generational promotion and ageing, the log as a replication stream. The
-rule as written only covers the duplication case. Decide before converting them,
-because adding diagrams afterwards means re-opening twelve files.
+**Settled: yes, when the picture does not already exist.** Applied across the
+twelve drafts in `72fc07d`. A page whose subject *is* an existing reference
+diagram links to it and adds nothing — `jvm-memory` is
+`java/jvm-memory-gc#q71`, `dependency-inversion` is
+`design/architecture-styles#q53`. A page that wants an *adjacent* picture gets
+its own: generational ageing and promotion rather than G1 regions, the
+selectivity crossover rather than the B-tree descent, bulkheads rather than the
+executor flow, xid freezing rather than tuple versions.
 
 ## Frontmatter
 
@@ -573,10 +575,18 @@ Which specific reordering breaks the guarantee, and which edge does it destroy?
 </SelfCheck>
 ```
 
-`where` is navigation — a section name, never an answer. `SelfCheckItem` reuses
-`useCollapsible` from `Question.tsx`, so it counts towards and responds to the
-page-level expand-all control; that is what makes the control appear on concept
-pages, which have no `<Question>` of their own.
+`where` is navigation — a section name, never an answer — and it is **optional**.
+Without it the item is a numbered question with no toggle, which is a perfectly
+good self-check. Writing a pointer is a judgement about which section answers
+which question, and the twelve drafts carry 94 self-check items between them;
+requiring one each would mean authoring 94 in a single conversion pass, and
+rushed pointers are worse than none. Convert without them, add them per page when
+someone is actually reading that page.
+
+`SelfCheckItem` reuses `useCollapsible` from `Question.tsx`, so items that *do*
+have a `where` count towards and respond to the page-level expand-all control;
+that is what makes the control appear on concept pages, which have no
+`<Question>` of their own.
 
 `RelatedQuestions` needs no markup at all — `page.tsx` renders it from
 `questions:` frontmatter. Do not place it in MDX.
@@ -774,6 +784,13 @@ page layout collapses and *every* diagram measures `0x0`, which looks exactly
 like eight broken diagrams. Set a size first (`resize_window`), or check the
 SVG's own `viewBox` — a healthy diagram has a real one even when its
 `getBoundingClientRect()` is zero.
+
+**A diagram drafted in `_source/` cannot be verified where it sits**, because
+`_source` is outside `content/docs` and is never built. Extract them into a
+throwaway page under `content/docs`, add it to `content/docs/meta.json`, render,
+check, then delete both. That is how the twelve concept drafts were verified in
+`72fc07d`; three of ten failed the phone test on the first pass and would have
+shipped unnoticed otherwise.
 
 ### Phone-readable, concretely
 
