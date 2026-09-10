@@ -1,0 +1,390 @@
+---
+title: Dependency Inversion and the Hexagonal Shape
+concept: dependency-inversion
+tier: foundational
+prerequisites: []
+unlocks: [hexagonal-architecture, testing-strategy, bounded-contexts, modular-monolith, anti-corruption-layer]
+questions: [design/solid-principles#q19, design/architecture-styles#q53, design/architecture-styles#q54, design/architecture-styles#q56, design/oop-fundamentals#q11]
+estimatedStudyTime: 3h
+---
+
+> **Recall layer.** The interview answers are
+> [Q19](/docs/design/solid-principles#q19) and
+> [Q53](/docs/design/architecture-styles#q53). This page builds the model.
+
+## 1. The problem it exists to solve
+
+Open a typical service and try to answer one question: **can I run the business
+rules without a database?**
+
+```java
+@Service
+public class PaymentService {
+    private final PaymentRepository repo;      // Spring Data, JPA
+    private final StripeClient stripe;         // concrete SDK class
+
+    @Transactional
+    public void capture(Long id, BigDecimal amount) {
+        PaymentEntity e = repo.findById(id).orElseThrow();
+        if (e.getStatus() != Status.AUTHORISED) throw new IllegalStateException();
+        if (amount.compareTo(e.getAuthorisedAmount()) > 0) throw new IllegalStateException();
+        stripe.capture(e.getProviderRef(), amount);
+        e.setStatus(Status.CAPTURED);
+    }
+}
+```
+
+The two business rules — you can only capture an authorised payment, and never
+for more than the authorised amount — are the most important lines in the file.
+To test them you need a database, a JPA entity with a generated ID, a transaction
+manager, and either a real Stripe sandbox or a mock of a class you don't own.
+
+Nothing about "you cannot capture more than you authorised" requires any of that.
+
+Six months later someone asks to add a second payment provider, and the answer
+is that provider-specific types are woven through the service layer. Two years
+later, migrating off JPA means touching every class that has business rules in
+it, because they're the same classes.
+
+The rules didn't get harder. They got **entangled** with mechanism.
+
+## 2. The direction of the arrow
+
+Draw the classic layered architecture:
+
+```
+Controller  →  Service  →  Repository  →  Database
+```
+
+Every arrow points downward, toward infrastructure. The domain — the thing that
+represents your business and changes for business reasons — **depends on** the
+database, the ORM, and the SDK. Those are the parts most likely to be replaced
+and least connected to what the software is for.
+
+That's the flaw. Not layering itself, but the direction.
+
+Dependency Inversion says: *high-level modules should not depend on low-level
+modules; both should depend on abstractions.* And the half that gets forgotten:
+*abstractions should not depend on details; details should depend on
+abstractions.*
+
+The second half is the whole point, and it comes down to one question:
+
+> **Where does the interface live?**
+
+If `PaymentGateway` is declared in `com.acme.infrastructure.stripe`, you have
+added an interface and inverted nothing. The arrow still points from your domain
+into infrastructure. You have an **indirection**, not an abstraction
+([Q11](/docs/design/oop-fundamentals#q11)).
+
+If `PaymentGateway` is declared in `com.acme.payments.domain`, written in the
+domain's vocabulary, and the Stripe adapter *implements* it, the arrow now
+points **inward**. Infrastructure depends on the domain. That is inversion.
+
+Same number of files. Opposite architecture.
+
+## 3. Ports and adapters
+
+Alistair Cockburn's framing, and a better metaphor than "layers" because it
+removes the idea of up and down.
+
+The ports-and-adapters shape, with the dependency arrows pointing inward, is
+drawn as a diagram on the reference answer:
+[Q53](/docs/design/architecture-styles#q53).
+
+The application core sits in the middle. Around it are **ports** — interfaces
+the core owns — and outside those, **adapters** that implement or drive them.
+
+**Driving (primary) ports** are how the outside calls in: a use-case interface
+like `CapturePayment`. Driving adapters are the REST controller, the message
+consumer, the CLI, the scheduled job. They depend on the core.
+
+**Driven (secondary) ports** are what the core needs from the world:
+`PaymentGateway`, `PaymentRepository`, `Clock`, `EventPublisher`. Driven
+adapters are the Stripe client, the JPA implementation, the Kafka producer. They
+implement interfaces the core declared, so they depend on the core too.
+
+Every arrow points inward. The core depends on nothing.
+
+The hexagon shape is arbitrary — Cockburn chose it to avoid implying a top and
+bottom, and to have room to draw several ports. Onion and Clean Architecture are
+the same principle with different diagrams and more prescribed layer names.
+
+### What this buys, concretely
+
+The `capture` rule becomes:
+
+```java
+public class Payment {                      // no annotations, no framework
+    private Status status;
+    private final Money authorised;
+
+    public CaptureRequest capture(Money amount) {
+        if (status != Status.AUTHORISED) throw new IllegalTransition(status);
+        if (amount.greaterThan(authorised)) throw new ExcessiveCapture(amount, authorised);
+        status = Status.CAPTURING;
+        return new CaptureRequest(providerRef, amount);
+    }
+}
+```
+
+and the test becomes:
+
+```java
+@Test void cannotCaptureMoreThanAuthorised() {
+    var p = Payment.authorised(Money.of(100, MYR));
+    assertThrows(ExcessiveCapture.class, () -> p.capture(Money.of(150, MYR)));
+}
+```
+
+No Spring context, no database, no mocks. Microseconds. You can write forty of
+these covering every edge of the domain, and they'll still pass after you
+migrate off JPA.
+
+**That test is the deliverable.** Everything else on this page is in service of
+being able to write it.
+
+## 4. What it costs
+
+Be honest about this, because the cost is what makes it a judgement call.
+
+**Mapping.** You now have a domain model, a persistence model, and an API model,
+with translation between them. For an entity with fifteen fields and no
+behaviour, that's three classes and two mappers where one would do. This is the
+main objection and it's a fair one.
+
+**Indirection for its own sake.** A port with exactly one adapter that will never
+have another is ceremony. `PaymentGateway` with Stripe and Adyen implementations
+earns its place; `UserServiceImpl` behind `UserService` usually doesn't
+([Q10](/docs/design/oop-fundamentals#q10)).
+
+**It doesn't fit everything.** A CRUD service that moves data between a form and
+a table has no domain logic to protect. A reporting service is a query, not a
+model. Applying hexagonal architecture there produces layers whose only behaviour
+is assignment.
+
+**The team has to hold the line.** Without enforcement, someone imports
+`jakarta.persistence` into the domain under deadline pressure, and the boundary
+is gone. This is not hypothetical; it is what happens.
+
+**The rule I'd give:** apply it where the domain has genuine invariants worth
+protecting, and skip it where the code is a data pipe. Most systems are a mix,
+and applying it uniformly is as wrong as not applying it at all.
+
+## 5. How this connects outward
+
+**Testing strategy** falls out of it. The domain gets fast unit tests with no
+framework. Adapters get integration tests against real infrastructure via
+Testcontainers. You stop needing a large mocked middle layer, which is where most
+brittle tests live.
+
+**Anti-corruption layers** are driven adapters with a specific job: translating
+another system's model so it doesn't leak into yours. Same mechanism, applied at
+a context boundary.
+
+**Bounded contexts** are the next level up. Ports and adapters organise one
+context internally; context mapping organises the relationships between them.
+
+**Modular monolith** is this applied per module, with the boundary enforced at
+build time rather than at deployment. A module with clean ports is a service you
+haven't had to deploy separately yet
+([Q55](/docs/design/architecture-styles#q55)).
+
+**Package by feature** is the physical expression. Layer-based packages
+(`controllers/`, `services/`, `repositories/`) scatter one change across four
+packages and force everything public. Feature packages let you keep a port and
+its adapter together and make internals package-private
+([Q54](/docs/design/architecture-styles#q54)).
+
+## 6. Lab: build it, then enforce it
+
+This lab is a small Maven or Gradle project. Budget an hour.
+
+### Lab 1 — write the domain first, with no dependencies
+
+Create a module or package `payments.domain` containing `Payment`, `Money`, and
+the exception types. Give it real rules: state transitions, amount validation,
+currency matching.
+
+Constraint: **no imports outside `java.*`**. No Spring, no Jakarta, no Lombok.
+If you reach for one, that's the exercise working — ask what you actually needed.
+
+Write the test from section 3. Run it. Note the wall-clock time of the whole
+test class.
+
+### Lab 2 — declare the ports
+
+In the same package:
+
+```java
+public interface Payments {                    // driven port
+    Optional<Payment> byId(PaymentId id);
+    void save(Payment p);
+}
+
+public interface PaymentGateway {              // driven port
+    ProviderRef authorise(Money amount, Card card);
+    void capture(ProviderRef ref, Money amount);
+}
+```
+
+Write them in the domain's language. If a method signature mentions `ResultSet`,
+`Entity`, `ResponseEntity` or a Stripe type, the abstraction has failed — that
+detail has leaked upward.
+
+Then write an in-memory `Payments` implementation backed by a `HashMap`, in your
+test sources. You can now test entire use cases with no infrastructure at all.
+
+### Lab 3 — add the adapters
+
+Create `payments.infrastructure.jpa` with a JPA entity and a `Payments`
+implementation that maps between entity and domain object. Create
+`payments.infrastructure.stripe` implementing `PaymentGateway`.
+
+Note what you had to write: a mapper. That's the cost from section 4, made
+concrete. Decide for yourself whether it was worth it.
+
+### Lab 4 — enforce the direction with ArchUnit
+
+This is the part that makes it survive contact with a team.
+
+```java
+@AnalyzeClasses(packages = "com.acme.payments")
+class ArchitectureTest {
+
+    @ArchTest
+    static final ArchRule domain_depends_on_nothing =
+        noClasses().that().resideInAPackage("..domain..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("..infrastructure..", "..api..",
+                                "org.springframework..", "jakarta.persistence..");
+
+    @ArchTest
+    static final ArchRule no_cycles =
+        slices().matching("com.acme.(*)..").should().beFreeOfCycles();
+}
+```
+
+Now deliberately break it: import `jakarta.persistence.Entity` into a domain
+class. Watch the build fail. **That failing build is the point of the whole
+lab** — the architecture is now a mechanism rather than an agreement
+([Q56](/docs/design/architecture-styles#q56)).
+
+### Lab 5 — swap an adapter
+
+Write a second `PaymentGateway` implementation — a fake that always declines
+above a threshold. Wire it via configuration. Confirm zero domain classes
+changed.
+
+Then do the harder version: replace the JPA `Payments` adapter with one using
+`JdbcClient` and raw SQL. If any domain test needed to change, the boundary was
+leaking and you've just found where.
+
+## 7. Leading on this
+
+**Make the dependency rule an ArchUnit test on day one of a project.** Not a wiki
+page, not a diagram in Confluence. Architecture that isn't enforced decays,
+reliably, and always under deadline pressure. One test file is the cheapest
+architectural control available, and it's the difference between a boundary and
+an aspiration.
+
+**Judge the abstraction by what it lets you stop thinking about.** In review, the
+question isn't "is there an interface?" but "what does this let me not know?" If
+the answer is nothing, it's an indirection and it should be deleted. This single
+question kills a lot of speculative structure.
+
+**Watch for leakage in signatures, not in imports.** A port that returns
+`Page<PaymentEntity>` or throws `DataAccessException` has already failed even
+though the import list looks clean. Framework types in a domain-owned interface
+are the tell.
+
+**Apply it selectively and say so out loud.** A team that hears "we do hexagonal
+architecture" will apply it to the reporting endpoint and the health check. Be
+explicit: full ports-and-adapters in the core domain, plain CRUD elsewhere, and
+name which is which. Uniform application is how this pattern gets its reputation
+for over-engineering.
+
+**Use the fast domain test as the argument.** Not the diagram. Show someone a
+test suite of 200 domain tests running in 400 milliseconds with no containers,
+next to the 6-minute `@SpringBootTest` suite it replaced. That's a concrete
+argument about cycle time, which is a thing the business already cares about.
+
+**Don't fight about the diagram.** Hexagonal, onion, clean — the arguments about
+which layer names are correct are a waste of everyone's time. The dependency
+rule is the content; the rest is packaging.
+
+## 8. Where to go deeper
+
+- Alistair Cockburn, "Hexagonal Architecture" — the original article. Short, and
+  the reasoning about *why* he avoided top-and-bottom layering is the useful
+  part.
+- Robert Martin, *Clean Architecture*, chapters 11 (DIP) and 22 (the dependency
+  rule). Read critically; the principle is sound, the prescriptiveness is
+  debatable.
+- Tom Hombergs, *Get Your Hands Dirty on Clean Architecture* — a concrete Java
+  implementation with the package structure and the ArchUnit rules worked out.
+- The ArchUnit user guide, especially layered architecture rules and slices.
+- Mark Seemann, *Dependency Injection Principles, Practices and Patterns* — the
+  clearest treatment of composition roots and why Service Locator is not DI.
+
+## 9. Self-check
+
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 The direction of the arrow.">
+
+Two codebases both have a `PaymentGateway` interface. In one, dependencies are
+inverted; in the other, they aren't. What is the single difference?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§2 The direction of the arrow; §7 Judge the abstraction by what it lets you stop thinking about.">
+
+Distinguish an abstraction from an indirection, and give the question you'd
+ask in review to tell them apart.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§3 Ports and adapters.">
+
+What is a driving port versus a driven port? Give an example of each from a
+payments service.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§4 What it costs.">
+
+Name three concrete costs of ports and adapters, and describe a system where
+they outweigh the benefit.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§7 Watch for leakage in signatures, not in imports.">
+
+A domain-owned repository interface returns `Page<PaymentEntity>`. Explain
+what has gone wrong even though the domain imports no infrastructure package.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§7 Make the dependency rule an ArchUnit test on day one; §6 Lab 4 — enforce the direction with ArchUnit.">
+
+Why is an ArchUnit rule more valuable than an architecture diagram? What
+specific failure does it prevent?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§5 How this connects outward.">
+
+How does package-by-feature support this, and what does package-by-layer make
+impossible?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§3 Ports and adapters; §5 How this connects outward.">
+
+Your domain test needs a `Clock`. Is that a port? Why does it matter for
+testing time-dependent business rules?
+
+</SelfCheckItem>
+
+</SelfCheck>
