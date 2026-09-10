@@ -1,0 +1,191 @@
+---
+title: Cross-Cutting Design Questions
+description: Outbox, idempotent consumers, ordering, backpressure, replay, observability.
+questionRange: Q136–Q145
+tags: [data, design, integration]
+---
+
+## Q136. Implement the transactional outbox end to end. [#q136]
+
+<Question id="q136">
+
+**Answer.** Schema: `outbox(id uuid pk, aggregate_type, aggregate_id, event_type, payload jsonb, headers jsonb, created_at, published_at null)`, with a partial index on `(created_at) WHERE published_at IS NULL` so the unpublished set stays tiny regardless of table size.
+
+Write path: the business change and the outbox insert commit in **one local transaction**. That's the whole point — no dual write, no lost events, no orphan events.
+
+Relay, two options:
+- **Polling publisher** — a loop selecting unpublished rows `ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 500`, publishing, then marking published. Simple, no extra infrastructure, easy to reason about, and adds a small latency (poll interval). `SKIP LOCKED` lets you run several publishers safely.
+- **CDC (Debezium)** tailing the WAL for inserts on the outbox table. Lower latency, no polling load, but adds Debezium/Connect as infrastructure and a replication slot you must monitor (Q43).
+
+Either way, delivery is **at-least-once** — a crash between publish and mark-published republishes — so consumers must dedupe on the event ID.
+
+Housekeeping people forget: delete or partition-drop published rows (the table grows fast and its index matters), alert on the **age of the oldest unpublished row** (the single best health metric for the pattern), and preserve ordering per aggregate by publishing with the aggregate ID as the Kafka key.
+
+<FollowUp q="Why not just publish the CDC stream of the business tables directly?">
+
+Because that makes your internal schema a public contract — every consumer breaks when you rename a column, and they receive changes rather than meaningful business events. The outbox row is a deliberately designed event with its own version and lifecycle. CDC-on-business-tables is fine for feeding a warehouse; the outbox is right for integration events.
+
+</FollowUp>
+
+</Question>
+
+## Q137. Write an idempotent consumer. [#q137]
+
+<Question id="q137">
+
+**Answer.** The core is that the dedupe check and the side effect must be **atomic**, which means they share a transaction:
+
+```sql
+BEGIN;
+INSERT INTO processed_events (event_id, consumer, processed_at)
+VALUES (:eventId, :consumer, now());   -- unique(event_id, consumer)
+-- if this raises a unique violation, we've already handled it: rollback and ack
+
+UPDATE accounts SET balance = balance + :amt WHERE id = :account;
+INSERT INTO ledger_entries (...) VALUES (...);
+COMMIT;
+```
+
+On a unique violation, roll back and acknowledge — the work was already done. Because both statements are in one transaction, there's no window where the marker exists but the effect doesn't, or vice versa.
+
+Refinements: key the marker by `(event_id, consumer)` so multiple consumers can each process the same event; partition or time-expire the table (retention comfortably longer than your maximum redelivery window, including a full replay); and where the operation is naturally idempotent (`SET status = 'SETTLED' WHERE id = ? AND status = 'PENDING'`), skip the marker entirely — a conditional update is cheaper and simpler than a dedupe table.
+
+<FollowUp q="Why not check Redis first?">
+
+A `SETNX` in Redis is outside the database transaction, so there's a window where you've marked it processed and then failed to do the work — and now the event is permanently lost. Redis is a fine *optimisation* in front of the database check (avoiding a query for obvious duplicates), but the authoritative check must be transactional with the effect.
+
+</FollowUp>
+
+</Question>
+
+## Q138. How do you achieve ordering across services? [#q138]
+
+<Question id="q138">
+
+**Answer.** First, challenge the requirement — global ordering is expensive and usually unnecessary. What's almost always needed is **per-entity ordering**: all events for one account, in order.
+
+Get it by partitioning consistently on the entity key: Kafka partition key = account ID, one consumer per partition, database shard key = account ID (Q132). Then per-account ordering holds end to end with full parallelism across accounts.
+
+Where you can't guarantee ordering, design consumers to tolerate disorder:
+- **Version/sequence numbers** per aggregate, with consumers rejecting or buffering out-of-order events.
+- **Idempotent, commutative operations** — "set balance to X as of version N" instead of "add 5".
+- **State machine guards** — reject a transition whose prior state doesn't match, and let the retry mechanism handle the reordering.
+
+**Why it matters.** Systems that assume ordering they haven't actually guaranteed are the ones that produce impossible states — a `payment.captured` processed before `payment.authorised` creating an orphan capture. Making the guard explicit is cheap; discovering the assumption in production is not.
+
+</Question>
+
+## Q139. How does backpressure work end to end? [#q139]
+
+<Question id="q139">
+
+**Answer.** Backpressure means a slow component makes the *producer* slow down rather than silently accumulating work. Every unbounded buffer in a system is a place where backpressure has been converted into an eventual OOM or an unbounded latency.
+
+Layer by layer:
+- **Client → API**: rate limits and 429s, plus concurrency limits so you shed load instead of queueing.
+- **API → thread pool**: bounded queues with an explicit rejection policy, not `Integer.MAX_VALUE`.
+- **Service → database**: a bounded connection pool with a short acquisition timeout — the pool *is* the concurrency limit, and it should fail fast rather than queue.
+- **Producer → broker**: Kafka's `buffer.memory` + `max.block.ms` blocks the producer; RabbitMQ's flow control blocks publishers. Both are backpressure, and both must be handled rather than treated as errors.
+- **Broker → consumer**: consumers pull (Kafka) or use prefetch (RabbitMQ), so they naturally control their own rate.
+- **Consumer → downstream**: bulkheads and circuit breakers so a slow dependency doesn't consume every consumer thread.
+
+**Why it matters.** The single design rule: **bound every queue**. An unbounded queue turns "we're slower than expected" into "we're down", and it does so at the worst possible moment.
+
+</Question>
+
+## Q140. Design the pipeline from OLTP to analytics. [#q140]
+
+<Question id="q140">
+
+**Answer.** CDC (Debezium) from the operational database into Kafka, landed raw into object storage and a warehouse, then transformed there (ELT rather than ETL — load raw first, transform in the warehouse where you have compute and can re-run). dbt or equivalent for the transformation layer, versioned and tested like code.
+
+Design points I'd emphasise:
+- **Never let analytics query the OLTP primary** (Q15). CDC is the isolation.
+- **Keep the raw landing zone immutable** — if a transformation is wrong, you re-derive rather than re-extract. This is what makes the pipeline recoverable.
+- **Handle late and out-of-order data explicitly** with event-time processing and a defined lateness window; a payment recorded at 23:59 that arrives at 00:03 belongs to yesterday.
+- **Schema evolution** — the warehouse must tolerate new columns; a strict schema breaks nightly on the first upstream deploy.
+- **Data quality checks as first-class jobs** — row counts against source, null rates, referential checks, and a reconciliation of financial totals against the ledger. Alert on these like you alert on service errors.
+- **PII handling** — mask or tokenise at ingestion, and have a documented erasure path (Q57).
+
+<FollowUp q="What's the most common failure?">
+
+Silent divergence. Nobody notices the pipeline has been dropping 0.3% of rows for six weeks until finance queries a number that doesn't match. The fix is reconciliation with alerting, not better pipeline code.
+
+</FollowUp>
+
+</Question>
+
+## Q141. Something is slow. It touches an API, a cache, a database and a queue. How do you find it? [#q141]
+
+<Question id="q141">
+
+**Answer.** Start with the trace, not with a theory. A distributed trace of a slow request shows which span dominates in seconds, which replaces an hour of guessing. If tracing isn't in place, that's the first fix, and I'd say so.
+
+Failing that, work outside-in with the layer-specific signals:
+- **Is it latency or saturation?** Rising latency with flat throughput and growing queue depth means saturation somewhere — find the bounded resource (thread pool, connection pool, partition count).
+- **Cache**: hit rate. A drop means you're now doing N× the database work; check for an invalidation bug, an eviction storm, or a cold start.
+- **Database**: `pg_stat_statements` by total time, active query durations, lock waits, replication lag.
+- **Queue**: consumer lag as time, rebalance rate, DLQ depth.
+- **The application**: async-profiler flame graph, GC log, thread dump.
+
+**The thing I'd emphasise:** the slow component is often not the broken one. A slow consumer might be slow because the database is contended, which is contended because a cache is missing, which is missing because a deploy changed a key format. Follow the causal chain rather than optimising the first thing that looks slow.
+
+</Question>
+
+## Q142. How do you design for replay and reprocessing? [#q142]
+
+<Question id="q142">
+
+**Answer.** Assume from day one that you will need to re-derive everything, because you will — a bug in a projection, a new consumer that needs history, a corrupted downstream store.
+
+Requirements: **retention** long enough to cover the recovery window (which is an argument for generous Kafka retention or tiered storage); **idempotent consumers**, so replay doesn't double-apply; **isolation of side effects**, so a replay doesn't re-send 400,000 emails — this is the one that bites people, and the design answer is that consumers with external side effects must either be excluded from replay or gated by a "replay mode" flag; **deterministic transformations**, so replaying yesterday's events produces yesterday's results (which means no `now()` in the logic, and versioned reference data); and **the ability to run a new consumer group in parallel** to build a new projection while the old one still serves traffic, then cut over.
+
+**Why it matters.** "Can you rebuild it?" is the question that separates an event-driven architecture from a pile of queues. If the answer is no, your events are just messages.
+
+</Question>
+
+## Q143. What observability do you need across data and messaging systems? [#q143]
+
+<Question id="q143">
+
+**Answer.** The unifying idea is that every asynchronous hop must carry the trace context, and every queue must expose *age*, not just depth.
+
+Concretely: trace IDs propagated in message headers (W3C `traceparent`) and into database query comments, so a slow query can be attributed to a request. Per-hop latency, so you can see where a payment spent its 8 seconds. Queue/topic age as a time-based SLO ("no event older than 60 seconds unprocessed"). Outbox age. Reconciliation divergence counts. And per-dependency saturation metrics — pool usage, lag, prefetch utilisation.
+
+The alerts that matter are the ones tied to business outcomes: settlement events late, unreconciled entries growing, DLQ non-empty. CPU and memory alerts tell you about the machine; those tell you about the product.
+
+<FollowUp q="What's the most under-instrumented thing you see?">
+
+Age. Everyone graphs queue depth; almost nobody graphs how old the oldest unprocessed item is. Depth is ambiguous — 10,000 messages might be four seconds of work or four hours — but age is directly meaningful and directly alertable.
+
+</FollowUp>
+
+</Question>
+
+## Q144. How do you introduce a new datastore or broker into an existing system safely? [#q144]
+
+<Question id="q144">
+
+**Answer.** Incrementally, with a reversible path at each step:
+
+1. **Justify it against the alternatives** (Q58 ordering), and write down what specific problem it solves and what you'd have to see to conclude it was the wrong call.
+2. **Shadow first** — dual-write or dual-read with the new system in the non-authoritative path, comparing results. This finds semantic differences without risk.
+3. **One low-risk use case** to build operational muscle: runbooks, monitoring, backup/restore, failover rehearsal, and someone other than the person who introduced it who can operate it.
+4. **Expand behind a flag**, with a documented rollback that has actually been tested.
+5. **Own the exit** — know how to get the data out and how to turn it off.
+
+The honest constraint: every new system is a permanent operational commitment — upgrades, CVEs, on-call knowledge, capacity planning, and a hiring requirement. A team of six should think very hard before running four datastores.
+
+</Question>
+
+## Q145. Give me the architecture you'd defend for a mid-size payments platform, and its weakest point. [#q145]
+
+<Question id="q145">
+
+**Answer.** PostgreSQL as the single system of record for money — ledger, idempotency keys, outbox — partitioned by time, RF via synchronous replication to a second AZ, RPO 0. Redis for hot reads, rate limiting and short-lived coordination, treated as disposable. Kafka as the event backbone, fed by the outbox, keyed by account, with independent consumer groups for ledger projection, fraud, notifications and the warehouse. Elasticsearch for transaction search, rebuildable from Kafka. Reconciliation jobs comparing every derived store back to PostgreSQL.
+
+**The weakest point**, and I'd name it before being asked: the single PostgreSQL primary is the scaling and availability ceiling for writes. It's the right choice at this size — one place where money is correct, one transaction boundary, no distributed consensus in the critical path — but it means write capacity is bounded by one machine and failover is the highest-risk operation in the system. So the plan is: know the current headroom in writes/sec, rehearse failover on a schedule, and have a documented partitioning-by-tenant path that we've costed but haven't built.
+
+**Why it matters.** The strongest possible answer to any architecture question includes what you'd expect to break first and what you're doing about it. Confidence without a named weakness reads as inexperience.
+
+</Question>
