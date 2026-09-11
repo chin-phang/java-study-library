@@ -402,16 +402,59 @@ don't cache it at all.
 
 ## 11. Self-check
 
-1. Walk through the interleaving that leaves a permanently stale value when you
-   delete the cache *before* writing the database.
-2. Ordering (b) still has a race. Describe it, and explain why it's acceptable
-   in practice.
-3. Why delete rather than update the cache? Give the two-writer interleaving.
-4. Where does invalidation belong relative to transaction commit, and what
-   Spring mechanism gives you that?
-5. Why is CDC-based invalidation qualitatively different from getting the
-   application ordering right?
-6. Distinguish stampede, penetration and avalanche. Give one fix for each.
-7. What does probabilistic early expiration do that a mutex doesn't?
-8. Your cache has a 95% hit rate and you flush it at peak. What happens, and
-   what should have been in place?
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§3(a) Delete cache, then write database.">
+
+Walk through the interleaving that leaves a permanently stale value when you
+delete the cache *before* writing the database.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§3(b) Write database, then delete cache.">
+
+Ordering (b) still has a race. Describe it, and explain why it's acceptable
+in practice.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§3(c) Update the cache instead of deleting it.">
+
+Why delete rather than update the cache? Give the two-writer interleaving.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§3(d) Delete inside the transaction.">
+
+Where does invalidation belong relative to transaction commit, and what
+Spring mechanism gives you that?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§4 Closing the remaining window, and Lab 6.">
+
+Why is CDC-based invalidation qualitatively different from getting the
+application ordering right?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§5 The other three failures.">
+
+Distinguish stampede, penetration and avalanche. Give one fix for each.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§5 The other three failures, the stampede fixes.">
+
+What does probabilistic early expiration do that a mutex doesn't?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§6 The cold-cache question.">
+
+Your cache has a 95% hit rate and you flush it at peak. What happens, and
+what should have been in place?
+
+</SelfCheckItem>
+
+</SelfCheck>
