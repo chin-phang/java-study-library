@@ -181,6 +181,28 @@ large fixed number of logical units, and map those to physical ones. The extra
 indirection costs nothing and turns "rebuild everything" into "move 1/N of the
 data".
 
+```mermaid
+flowchart TD
+    subgraph Direct["Direct: hash % N_physical"]
+        direction TB
+        K1[key] --> D1["hash % N"]
+        D1 --> P1[(physical unit)]
+    end
+    Direct ~~~ Indirect
+    subgraph Indirect["Indirect: virtual buckets"]
+        direction TB
+        K2[key] --> D2["hash % 1024"]
+        D2 --> V2[[logical bucket]]
+        V2 --> M2{{bucket→server map}}
+        M2 --> P2[(physical unit)]
+    end
+```
+
+Adding a physical unit in the direct scheme moves the hash function itself —
+every key is affected. Adding one in the indirect scheme only edits the
+mapping table — the hash function never changes, so most keys never move.
+That single extra box, `bucket→server map`, is the entire trick.
+
 ## 6. Rebalancing is a state transition, not an event
 
 While partitions move, the system is in a third state that is neither
@@ -368,18 +390,61 @@ the incidents are.
 
 ## 11. Self-check
 
-1. Name the four components every partitioned system has, and identify each in
-   Kafka and in `HashMap`.
-2. Why does partitioning give you ordering *within* a unit and nothing across?
-   Give the consequence in Kafka and in a sharded database.
-3. Your Kafka topic has six partitions and one holds 80% of records. Give two
-   modelling fixes and two operational ones, and say what each costs.
-4. Why does `hash(key) % N` make growth expensive, and what is the standard
-   indirection that fixes it?
-5. `HashMap` resizes cheaply and Kafka cannot. What is the structural
-   difference?
-6. What breaks during a Kafka rebalance, and what two mechanisms reduce it?
-7. Explain Redis hash tags. What problem do they solve and what problem can
-   they create?
-8. Why should the Kafka partition key, the database shard key and the aggregate
-   boundary be the same identifier?
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 The shape.">
+
+Name the four components every partitioned system has, and identify each in
+Kafka and in `HashMap`.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§3 Cost one: guarantees stop at the boundary.">
+
+Why does partitioning give you ordering *within* a unit and nothing across?
+Give the consequence in Kafka and in a sharded database.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§4 Cost two: skew, and why the function isn't the problem.">
+
+Your Kafka topic has six partitions and one holds 80% of records. Give two
+modelling fixes and two operational ones, and say what each costs.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§5 Cost three: N is hard to change.">
+
+Why does `hash(key) % N` make growth expensive, and what is the standard
+indirection that fixes it?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§5 Cost three: N is hard to change.">
+
+`HashMap` resizes cheaply and Kafka cannot. What is the structural
+difference?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§6 Rebalancing is a state transition, not an event.">
+
+What breaks during a Kafka rebalance, and what two mechanisms reduce it?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§3 Cost one: guarantees stop at the boundary — the Redis Cluster paragraph.">
+
+Explain Redis hash tags. What problem do they solve and what problem can
+they create?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§9 Leading on this — the Make people align the keys paragraph.">
+
+Why should the Kafka partition key, the database shard key and the aggregate
+boundary be the same identifier?
+
+</SelfCheckItem>
+
+</SelfCheck>

@@ -705,8 +705,66 @@ diagram in the library so far, since two nodes is the smallest graph the
 answer: Locking and Deadlock"). It's in the sidebar between `isolation-levels`
 and `the-log`.
 
+**`partitioning`: converted 2026-09-12**, the fifteenth Core page taken to
+`content/docs/concepts/`, immediately after `locking-and-deadlock` — the
+sixth and last of the second six drafts converted, closing that batch out.
+Checked for staleness before converting: `HashMap`'s spread/bucket mechanism,
+`LongAdder`'s per-thread cells, Redis Cluster's 16,384 CRC16 slots and hash
+tags, the Kafka default partitioner, and consistent hashing are all stable,
+version-agnostic mechanics with no JEP or release-cadence exposure. **One
+currency fix**, the same shape as `broker-semantics`'s and `backpressure`'s:
+Lab 2's `docker run` pinned `apache/kafka:latest`, a floating tag — updated to
+`apache/kafka:4.0.0` to match the pin `kafka-internals` already established
+for the same image, in both `_source/partitioning.mdx` and the converted
+page, so a rebuild of the lab stays reproducible rather than silently
+tracking whatever Kafka ships next. `redis:7` needed no change, per **Two
+currency items carried into these drafts** already having closed that
+question — the corpus has not moved off that tag. `prerequisites: [hashmap,
+cas-and-contention]` resolves to two built pages — the ordering constraint
+flagged under **The second six drafts** below (convert `cas-and-contention`
+before `partitioning`) was satisfied when `cas-and-contention` converted
+2026-09-12, so no conversion-order issue remained by the time this page's
+turn came. All five `questions:` anchors (`java/collections#q22`,
+`data/scaling-operations#q48`, `#q49`, `data/kafka#q112`,
+`data/redis-caching#q67`) were checked against the built reference pages
+before writing, along with the prose cross-references to
+[cache-invalidation](/docs/concepts/cache-invalidation),
+[the HashMap page](/docs/concepts/hashmap),
+[the CAS page](/docs/concepts/cas-and-contention), and
+[the extraction pattern](/docs/concepts/bounded-contexts). **Carries one
+diagram**, added at conversion time rather than present in the draft: a
+two-lane flowchart contrasting hashing directly to a physical unit against
+hashing to a fixed set of logical buckets that are then mapped to physical
+ones — the indirection §5 argues is "the single most transferable rule on
+the page." Checked against the reference bank first: none of the five
+claimed anchors carries a diagram of its own, and the indirection mechanism
+isn't drawn anywhere in the corpus, so this is a clean **Add a diagram only
+if it shows something the reference bank doesn't already** case, not a
+link-don't-copy judgement — this page's own audit entry already predicted
+"none carries a diagram" for the drafted state, and that held true until
+conversion added one, the same pattern as `coupling-and-cohesion`,
+`escape-analysis` and `locking-and-deadlock` before it. 8 self-check items,
+with `where` pointers written at conversion time, same discipline as the
+other converted Core pages. Both `pnpm types:check` and `pnpm build` pass;
+the diagram was verified in the browser at 375px (`viewBox="0 0 274.390625
+1108.218017578125"`, ≈73% rendered scale on its narrower axis, no horizontal
+overflow, no "Syntax error" text — the two subgraphs stack vertically via
+Mermaid's own layout rather than needing an explicit `~~~` link, since each
+subgraph is already a single-column chain), and the reverse link on
+`java/collections#q22` was verified in the browser, showing both `How
+HashMap Actually Works` and `Partitioning — One Idea in Five Systems` under
+"The model behind this answer." It's in the sidebar after
+`coupling-and-cohesion`, at the end of the list. Its own `unlocks`
+(`sharding`, `kafka-internals`, `hot-keys`, `consistent-hashing`,
+`scaling-strategy`) reuses two existing Specialist promises
+(`kafka-internals` — now itself Core and converted, an edge that resolves
+rather than dangles; `hot-keys`, already promised by `cache-invalidation`)
+and fixes two new Specialist slugs, `consistent-hashing` and
+`scaling-strategy`, recorded in the Specialist list below alongside
+`sharding`.
+
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**fourteen of those fifteen also converted** into `content/docs/concepts/` —
+**all fifteen of those now converted** into `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
 immediately after `cas-and-contention`, `cache-invalidation`
@@ -720,11 +778,11 @@ followed the same day (`aggregates`, `backpressure`, `coupling-and-cohesion`,
 `escape-analysis`, `locking-and-deadlock`, `partitioning`). Of that second
 six, `aggregates` converted 2026-09-12 immediately after `persistence-context`,
 `backpressure` converted immediately after `aggregates`,
-`coupling-and-cohesion` converted immediately after `backpressure`, and
-`escape-analysis` converted immediately after `coupling-and-cohesion`, and
-`locking-and-deadlock` converted immediately after `escape-analysis` — five
-of the six taken to `content/docs/concepts/` so far; `partitioning` remains
-drafted only. Three more were
+`coupling-and-cohesion` converted immediately after `backpressure`,
+`escape-analysis` converted immediately after `coupling-and-cohesion`,
+`locking-and-deadlock` converted immediately after `escape-analysis`, and
+`partitioning` converted immediately after `locking-and-deadlock` — **all six
+now converted**, closing this batch out too. Three more were
 added the same day from the coverage audit below — `broker-semantics`,
 `stream-pipelines`, and `kafka-internals` promoted from Specialist — and all
 three were drafted and converted the same day. `stream-pipelines` claims five
@@ -917,7 +975,7 @@ underneath the table for the closed record.
 | `coupling-and-cohesion` | Coupling, Cohesion, and What Makes a Change Expensive | drafted, converted |
 | `escape-analysis` | Escape Analysis and When Allocation Disappears | drafted, converted |
 | `locking-and-deadlock` | Locking and Deadlock | drafted, converted |
-| `partitioning` | Partitioning — One Idea in Five Systems | drafted |
+| `partitioning` | Partitioning — One Idea in Five Systems | drafted, converted |
 | `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | drafted, converted |
 | `kafka-internals` | Partitions, Consumer Groups, ISR and the High Watermark | drafted, converted |
 | `stream-pipelines` | Stream Pipelines: Laziness, Fusion, and Parallel Decomposition | drafted, converted |
@@ -1064,7 +1122,7 @@ no "Syntax error" text). Both `pnpm types:check` and `pnpm build` pass with
 the page in the sidebar. The self-check in `_source/kafka-internals.mdx` is
 a plain numbered list, matching the rest of this table.
 
-**Specialist** — 47 slugs, every one promised by a foundational page's
+**Specialist** — 50 slugs, every one promised by a foundational page's
 `unlocks` and none of them written or planned. (`kafka-internals` was here until
 2026-09-11 and is now Core — see the coverage audit below.) They are listed so the names are
 fixed and a later page cannot invent a second spelling; titles get decided when
@@ -1116,6 +1174,22 @@ someone writes the page. Grouped by what promises them:
   already promises, the same "multiple promises to one unwritten page is
   normal" pattern `broker-semantics` used for `retries-and-backoff` and
   `outbox-pattern`.
+- **`partitioning`** (drafted and converted 2026-09-12, Core tier) unlocks
+  `sharding`, `kafka-internals`, `hot-keys`, `consistent-hashing`,
+  `scaling-strategy`. Three are new slugs, fixed here before any of them
+  exist: `sharding` covers choosing and operating a shard key in depth
+  beyond §3's "choose the key so things needing consistency land together"
+  rule; `consistent-hashing` covers the Karger et al. algorithm itself —
+  virtual nodes, ring placement — where §5 only cites it as the named
+  alternative to virtual buckets without developing the mechanism;
+  `scaling-strategy` covers deciding *when* to shard or add partitions at
+  all, one level up from this page's "given you're partitioned, here's what
+  it costs" scope. The other two are not new: `kafka-internals` is already
+  promised by `the-log` (now itself Core and converted, so this is an edge
+  onto a *built* page rather than a dangling promise) and `hot-keys` is
+  already promised by `cache-invalidation`. Multiple promises to one
+  unwritten page is normal, the same pattern `locking-and-deadlock`'s
+  `saga-pattern` reuses from `idempotency`.
 
 Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
 gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
@@ -1128,7 +1202,9 @@ foundational, built; plus 15 core drafts — six now converted,
 2026-09-12, `virtual-threads`, `cas-and-contention` and `isolation-levels` —
 plus `cache-invalidation`, `spring-proxy`, `persistence-context`,
 `aggregates`, `backpressure`, `coupling-and-cohesion` and `escape-analysis`,
-all seven converted the same day or the day after, for thirteen in total).
+seven more converted the same day or the day after, plus
+`locking-and-deadlock` and `partitioning` closing out the batch, for
+fifteen in total — all fifteen drafted Core pages now converted).
 **124 questions are claimed — 30%**, up from 119 (28%) before
 `stream-pipelines`, up from 114 (27%) before `kafka-internals`, up from 108
 (26%) before `broker-semantics`, and up from 93 (22%) before the second batch
@@ -1732,7 +1808,7 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
-**Concept pages add 19 more, so the library holds 38.** Of the thirteen
+**Concept pages add 20 more, so the library holds 39.** Of the thirteen
 foundational pages, **ten carry their own diagram** and **three link to a
 reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
 `java/jvm-memory-gc#q71`, `dependency-inversion` →
@@ -1814,6 +1890,16 @@ cycle). None of its three reference anchors (`data/transactions-mvcc#q35`,
 `#q36`, `java/concurrency#q55`) carries a diagram of its own, so nothing
 existed to link to; another clean **Add a diagram only if it shows something
 the reference bank doesn't already** case, not a link-don't-copy judgement.
+**`partitioning` adds the twentieth** — converted immediately after
+`locking-and-deadlock`, closing out the second six drafts — a two-lane
+flowchart contrasting direct hashing to a physical unit against hashing to a
+fixed set of logical buckets mapped to physical ones. None of its five
+reference anchors (`java/collections#q22`, `data/scaling-operations#q48`,
+`#q49`, `data/kafka#q112`, `data/redis-caching#q67`) carries a diagram of
+its own, and the indirection mechanism the diagram shows isn't drawn
+anywhere else in the corpus; another clean **Add a diagram only if it shows
+something the reference bank doesn't already** case, not a link-don't-copy
+judgement.
 
 **Phone-readability, measured on all twelve at 375px.** None overflows; the
 page body never scrolls horizontally. Rendered scale, worst first:
@@ -1876,6 +1962,14 @@ horizontal overflow, no "Syntax error" text — the widest margin of any
 diagram measured so far, since a two-node cycle is the smallest graph shape
 in the library.
 
+`partitioning` (Core tier, measured 2026-09-12) carries one diagram, the
+direct-vs-indirect hashing flowchart, checked the same way: `viewBox="0 0
+274.390625 1108.218017578125"` against a 274px rendered width at 375px
+viewport (≈73%), no horizontal overflow, no "Syntax error" text. Its two
+subgraphs are each a single-column chain, so they stack vertically under
+Mermaid's own layout without needing the explicit `~~~` link that
+`thread-pools` and `bounded-contexts` required for their wider subgraphs.
+
 ### A concept page links to a reference diagram, it does not copy it
 
 Decided on the JMM page when the concept pattern was finished. The
@@ -1911,31 +2005,33 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **57 pages** (30 reference + 27
+Content first — and the content now exists: **58 pages** (30 reference + 28
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`, `aggregates`, `backpressure`,
-`coupling-and-cohesion`, `escape-analysis` and `locking-and-deadlock`, the
-fourteen converted Core pages so far), 419 questions,
-**38 diagrams**
+`coupling-and-cohesion`, `escape-analysis`, `locking-and-deadlock` and
+`partitioning`, the fifteen converted Core pages — all fifteen drafted so
+far), 419 questions,
+**39 diagrams**
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
-instead), 209 self-check items.
+instead), 217 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has nineteen real
-  nodes.** Read **The dependency graph — settled conventions** before
-  starting: nine roots (eight foundational plus `stream-pipelines`), eleven
-  resolving `prerequisites` edges (`isolation-levels → mvcc` is the newest),
-  and a large majority of `unlocks` targets pointing at unwritten specialist
-  pages. Tolerating dangling `unlocks` is a day-one requirement, not an edge
-  case.
+- Concept dependency graph as a study path — **now has twenty-eight real
+  nodes**, all thirteen foundational plus all fifteen converted Core pages.
+  Read **The dependency graph — settled conventions** before starting: nine
+  roots (eight foundational plus `stream-pipelines`), thirteen resolving
+  `prerequisites` edges (`partitioning → hashmap` and `partitioning →
+  cas-and-contention` are the newest), and a large majority of `unlocks`
+  targets pointing at unwritten specialist pages. Tolerating dangling
+  `unlocks` is a day-one requirement, not an edge case.
 - ~~Self-check questions collapsed by default~~ — built, see **The Question component**
 
 Out of scope: accounts, sync, spaced-repetition scheduling, a backend.
