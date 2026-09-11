@@ -5,12 +5,12 @@ built to develop senior/lead-level depth, not to memorise interview answers.
 
 It contains two kinds of material:
 
-- **Reference questions** (~407) — question, model answer, why it matters, and
+- **Reference questions** (419) — question, model answer, why it matters, and
   follow-ups. Optimised for recall and self-testing.
-- **Concept pages** — deep-study material on the load-bearing ideas, each
-  explaining 5–15 of the reference questions. These open with a failure you can
-  reproduce, explain why the mechanism was designed that way, and end with a lab
-  you run and self-check questions you can't answer from memory alone.
+- **Concept pages** (17 so far) — deep-study material on the load-bearing ideas,
+  each explaining 5–15 of the reference questions. These open with a failure you
+  can reproduce, explain why the mechanism was designed that way, and end with a
+  lab you run and self-check questions you can't answer from memory alone.
 
 The premise is that a small number of deeply understood mechanisms generate
 correct answers to a large number of questions. The Java Memory Model explains
@@ -22,9 +22,12 @@ concept pages; the rest stay as reference.
 
 | Area | Questions |
 |---|---|
-| Java — language, collections, concurrency, JVM, Spring, JPA | 142 |
+| Java — language, collections, concurrency, JVM, Spring, JPA, modern Java through 25 | 154 |
 | Data & messaging — PostgreSQL, Redis, RabbitMQ, Kafka | 145 |
 | Design & architecture — OOP, SOLID, patterns, DDD, microservices | 120 |
+
+419 questions across 30 reference pages, plus 17 concept pages deep-diving the
+mechanisms behind them.
 
 ## Running it
 
@@ -55,9 +58,12 @@ Built with [Fumadocs](https://fumadocs.dev) on Next.js.
 
 ## Status
 
-Work in progress. Content is being converted from `_source/` into
-`content/docs/` section by section; concept pages are written as the underlying
-reference material lands.
+The reference conversion is complete — all 419 questions across 30 pages.
+Concept pages are ongoing: 13 foundational pages are done, plus 4 of the
+next tier (Core) so far, with 11 more Core drafts queued. The `leading/`
+track (essays on technical leadership) is scaffolded but intentionally
+empty — those pages have to come from real experience rather than be
+generated.
 
 ## Licence
 

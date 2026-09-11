@@ -1,4 +1,11 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
+
+export const metadata: Metadata = {
+  title: 'Java Study Library',
+  description:
+    'Backend Java, the data systems around it, and software design — built for depth rather than recall.',
+};
 
 const entries = [
   {
