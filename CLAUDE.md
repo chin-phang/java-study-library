@@ -489,7 +489,7 @@ the table, and **the `cas` slug** further down for the first one of these.
 | `locking-and-deadlock` | Locking and Deadlock | drafted |
 | `partitioning` | Partitioning — One Idea in Five Systems | drafted |
 | `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | drafted, converted |
-| `kafka-internals` | Partitions, consumer groups, ISR and the high watermark | |
+| `kafka-internals` | Partitions, Consumer Groups, ISR and the High Watermark | drafted |
 | `stream-pipelines` | Stream pipelines — laziness, fusion and parallel decomposition | |
 | `class-loading` | Class loading and classloader leaks | |
 | `query-planning` | Query planning and cardinality estimation | |
@@ -617,6 +617,9 @@ someone writes the page. Grouped by what promises them:
 - **`bounded-contexts`** unlocks `service-decomposition`, `anti-corruption-layer`, `modular-monolith`, `event-design`, `team-topologies`
 - **`dependency-inversion`** unlocks `anti-corruption-layer`, `modular-monolith`, `hexagonal-architecture`, `testing-strategy`
 - **`thread-pools`** unlocks `bulkheads`, `capacity-planning`, `cascading-failure`
+- **`kafka-internals`** (drafted 2026-09-11, Core tier) unlocks `multi-region-replication`,
+  `schema-evolution` — both new slugs, fixed here before either page exists. Neither was
+  previously promised by any other page, so no collision to resolve.
 
 Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
 gotchas**.
