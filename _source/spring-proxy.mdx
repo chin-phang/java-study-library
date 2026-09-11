@@ -1,0 +1,362 @@
+---
+title: The Proxy Boundary in Spring
+concept: spring-proxy
+tier: core
+prerequisites: [dependency-inversion]
+unlocks: [transaction-management, aop, spring-testing, caching-annotations]
+questions: [java/spring#q99, java/spring#q100, java/spring#q101, java/spring#q102, java/spring#q110]
+estimatedStudyTime: 2h
+---
+
+> **Recall layer.** The interview answers are
+> [Q100](/docs/java/spring#q100) and [Q101](/docs/java/spring#q101).
+> This page builds the model.
+
+## 1. The problem it exists to solve
+
+```java
+@Service
+public class PaymentService {
+
+    @Transactional
+    public void captureAll(List<Long> ids) {
+        for (Long id : ids) capture(id);        // internal call
+    }
+
+    @Transactional(propagation = REQUIRES_NEW)
+    public void capture(Long id) {
+        ledger.debit(id);
+        gateway.capture(id);                     // throws for id #3
+    }
+}
+```
+
+The intent is clear: each capture gets its own transaction, so one failure
+doesn't roll back the others. It is annotated correctly. It compiles. It is
+wrong.
+
+`REQUIRES_NEW` never runs. Every capture shares `captureAll`'s single
+transaction, and when #3 throws, all of them roll back — including the ones the
+acquirer already captured. Your ledger now disagrees with the acquirer, and
+nothing logged an error about the annotation.
+
+Variations of this bug are everywhere:
+
+- `@Async` method called internally → runs synchronously, silently.
+- `@Cacheable` called internally → cache never consulted, silently.
+- `@Transactional` on a `private` method → no transaction, silently.
+- `@Transactional` called from `@PostConstruct` → no transaction, silently.
+- `@PreAuthorize` on an internally-called method → **no security check**.
+
+The common factor is not transactions, or async, or caching. It is that all of
+these annotations are implemented **the same way**, and that mechanism has a
+boundary you cannot see in the source code.
+
+Learn the boundary once and all five bugs become the same bug.
+
+## 2. Spring annotations are not language features
+
+`@Transactional` looks like `synchronized`. It isn't. `synchronized` is a JVM
+instruction; `@Transactional` is metadata that something else has to act on.
+
+That something is a **proxy**. During bean post-processing — specifically in
+`postProcessAfterInitialization`, the last step before your bean is registered
+([Q99](/docs/java/spring#q99)) — Spring wraps your object in another object
+that implements the same contract, adds behaviour, and delegates.
+
+What gets injected into your collaborators is the **proxy**, not your bean.
+
+```
+caller ──► [ proxy ] ──► [ your bean ]
+              │
+       opens transaction,
+       starts async task,
+       checks the cache,
+       enforces @PreAuthorize
+```
+
+The rule that explains every bug in section 1:
+
+> **The behaviour lives in the proxy. If the call doesn't pass through the
+> proxy, the behaviour doesn't happen.**
+
+An internal call — `this.capture(id)` — is a plain virtual dispatch on the
+target object. The proxy is not in the call path. There is nothing to
+intercept.
+
+### Two proxy flavours
+
+**JDK dynamic proxies** implement your bean's interfaces via
+`java.lang.reflect.Proxy`. Only interface methods are visible, so injecting the
+concrete class fails.
+
+**CGLIB proxies** generate a subclass of your class at runtime. Spring Boot
+defaults to this (`proxyTargetClass=true`) to avoid the interface-injection
+surprise.
+
+CGLIB's mechanism is subclassing, which immediately explains the limits:
+
+| Can't be proxied | Because |
+|---|---|
+| `final` class | can't be subclassed |
+| `final` method | can't be overridden |
+| `private` method | not visible to a subclass |
+| `static` method | not dispatched polymorphically |
+
+These aren't arbitrary restrictions Spring chose. They fall out of "the proxy is
+a subclass that overrides your methods".
+
+## 3. Why self-invocation is the way it is
+
+People assume Spring could fix this. It's worth understanding why it doesn't.
+
+To intercept `this.capture(id)`, Spring would have to change what `this` means
+inside your method — rewriting the bytecode of the call site. That's exactly
+what **AspectJ** does with load-time or compile-time weaving, and it works.
+
+But proxy-based AOP is *just objects*. No agent, no build step, no bytecode
+manipulation, works in any environment, debuggable. Spring chose the mechanism
+with the smaller footprint, and self-invocation is the price.
+
+So this is a documented trade-off, not an oversight. Which also tells you the
+escape hatch: if you genuinely need method-level interception regardless of
+call path, AspectJ weaving is the answer, at the cost of build complexity.
+
+### Fixes, in order of preference
+
+**(a) Move the method to another bean.** The call now crosses a proxy boundary
+because it crosses an object boundary.
+
+```java
+@Service class PaymentService {
+    private final CaptureOperation capture;      // separate bean
+    @Transactional public void captureAll(List<Long> ids) {
+        for (Long id : ids) capture.execute(id); // proxied ✓
+    }
+}
+```
+
+This is usually the *right* refactoring rather than a workaround: the fact that
+you wanted different transactional semantics is evidence the two operations are
+different responsibilities.
+
+**(b) `TransactionTemplate` — make the boundary explicit.**
+
+```java
+public void captureAll(List<Long> ids) {
+    for (Long id : ids)
+        txTemplate.execute(status -> { capture(id); return null; });
+}
+```
+
+No annotation, no proxy, no invisible behaviour. My preference whenever the
+transactional structure is non-obvious, because the code says what it does.
+
+**(c) Self-injection.** `@Lazy PaymentService self;` then `self.capture(id)`.
+Works, and reads as an admission that the design is wrong.
+
+**(d) AspectJ weaving.** Correct in all cases, real build-tooling cost.
+
+## 4. What else the boundary explains
+
+Once you hold "behaviour lives in the proxy", a set of unrelated-looking Spring
+behaviours collapse into one explanation.
+
+**`@Transactional` on `@PostConstruct` does nothing.** `@PostConstruct` runs
+*before* proxy creation (which happens in `postProcessAfterInitialization`). At
+that moment the proxy doesn't exist, and the callback runs on the raw target.
+
+**Checked exceptions don't roll back by default.** Nothing to do with proxies —
+the interceptor's default policy is to roll back on `RuntimeException` and
+`Error` only. Use `@Transactional(rollbackFor = Exception.class)`. And catching
+an exception inside the method means nothing propagates to the interceptor at
+all, so it commits.
+
+**`UnexpectedRollbackException`.** An inner `REQUIRED` method throws, you catch
+it in the caller and continue, then commit — but the inner call already marked
+the shared transaction rollback-only
+([Q102](/docs/java/spring#q102)). The proxy is enforcing a decision made
+several frames down.
+
+**`@Async` returns immediately and you get `null`.** The proxy submits to an
+executor and returns a default value. Your caller sees `null` rather than a
+result, which looks like a bug in your code.
+
+**Injection type mismatch.** With a JDK proxy, injecting the concrete class
+fails — you must inject the interface, because the proxy is not an instance of
+your class.
+
+**Your test passes and production doesn't.** A plain unit test calls your object
+directly, with no proxy, so `@Transactional` is absent in both the test and
+the internal-call bug — the test can't see the defect. Only a test that goes
+through the Spring context exercises the proxy
+([Q110](/docs/java/spring#q110)).
+
+That last one is why this class of bug survives review and testing and appears
+in production.
+
+## 5. What this does *not* cover
+
+- **The rest of the bean lifecycle.** Scopes, circular dependencies, and the
+  three-level cache are adjacent but separate.
+- **Where the transaction actually lives.** The proxy opens and closes it; the
+  persistence context, flush ordering and dirty checking are a different
+  mechanism.
+- **Distributed transactions.** A proxy boundary is one JVM. Across services
+  you're in saga territory.
+- **Native images.** GraalVM can't generate CGLIB subclasses at runtime, so
+  Spring AOT computes proxies at build time. Behaviour is the same; the
+  mechanics differ, and it's worth knowing if you're heading that way.
+
+## 6. Lab: make the invisible visible
+
+### Lab 1 — prove the proxy exists
+
+```java
+@Service
+public class DemoService {
+    @Autowired ApplicationContext ctx;
+
+    @PostConstruct
+    void init() {
+        DemoService bean = ctx.getBean(DemoService.class);
+        System.out.println("this  = " + this.getClass().getName());
+        System.out.println("bean  = " + bean.getClass().getName());
+        System.out.println("same? = " + (this == bean));
+    }
+}
+```
+
+Output shows `DemoService` for `this` and something like
+`DemoService$$SpringCGLIB$$0` for the bean, and `same? = false`. **Two
+objects.** That single line of output is the whole page.
+
+### Lab 2 — reproduce the silent failure
+
+```java
+@Service
+public class TxDemo {
+    private final JdbcTemplate jdbc;
+
+    @Transactional
+    public void outer() {
+        jdbc.update("INSERT INTO t(v) VALUES ('outer')");
+        inner();                                   // internal
+        throw new RuntimeException("boom");
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void inner() {
+        jdbc.update("INSERT INTO t(v) VALUES ('inner')");
+    }
+}
+```
+
+Call `outer()` from a controller and expect `inner` to survive. It doesn't —
+the table is empty. Now inject a separate `InnerService` bean and repeat: one
+row survives. **Run both halves; the contrast is the lesson.**
+
+### Lab 3 — watch the transactions
+
+```properties
+logging.level.org.springframework.transaction.interceptor=TRACE
+logging.level.org.springframework.orm.jpa.JpaTransactionManager=DEBUG
+```
+
+Re-run Lab 2. In the broken version there is exactly one
+"Creating new transaction" line. In the fixed version there are two, and one
+"Suspending current transaction". You can now *see* the boundary in the log,
+which is the fastest way to diagnose this in a real codebase.
+
+### Lab 4 — break it with `final`
+
+Add `final` to a `@Transactional` method and run. Spring logs a warning that
+the method cannot be proxied (or fails, depending on version and config), and
+the annotation silently does nothing. Then make the whole class `final` and see
+what happens.
+
+### Lab 5 — the security version
+
+```java
+@Service
+public class AdminService {
+    public void deleteAll() { doDelete(); }                    // no annotation
+    @PreAuthorize("hasRole('ADMIN')") void doDelete() { ... }  // internal call
+}
+```
+
+Call `deleteAll()` as a non-admin. It succeeds. **This is the same bug as Lab
+2, and here it's a privilege-escalation vulnerability.** Worth writing once so
+you never look at `@PreAuthorize` casually again.
+
+### Lab 6 — inspect the proxy
+
+```java
+System.out.println(AopUtils.isAopProxy(bean));
+System.out.println(AopUtils.isCglibProxy(bean));
+System.out.println(AopUtils.isJdkDynamicProxy(bean));
+System.out.println(AopProxyUtils.ultimateTargetClass(bean));
+```
+
+Then set `spring.aop.proxy-target-class=false` on a bean that implements an
+interface and watch the flavour change — and watch injection of the concrete
+type start failing.
+
+## 7. Leading on this
+
+**Teach this once, on a whiteboard, with two boxes and an arrow.** Caller →
+proxy → target, and the note that `this.foo()` skips the middle box. It takes
+five minutes and it inoculates a team against five distinct production bugs.
+It's one of the highest-leverage explanations available to a Java lead.
+
+**Add it to the review checklist for annotated methods.** Three questions: is
+this method public and non-final, is it called from another bean, and is the
+transactional boundary where you intend it? Most codebases have at least one
+instance of this bug sitting in them right now.
+
+**Prefer `TransactionTemplate` where the boundary is interesting.** Annotations
+are excellent for the common case and actively misleading for the nuanced one.
+When a method has a deliberate, non-obvious transactional structure — nested
+boundaries, a commit before an external call, a deliberately separate audit
+write — make it explicit in code rather than encoded in annotation placement
+that the next reader must decode.
+
+**Watch for `@Transactional` spanning network calls.** The proxy holds the
+transaction open for the whole method, so an HTTP call inside one pins a
+database connection and a snapshot for its full duration — connection pool
+exhaustion plus the vacuum problem from the
+[MVCC page](/docs/concepts/mvcc). This is extremely common and almost never
+intentional; the boundary is invisible, so nobody notices what's inside it.
+
+**Require at least one integration test per transactional path.** Unit tests
+cannot see this class of bug, by construction. A slice test that goes through
+the context and asserts rollback behaviour is the only thing that catches it.
+
+## 8. Where to go deeper
+
+- Spring Framework reference, "Understanding the Spring Framework AOP Proxies" —
+  a short, explicit section that covers self-invocation directly. Most people
+  have never read it.
+- The `@Transactional` javadoc on rollback rules and propagation.
+- `AbstractAutoProxyCreator` and `TransactionInterceptor` in the Spring source —
+  an hour reading these makes the whole mechanism concrete.
+- The AspectJ documentation on load-time weaving, for when you need the other
+  trade-off.
+- Spring AOT / native image documentation, for how proxying changes under
+  GraalVM.
+
+## 9. Self-check
+
+1. Explain why `@Transactional(REQUIRES_NEW)` on an internally-called method
+   silently does nothing. Say what object the call actually reaches.
+2. Why can't CGLIB proxy a `final` method? Derive the answer from the
+   mechanism rather than recalling the rule.
+3. Why doesn't `@Transactional` work in `@PostConstruct`? Which lifecycle step
+   is the reason?
+4. Give four fixes for self-invocation and rank them, with reasoning.
+5. Your method catches an exception, logs it, and returns normally. What does
+   the transaction do, and why?
+6. `@PreAuthorize` on an internally-called method — describe the security
+   consequence and why no test caught it.
+7. Why does a plain unit test pass while the production behaviour is wrong?
+8. What would AspectJ weaving change, and what does it cost?

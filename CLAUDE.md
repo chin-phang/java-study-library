@@ -256,7 +256,16 @@ banks. `prerequisites`/`unlocks` are meant to build a dependency graph rendered 
 a study path on the index — **that part is still not built**; the fields are
 recorded but nothing reads them yet.
 
-**The graph now has thirteen real nodes to draw** (2026-09-11). Measured across
+**Six core drafts are waiting** (2026-09-11) and will take the graph to
+nineteen nodes when converted, adding the edges `cas-and-contention → jmm`
+(subject to the slug collision above), `isolation-levels → mvcc`,
+`cache-invalidation → the-log`, `spring-proxy → dependency-inversion`,
+`virtual-threads → thread-pools` and `→ jvm-memory`, and
+`persistence-context → spring-proxy` and `→ mvcc` — the first edge in the
+library between two *core* pages. Until they convert, the measurements below
+describe the graph as built.
+
+**The graph has thirteen real nodes to draw** (2026-09-11). Measured across
 all thirteen converted pages: **no dangling `prerequisites`** — eight are
 legitimate roots (`prerequisites: []`) and the five resolving edges are
 `thread-pools → jvm-memory`, `generational-gc → jvm-memory`, `mvcc →
@@ -415,31 +424,71 @@ runtime, then data, then distributed and design:
 The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
-**Core** — not drafted. Eight of these are already named by a foundational
-page's `unlocks`, so the graph reaches them: `query-planning`, `partitioning`,
+**Core** — **six of eighteen drafted** in `_source/` as of 2026-09-11, none
+converted yet. Eight of the eighteen are named by a foundational page's
+`unlocks`, so the graph reaches them: `query-planning`, `partitioning`,
 `escape-analysis`, `isolation-levels`, `virtual-threads`, `backpressure`, `cas`,
 `deadlock`.
 
-| `concept:` | Page |
-|---|---|
-| `virtual-threads` | Virtual threads: continuations, mounting, pinning |
-| `cas` | CAS, contention and lock-free structures |
-| `escape-analysis` | Escape analysis and when allocation disappears |
-| `class-loading` | Class loading and classloader leaks |
-| `query-planning` | Query planning and cardinality estimation |
-| `isolation-levels` | Isolation levels and the anomalies they permit |
-| `deadlock` | Locking, deadlock and lock ordering |
-| `partitioning` | Partitioning as one idea across four systems |
-| `cache-invalidation` | Cache invalidation and the races in each ordering |
-| `backpressure` | Backpressure and the unbounded-queue failure mode |
-| `consistency-models` | Consistency models and choosing per operation |
-| `spring-proxy` | The proxy boundary in Spring |
-| `persistence-context` | The persistence context and dirty checking |
-| `aggregates` | Aggregates as consistency boundaries |
-| `coupling-cohesion` | Coupling, cohesion and what makes a change expensive |
-| `expression-problem` | The expression problem: polymorphism vs pattern matching |
-| `conways-law` | Conway's law and the inverse manoeuvre |
-| `microservices-org` | Why microservices are an organisational answer |
+Titles below are the drafts' own where a draft exists, and the placeholder
+otherwise; as with the foundational tier, **where a draft and this table
+disagreed, the draft won**.
+
+| `concept:` | Page | Draft |
+|---|---|---|
+| `virtual-threads` | Virtual Threads — Continuations, Mounting, and Pinning | drafted |
+| `cas-and-contention` | CAS, Contention, and Lock-Free Structures | drafted |
+| `isolation-levels` | Isolation Levels and the Anomalies They Permit | drafted |
+| `cache-invalidation` | Cache Invalidation and the Races in Each Ordering | drafted |
+| `spring-proxy` | The Proxy Boundary in Spring | drafted |
+| `persistence-context` | The Persistence Context and Dirty Checking | drafted |
+| `escape-analysis` | Escape analysis and when allocation disappears | |
+| `class-loading` | Class loading and classloader leaks | |
+| `query-planning` | Query planning and cardinality estimation | |
+| `deadlock` | Locking, deadlock and lock ordering | |
+| `partitioning` | Partitioning as one idea across four systems | |
+| `backpressure` | Backpressure and the unbounded-queue failure mode | |
+| `consistency-models` | Consistency models and choosing per operation | |
+| `aggregates` | Aggregates as consistency boundaries | |
+| `coupling-cohesion` | Coupling, cohesion and what makes a change expensive | |
+| `expression-problem` | The expression problem: polymorphism vs pattern matching | |
+| `conways-law` | Conway's law and the inverse manoeuvre | |
+| `microservices-org` | Why microservices are an organisational answer | |
+
+**The `cas` slug changed to `cas-and-contention`, and one edge is now
+mis-spelled.** `content/docs/concepts/jmm.mdx` declares
+`unlocks: [cas, deadlock, virtual-threads]`, written before the draft existed.
+`cas` will now never resolve, while the real page declares
+`prerequisites: [jmm]` — so the graph gets the jmm→CAS edge from one direction
+and a permanent dangling promise from the other. Nothing breaks (a dangling
+`unlocks` is legal by design), but it is the "second spelling" this table exists
+to prevent. **Resolve it before converting `cas-and-contention`**: either edit
+`jmm`'s `unlocks` to `cas-and-contention`, which diverges the page from
+`_source/java-memory-model-concept-page.md` and so needs the same deliberate
+recording as the `hashmap` link repair, or rename the draft's slug to `cas`.
+The user's call; do not pick one silently.
+
+**Audit of the six drafts** (2026-09-11, measured, the same pass the foundational
+drafts got before conversion): no stray H1s, **zero MDX hazards**, every internal
+link carrying its `/docs` prefix and resolving, all 30 `questions:` anchors
+valid, and **no dangling `prerequisites`** — `the-log`, `jmm`, `mvcc`,
+`dependency-inversion`, `thread-pools`, `jvm-memory` are all written, and
+`persistence-context` depends on `spring-proxy`, which is in the same batch.
+Each is 9–11 sections, 2,000–2,700 words, 8 self-check items, and **none carries
+a diagram**. Every `unlocks` target is a specialist page that does not exist,
+which is normal.
+
+Two currency items carried into these drafts, both the same as the ones fixed
+across the corpus on 2026-09-11 — flagged, deliberately **not** edited, because
+they are the user's fresh prose:
+
+- `virtual-threads.mdx` "Where to go deeper" cites **JEP 453** for structured
+  concurrency and **JEP 446** for scoped values. Both are first previews:
+  scoped values finalised as JEP 506 in JDK 25, and structured concurrency is at
+  JEP 525 (sixth preview, JDK 26) with a reshaped API. The page's *body* handles
+  the pinning timeline correctly and names JEP 491 explicitly.
+- `cache-invalidation.mdx` and `isolation-levels.mdx` pin `postgres:17` in their
+  labs; the other four Postgres labs were moved to `postgres:18`.
 
 **Specialist** — 41 slugs, every one promised by a foundational page's
 `unlocks` and none of them written or planned. They are listed so the names are

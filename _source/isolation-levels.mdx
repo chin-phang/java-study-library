@@ -1,0 +1,374 @@
+---
+title: Isolation Levels and the Anomalies They Permit
+concept: isolation-levels
+tier: core
+prerequisites: [mvcc]
+unlocks: [locking-and-deadlock, optimistic-concurrency, saga-pattern, consistency-models]
+questions: [data/transactions-mvcc#q31, data/transactions-mvcc#q32, data/transactions-mvcc#q35, data/transactions-mvcc#q36, java/spring#q103]
+estimatedStudyTime: 3h
+---
+
+> **Recall layer.** The interview answers are
+> [Q32](/docs/data/transactions-mvcc#q32) and
+> [Q103](/docs/java/spring#q103). This page builds the model.
+
+## 1. The problem it exists to solve
+
+Two engineers are on call. A customer's balance is £40 lower than the sum of
+their transactions. Nothing in the log looks wrong; every transaction committed
+successfully; there is no error anywhere.
+
+The code:
+
+```java
+@Transactional
+public void applyFee(long accountId, Money fee) {
+    Account a = repo.findById(accountId);          // read
+    a.setBalance(a.getBalance().minus(fee));       // modify
+    repo.save(a);                                  // write
+}
+```
+
+Two fee jobs ran within the same millisecond. Both read £100. Both computed
+£60. Both wrote £60. One £40 fee vanished.
+
+This is a **lost update**, and the thing worth internalising is that the
+database's default isolation level **permits it**. Not tolerates, not
+occasionally misses — permits, by specification. PostgreSQL, Oracle and SQL
+Server all default to `READ COMMITTED`, and `READ COMMITTED` makes no promise
+whatsoever about read-modify-write cycles.
+
+"We use ACID transactions" is what makes people think this can't happen. The
+*I* in ACID is not a boolean. It is a dial with four documented settings, each
+of which permits a named set of anomalies, and the default setting is much
+weaker than the mental model most developers carry.
+
+## 2. The anomalies, precisely
+
+The names come from the SQL standard (and its 1995 critique, "A Critique of
+ANSI SQL Isolation Levels", which is where the interesting ones were added).
+
+**Dirty read.** You read data another transaction wrote but hasn't committed.
+It may roll back, so you acted on data that never existed.
+
+**Non-repeatable read.** You read a row, someone else commits an update, you
+read it again and get a different value. Your transaction saw two versions of
+reality.
+
+**Phantom read.** You run a query, someone else commits an *insert* matching
+your predicate, you re-run and get extra rows. Same as above but for the set,
+not the row.
+
+**Lost update.** Two read-modify-write cycles interleave; the second write
+overwrites the first without seeing it. Section 1.
+
+**Write skew.** The subtle one, and the one that catches people who know the
+other four. Two transactions read an overlapping set, each checks an invariant
+that currently holds, each writes a *different* row, and together they break the
+invariant. Neither wrote what the other read, so nothing conflicts.
+
+The canonical case: a hospital requires at least one doctor on call. Two
+doctors both check "is anyone else on call?" (yes, the other one), and both
+take themselves off. Both commit. Nobody is on call.
+
+The financial version, which is likelier to be yours: linked accounts with a
+combined overdraft limit. Two withdrawals, each checking the combined balance,
+each debiting a different account, together breaching the limit.
+
+## 3. The levels, and what each permits
+
+| Level | Dirty read | Non-repeatable | Phantom | Lost update | Write skew |
+|---|---|---|---|---|---|
+| READ UNCOMMITTED | ✗ possible | ✗ | ✗ | ✗ | ✗ |
+| READ COMMITTED | prevented | ✗ | ✗ | ✗ | ✗ |
+| REPEATABLE READ | prevented | prevented | ✗* | prevented* | ✗ |
+| SERIALIZABLE | prevented | prevented | prevented | prevented | prevented |
+
+Two asterisks, both important.
+
+**Phantoms at REPEATABLE READ** are permitted by the standard but prevented by
+InnoDB, which uses next-key locks — a record lock plus a gap lock on the range
+before it — so other transactions can't insert into the gap
+([Q35](/docs/data/transactions-mvcc#q35)).
+
+**Lost update at REPEATABLE READ** is prevented by PostgreSQL and InnoDB, but by
+*different mechanisms*. PostgreSQL detects the conflict and aborts the second
+transaction with a serialization failure. InnoDB's locking reads block. Either
+way, your application must be prepared for the transaction to fail — which is
+the part that gets skipped.
+
+**Defaults differ**, which matters when you move between engines:
+
+- PostgreSQL, Oracle, SQL Server → `READ COMMITTED`
+- MySQL/InnoDB → `REPEATABLE READ`
+
+So the same application code has different concurrency semantics on MySQL and
+PostgreSQL. That is a genuine migration hazard and it produces bugs that only
+appear under load in the new environment.
+
+### The naming is a historical artefact
+
+PostgreSQL's `REPEATABLE READ` is actually **snapshot isolation** — every read
+sees a consistent snapshot from transaction start. Snapshot isolation is
+strictly stronger than the standard's `REPEATABLE READ` in some ways (no
+phantoms in practice) and famously permits write skew, which the standard's
+definition arguably doesn't contemplate. The 1995 critique paper exists because
+the standard defined levels by which anomalies they exclude, and snapshot
+isolation didn't fit the taxonomy.
+
+Practical consequence: **read your engine's documentation, not the standard.**
+The level names are the same; the guarantees are not.
+
+## 4. Why SERIALIZABLE isn't the obvious answer
+
+It prevents everything. So why isn't it the default?
+
+Two implementations, two different costs.
+
+**Lock-based (traditional, SQL Server, MySQL).** Predicate and range locks
+serialise conflicting transactions. Correct, and it blocks — throughput drops
+and deadlocks rise.
+
+**Serializable Snapshot Isolation (PostgreSQL).** Optimistic. The engine tracks
+read/write dependencies between concurrent transactions and detects "dangerous
+structures" that could produce a non-serializable outcome. Nothing blocks —
+instead one transaction is aborted with `could not serialize access due to
+read/write dependencies` (SQLSTATE **40001**).
+
+SSI's cost is therefore **aborts, not blocking**, and that has a direct
+consequence people miss:
+
+> **Adopting SERIALIZABLE without a retry wrapper just moves the failure to the
+> user.**
+
+Under contention, a meaningful fraction of transactions will abort. If your
+application surfaces SQLSTATE 40001 as a 500, you have made things worse. The
+retry must re-execute the **whole transaction** from the start — retrying just
+the commit is meaningless, because your in-memory state was computed from a
+snapshot that is now known to be invalid.
+
+SSI also has overhead: predicate lock tracking consumes memory, and it can
+escalate granularity under pressure, producing more false-positive aborts.
+
+## 5. What to actually do
+
+Ranked by preference, because this is a design decision rather than a
+configuration one.
+
+**(a) Make the operation atomic in SQL.** The best answer, because it removes
+the read-modify-write window entirely:
+
+```sql
+UPDATE accounts
+   SET balance = balance - :fee
+ WHERE id = :id AND balance >= :fee;
+```
+
+Check the affected row count. Zero means insufficient funds. There is no window
+because the read and the write are one statement, and the database's row-level
+locking handles the rest. This works at `READ COMMITTED` and needs no retry
+logic.
+
+**(b) Optimistic locking with a version column.** When the logic is too complex
+for one statement:
+
+```sql
+UPDATE accounts SET balance = :new, version = version + 1
+ WHERE id = :id AND version = :expected;
+```
+
+Zero rows means someone else won; retry the whole operation with bounded
+attempts and jittered backoff. This is what JPA's `@Version` does, and it works
+at any isolation level.
+
+**(c) Pessimistic locking.** `SELECT ... FOR UPDATE` takes an exclusive row lock
+for the transaction's duration. Correct under high contention on a single row,
+but it serialises, risks deadlocks, and requires a lock timeout so a stuck
+transaction can't stall everything.
+
+**(d) Raise the isolation level.** `SERIALIZABLE`, with a retry wrapper. Right
+when the invariant genuinely spans multiple rows or tables and cannot be
+expressed as a constraint — which is exactly the write-skew case.
+
+**(e) Express the invariant as a constraint.** Often overlooked and often best.
+A unique index, a check constraint, or in PostgreSQL an **exclusion
+constraint** (no two bookings for the same room with overlapping time ranges)
+makes the illegal state unrepresentable regardless of isolation level. The
+database enforces it against every writer, including the batch job and the
+person with `psql`.
+
+### Materialising the conflict
+
+For write skew specifically, there's a technique worth knowing: give the
+transactions something to *actually* conflict on. If both must hold a lock on
+the parent row — the shift, the account group, the room — then snapshot
+isolation's "we wrote different rows" no longer applies. `SELECT ... FOR UPDATE`
+on a parent aggregate is the common shape, and it's the database analogue of
+choosing the right aggregate boundary in the domain model.
+
+## 6. What this does *not* cover
+
+- **Distributed transactions.** Isolation levels govern one database. Across
+  services you have sagas, compensations and eventual consistency
+  ([Q123](/docs/java/distributed-systems#q123)) — a different problem with no
+  equivalent dial.
+- **Read replicas.** A replica serves a snapshot that is behind the primary.
+  No isolation level fixes read-your-own-writes across replication lag
+  ([Q40](/docs/data/transactions-mvcc#q40)).
+- **Application-level caching.** A cached value read outside the transaction
+  has no isolation guarantee at all.
+- **Long transactions.** Holding a snapshot open blocks vacuum and causes
+  database-wide bloat, regardless of level — see the
+  [MVCC page](/docs/concepts/mvcc).
+
+## 7. Lab: observe each anomaly
+
+Two `psql` sessions side by side. Every anomaly here is reproducible in under
+five minutes, and seeing them is different from reading about them.
+
+```bash
+docker run --rm -d --name pg -e POSTGRES_PASSWORD=x -p 5432:5432 postgres:17
+```
+
+```sql
+CREATE TABLE accounts (id int primary key, owner text, balance int, version int default 0);
+INSERT INTO accounts VALUES (1,'alice',100,0), (2,'alice',100,0);
+```
+
+### Lab 1 — the lost update
+
+**A:** `BEGIN; SELECT balance FROM accounts WHERE id=1;`  → 100
+**B:** `BEGIN; SELECT balance FROM accounts WHERE id=1;`  → 100
+**A:** `UPDATE accounts SET balance=60 WHERE id=1; COMMIT;`
+**B:** `UPDATE accounts SET balance=60 WHERE id=1; COMMIT;`
+
+`SELECT balance` → 60. Two £40 fees, one £40 deducted. **No error anywhere.**
+That is section 1, reproduced.
+
+Now the fix from 5(a):
+
+```sql
+UPDATE accounts SET balance = balance - 40 WHERE id=1 AND balance >= 40;
+```
+
+Run it concurrently from both sessions. Correct every time, no retry, same
+isolation level.
+
+### Lab 2 — non-repeatable read vs snapshot
+
+**A:** `BEGIN; SELECT balance FROM accounts WHERE id=1;`
+**B:** `UPDATE accounts SET balance=999 WHERE id=1;` (autocommit)
+**A:** `SELECT balance FROM accounts WHERE id=1;`  → changed. `COMMIT;`
+
+Repeat with `BEGIN ISOLATION LEVEL REPEATABLE READ;` in A. The value is stable
+across both reads — A is reading its snapshot.
+
+### Lab 3 — write skew, and why REPEATABLE READ doesn't help
+
+Invariant: alice's two accounts must total at least 100.
+
+**A:** `BEGIN ISOLATION LEVEL REPEATABLE READ;`
+`SELECT sum(balance) FROM accounts WHERE owner='alice';` → 200, fine
+**B:** `BEGIN ISOLATION LEVEL REPEATABLE READ;`
+`SELECT sum(balance) FROM accounts WHERE owner='alice';` → 200, fine
+**A:** `UPDATE accounts SET balance=0 WHERE id=1; COMMIT;`
+**B:** `UPDATE accounts SET balance=0 WHERE id=2; COMMIT;`
+
+Total is now 0. Both transactions checked the invariant, both were correct when
+they checked, both committed, invariant broken. **They wrote different rows, so
+nothing conflicted.**
+
+**Now repeat the whole thing with `ISOLATION LEVEL SERIALIZABLE`.** The second
+commit fails with SQLSTATE 40001. That contrast is the most valuable thing on
+this page — run it.
+
+### Lab 4 — feel the retry requirement
+
+Write a small program that runs Lab 3's transaction under `SERIALIZABLE` from N
+threads without retry logic, and count failures. Then add a retry loop with
+bounded attempts and jittered backoff, and count again.
+
+The failure *rate* under contention is the number that tells you whether
+`SERIALIZABLE` is viable for your workload. Measure it rather than guessing.
+
+### Lab 5 — express it as a constraint instead
+
+```sql
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+CREATE TABLE bookings (
+  room int, during tstzrange,
+  EXCLUDE USING gist (room WITH =, during WITH &&)
+);
+```
+
+Try to insert two overlapping bookings for the same room, concurrently, at
+`READ COMMITTED`. The constraint rejects it. No isolation level needed, no
+retry logic, and it holds against every writer including ones you didn't write.
+
+### Lab 6 — the engine difference
+
+If you have MySQL available, run Lab 1 on both. Note that InnoDB defaults to
+`REPEATABLE READ` and behaves differently. Then run a concurrent insert into a
+gap with `SELECT ... FOR UPDATE` held, and watch InnoDB's next-key lock block
+it where PostgreSQL wouldn't.
+
+## 8. Leading on this
+
+**Make read-modify-write a review trigger.** Any method that reads an entity,
+computes from its current value, and writes it back is a lost update waiting
+for concurrency. The reviewer's question is: atomic statement, version column,
+or explicit lock? One of those three must be present. This is a 10-second check
+that prevents the most expensive class of data bug in a financial system.
+
+**Know and document your isolation level.** Most teams cannot tell you what
+theirs is. Put it in an ADR, state why, and note which anomalies you are
+therefore accepting. That turns an invisible default into a decision.
+
+**If you adopt SERIALIZABLE, ship the retry wrapper first.** A generic
+`@Retryable` on SQLSTATE 40001 with bounded attempts, jittered backoff and a
+metric counting retries. Without it, raising the isolation level converts silent
+corruption into user-visible errors, which is better but not good.
+
+**Prefer constraints over isolation for invariants that can be expressed as
+constraints.** A unique index or an exclusion constraint is enforced against
+every writer forever, needs no retry logic, and cannot be forgotten by a new
+service. Isolation level is a property of the code path; a constraint is a
+property of the data.
+
+**Test concurrency deliberately.** A test that runs the operation from N
+threads and asserts the invariant afterwards catches these bugs. Most test
+suites have zero such tests, which is why these defects reach production —
+single-threaded tests cannot see any of the anomalies on this page.
+
+## 9. Where to go deeper
+
+- Berenson, Bernstein, Gray et al., "A Critique of ANSI SQL Isolation Levels"
+  (1995) — short, and it's where snapshot isolation and its anomalies were
+  properly characterised. Read it once.
+- Kleppmann, *Designing Data-Intensive Applications*, chapter 7. The clearest
+  modern treatment, and the source of the doctors-on-call example.
+- PostgreSQL docs chapter 13 (Concurrency Control), especially 13.2.3 on SSI and
+  13.4 on application-level serialization failures — it tells you explicitly
+  that you must retry.
+- Peter Bailis et al. on "Highly Available Transactions" — what's achievable
+  without coordination.
+- Martin Kleppmann's "Hermitage" project — a test suite that probes which
+  anomalies each database actually permits. Genuinely useful, and it shows how
+  much vendors diverge.
+
+## 10. Self-check
+
+1. Your service uses `@Transactional` with default settings on PostgreSQL. Which
+   anomalies are you exposed to?
+2. Write the lost-update sequence as an interleaving of two transactions, and
+   then rewrite the code so it cannot happen at the same isolation level.
+3. Define write skew and explain why snapshot isolation permits it. Why is it
+   not simply a lost update?
+4. PostgreSQL's `SERIALIZABLE` doesn't block. What does it do instead, and what
+   must your application provide?
+5. Why can't you retry just the failed commit?
+6. MySQL and PostgreSQL have different default isolation levels. Give a concrete
+   bug that could appear on migration in either direction.
+7. Name three ways to prevent a lost update without changing the isolation
+   level, and say when you'd pick each.
+8. When is an exclusion constraint a better answer than `SERIALIZABLE`?

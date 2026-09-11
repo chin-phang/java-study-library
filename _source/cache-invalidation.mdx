@@ -1,0 +1,417 @@
+---
+title: Cache Invalidation and the Races in Each Ordering
+concept: cache-invalidation
+tier: core
+prerequisites: [the-log]
+unlocks: [caching-strategy, cdc-and-outbox, consistency-models, hot-keys]
+questions: [data/redis-caching#q70, data/redis-caching#q71, data/redis-caching#q72, data/redis-caching#q73, data/redis-caching#q81]
+estimatedStudyTime: 3h
+---
+
+> **Recall layer.** The interview answers are
+> [Q70](/docs/data/redis-caching#q70) and
+> [Q71](/docs/data/redis-caching#q71). This page builds the model.
+
+## 1. The problem it exists to solve
+
+A merchant updates their fee schedule. The dashboard shows the new rate
+immediately. Transactions keep settling at the old rate.
+
+Not for a few seconds — for eleven hours, until someone notices and restarts
+the service. The cache entry had a 24-hour TTL, the write path invalidated it
+correctly, and the value in Redis was still the old one.
+
+Nobody wrote a bug. The sequence was:
+
+1. A read request missed the cache and started loading from the database.
+2. The write committed the new fee and deleted the cache key.
+3. The read — which had already fetched the **old** value — completed and wrote
+   it into Redis.
+
+The invalidation happened *before* the stale value was written. The cache is
+now confidently wrong until its TTL expires, and no amount of correct
+invalidation code prevents it, because the invalidation ran at the right time
+and lost anyway.
+
+"There are only two hard things in computer science: cache invalidation and
+naming things." The joke is famous and unhelpful. This page is about *why* it's
+hard, which is specific and learnable: **a cache is a replica with no
+replication protocol**, and every ordering of "write the database" and "update
+the cache" has a race. The engineering is in knowing which race you've chosen.
+
+## 2. The patterns, and what each commits you to
+
+**Cache-aside (lazy loading).** The application checks the cache; on a miss it
+reads the database and populates. The most common pattern, and the default I'd
+reach for. Only requested data is cached, and a cache outage degrades to slow
+rather than broken. Costs: every miss pays full latency, and staleness persists
+until TTL or invalidation.
+
+**Read-through.** The cache loads from the backing store itself. Cleaner
+application code, but the cache is now in the critical path and must know how
+to load.
+
+**Write-through.** Writes go to the cache, which synchronously writes to the
+database. Always consistent, but every write pays both latencies and you cache
+data that may never be read.
+
+**Write-behind.** Writes go to the cache and flush asynchronously. Excellent
+write throughput; a cache failure loses acknowledged writes. **Never for a
+ledger.**
+
+**Refresh-ahead.** Proactively refresh popular entries before expiry. Good for
+a predictable hot set, wasteful otherwise.
+
+Cache-aside plus TTL plus explicit invalidation is my default because it fails
+safe and the failure mode is comprehensible at 3am. The rest of this page is
+about the "explicit invalidation" part, which is where the difficulty lives.
+
+## 3. Four orderings, four races
+
+Take a write that changes a value, and a concurrent read that misses. There are
+four combinations of *what* you do to the cache (delete or update) and *when*
+(before or after the database write).
+
+### (a) Delete cache, then write database
+
+```
+W: DEL key
+R: GET key            -> miss
+R: SELECT             -> reads OLD value (W hasn't committed)
+W: UPDATE ... COMMIT
+R: SET key = OLD      -> stale, permanently
+```
+
+**This is section 1.** The window is the whole duration of the read's database
+query, which is long. The stale value survives until TTL.
+
+Worse: the window scales with how slow your database is, so this pattern fails
+most often exactly when the system is under stress.
+
+### (b) Write database, then delete cache
+
+```
+W: UPDATE ... COMMIT
+W: DEL key
+R: GET key            -> miss, reloads NEW value ✓
+```
+
+The common case is correct. The race that remains:
+
+```
+R: GET key            -> miss
+R: SELECT             -> OLD value
+W: UPDATE ... COMMIT
+W: DEL key
+R: SET key = OLD      -> stale
+```
+
+Structurally the same outcome, but the window is much narrower: it requires the
+read to have *already* fetched before the write commits, and to still be
+in-flight after the delete. That's microseconds of exposure instead of
+milliseconds.
+
+**So: write database, then delete cache.** Not because it's race-free, but
+because the window is orders of magnitude smaller.
+
+### (c) Update the cache instead of deleting it
+
+Tempting — you have the new value, why throw it away? Because two concurrent
+writers can apply out of order:
+
+```
+W1: UPDATE db -> 10
+W2: UPDATE db -> 20
+W2: SET cache = 20
+W1: SET cache = 10     -> cache says 10, database says 20
+```
+
+The database serialised the writes; the cache didn't. **Delete, don't update.**
+A delete is idempotent and order-independent; a write isn't. The next reader
+loads the truth.
+
+The exception is when you carry a version and reject older ones — which is
+reintroducing a replication protocol by hand, and is worth it only for a hot
+key where the reload cost is genuinely unacceptable.
+
+### (d) Delete inside the transaction
+
+Also wrong, and subtly: if the transaction rolls back, you've invalidated for
+nothing (harmless), but if you *also* repopulate you may cache uncommitted
+state (not harmless). And the cache delete isn't transactional, so a crash
+between commit and delete leaves a stale entry regardless.
+
+In Spring, `@TransactionalEventListener(phase = AFTER_COMMIT)` is the right
+hook — invalidate only once the write is durable.
+
+## 4. Closing the remaining window
+
+Ordering gets you to (b). To go further:
+
+**Short TTL as a backstop.** The single most effective measure. It converts
+"stale forever" into "stale for 60 seconds", bounds every failure mode on this
+page including ones you haven't thought of, and costs nothing to implement. If
+the business can tolerate a bounded staleness window, this is most of your
+answer.
+
+**Delayed double delete.** Delete, write, then delete again after a short
+delay (longer than a typical read). The second delete clears anything a racing
+reader repopulated. Crude, effective, and worth knowing because it's widely
+used.
+
+**Version or timestamp stamps.** Store the row's version alongside the cached
+value and reject writes to the cache carrying an older version. Correct, and it
+requires the reader to know the version it read at.
+
+**Invalidate from the log.** The genuinely correct answer. Because the
+invalidation is derived from the committed database change, it is **ordered
+with the commit** — CDC or an outbox consumer publishes the change, and the
+consumer invalidates ([the log page](/docs/concepts/the-log)). No application
+code can get the ordering wrong, because the ordering comes from the WAL.
+
+This also solves multi-instance invalidation: every service instance and every
+L1 cache learns about the change from the same ordered stream.
+
+**Single-flight on the miss path.** Only one loader per key at a time. This
+doesn't fix the ordering race but it dramatically narrows it, because there is
+at most one in-flight read that could write back a stale value.
+
+## 5. The other three failures
+
+Invalidation correctness is one axis. Three well-known failure modes are about
+*load*, and they're what actually takes systems down.
+
+**Stampede (dogpile).** A hot key expires and a thousand concurrent requests
+all miss, all issue the same expensive query, and the database falls over.
+Recovery is hard because every retry does the same thing
+([Q72](/docs/data/redis-caching#q72)).
+
+Fixes: **single-flight** (first miss takes a short lock and recomputes, others
+wait or serve stale); **probabilistic early expiration** (each reader
+recomputes with probability rising as TTL approaches, so someone refreshes
+before expiry and nobody ever sees a miss — elegant, lock-free);
+**serve-stale-while-revalidating**; and **request coalescing** in-process
+before it even reaches Redis.
+
+**Penetration.** Requests for keys that *don't exist*, so the cache never
+populates and every request hits the database. The signature of a probing
+attack, and also of deleted entities and bad client pagination
+([Q73](/docs/data/redis-caching#q73)).
+
+Fixes: cache the negative result with a short TTL (careful not to cache a
+*database error* as "not found"); a Bloom filter for a large static key space;
+validate the key's shape before looking it up at all.
+
+**Avalanche.** Many keys expiring simultaneously, or the cache itself going
+down, sending full load to the database instantly.
+
+Fixes: **TTL jitter** — `ttl = base + random(0, base * 0.1)` — which costs one
+line and prevents a whole class of incident; a small in-process L1 so a Redis
+outage isn't 100% miss; a circuit breaker and concurrency limiter in front of
+the database; and cache warming before taking traffic after a restart.
+
+## 6. The cold-cache question
+
+This is the part teams discover during an incident.
+
+Once you depend on a 95% hit rate, your database is provisioned for 5% of read
+traffic. A cache flush, a Redis failover, or a deploy that changes a key format
+means **20× the normal database load, instantly**.
+
+So any cache in a critical path needs a tested answer to: *what happens when
+it's empty at peak?* Concretely — a bounded-concurrency miss path so the
+thundering herd can't form, a circuit breaker so the database sheds rather than
+collapses, and ideally a load test run with the cache disabled.
+
+And the corollary, which is the discipline that matters: **never cache a query
+you haven't understood.** If the miss path can't survive, the cache isn't an
+optimisation, it's a dependency you haven't acknowledged
+([Q81](/docs/data/redis-caching#q81)).
+
+## 7. What this does *not* cover
+
+- **Cache sizing and eviction.** LRU vs LFU, `maxmemory` policy, and why
+  `allkeys-lru` will evict your sessions.
+- **Distributed cache topology.** Redis Cluster hash slots, hot keys and
+  replication are their own subject.
+- **CPU caches.** Same word, different problem — see
+  [CAS and contention](/docs/concepts/cas-and-contention).
+- **HTTP caching.** ETags, `Cache-Control` and CDN invalidation share the
+  reasoning but have their own protocol.
+
+## 8. Lab: race it deliberately
+
+```bash
+docker run --rm -d --name redis -p 6379:6379 redis:7
+docker run --rm -d --name pg -e POSTGRES_PASSWORD=x -p 5432:5432 postgres:17
+```
+
+### Lab 1 — reproduce the permanent stale value
+
+Write a service with an artificial delay to widen the window:
+
+```java
+String read(String key) {
+    String cached = redis.get(key);
+    if (cached != null) return cached;
+    String value = db.load(key);            // <- the read
+    sleep(500);                             // widen the window
+    redis.set(key, value);                  // write-back
+    return value;
+}
+
+void write(String key, String value) {
+    redis.del(key);                         // ordering (a): delete FIRST
+    db.save(key, value);
+}
+```
+
+Start a read, and 100 ms later perform a write. Then `GET` the key: it holds
+the **old** value, and will until TTL. **This is section 1, on your laptop, in
+five minutes.**
+
+Now switch to ordering (b) — `db.save` then `redis.del` — and repeat with the
+same timing. The stale write no longer happens, because the delete comes after.
+Then reconstruct the narrow race in (b) by starting the read *before* the write
+and confirm it can still occur. Seeing both is the point: (b) is better, not
+safe.
+
+### Lab 2 — out-of-order cache updates
+
+Two writers, `SET cache` instead of `DEL`:
+
+```java
+void writeUpdate(String key, String value) {
+    db.save(key, value);
+    redis.set(key, value);       // update, not delete
+}
+```
+
+Run two writers concurrently in a loop, with a random small delay between the
+db write and the cache write. Compare the final database value against the
+final cache value across many iterations and count divergences.
+
+Then change `redis.set` to `redis.del` and re-run. Zero divergences. **That's
+the "delete, don't update" rule, measured.**
+
+### Lab 3 — build a stampede
+
+```java
+// one hot key, TTL 5s, load takes 200ms
+ExecutorService ex = Executors.newFixedThreadPool(200);
+for (int i = 0; i < 2000; i++) ex.submit(() -> read("hot-key"));
+```
+
+Count database loads with a counter. With no protection you'll see hundreds per
+expiry. Add single-flight:
+
+```java
+private final ConcurrentHashMap<String, CompletableFuture<String>> inflight = new ConcurrentHashMap<>();
+
+String read(String key) {
+    String c = redis.get(key);
+    if (c != null) return c;
+    return inflight.computeIfAbsent(key, k ->
+        CompletableFuture.supplyAsync(() -> { 
+            String v = db.load(k); redis.setex(k, ttl, v); return v; })
+        .whenComplete((v, t) -> inflight.remove(k))
+    ).join();
+}
+```
+
+Re-run and count again. One load per expiry. **The ratio between those two
+numbers is what a stampede costs you.**
+
+### Lab 4 — TTL jitter
+
+Populate 10,000 keys with identical TTLs. Watch Redis `expired_keys` and CPU at
+the expiry instant, and watch database load spike. Then repopulate with
+`ttl = base + random(0, base/10)` and compare. One line of code, a flat graph
+instead of a cliff.
+
+### Lab 5 — measure the cold-cache load
+
+Warm your cache, record steady-state database QPS. Then `FLUSHALL` while under
+load and record peak database QPS and error rate.
+
+**That peak is your real database requirement.** Most teams have never measured
+it, and it is usually far above what they've provisioned. If the system doesn't
+survive this lab, the cache is load-bearing infrastructure, not an
+optimisation.
+
+### Lab 6 — invalidate from the log
+
+Run Debezium (or a simple polling outbox consumer) against the PostgreSQL
+instance, and have it delete the corresponding Redis key on each change event.
+Then re-run Lab 1 with application-level invalidation removed entirely.
+
+The race is gone, because the invalidation is ordered by the WAL rather than by
+application code. **This is the lab that shows why CDC-based invalidation is
+qualitatively different from getting the ordering right.**
+
+## 9. Leading on this
+
+**Mandate TTLs. There is no such thing as a permanent cache entry.** Any
+`SET` without an expiry is a bug waiting for a missed invalidation, and a
+missed invalidation is guaranteed eventually — a new write path, a batch job, a
+DBA. A TTL bounds every failure on this page including the ones nobody
+anticipated. Make it a review rule and enforce it in a cache wrapper so it
+cannot be forgotten.
+
+**Standardise the ordering in a shared abstraction.** Don't leave "database
+then delete" to each developer's memory. A small `CachedRepository` or
+aspect that owns the ordering, the TTL, the jitter and the single-flight means
+the reasoning on this page is applied once rather than 40 times, and the 41st
+developer gets it right for free.
+
+**Make the hit rate a monitored, alertable metric.** It is the single number
+that says whether the cache is working. A collapsing hit rate precedes a
+database incident, and it's the earliest signal you'll get for a key-format
+change, an eviction problem, or an over-aggressive invalidation.
+
+**Require the cold-cache answer in design review.** "What happens when this
+cache is empty at peak?" If the answer is "the database falls over", the design
+isn't finished. Bounded miss concurrency, a circuit breaker, and a load test
+with the cache off. Lab 5 makes this concrete enough to argue for.
+
+**Push back on caching as a fix for a slow query.** It's the third option in
+the escalation ladder ([Q58](/docs/data/scaling-operations#q58)), after fixing
+the query and adding the index. A cache over an unexamined query hides the
+problem, adds a consistency surface, and leaves you with a miss path that still
+falls over.
+
+**For anything financial, prefer bounded staleness to clever invalidation.** A
+30-second TTL on a fee schedule is defensible and explainable to an auditor. A
+race-free invalidation scheme that is *nearly* right is neither. Ask what the
+customer sees if this value is 30 seconds old — if the answer is unacceptable,
+don't cache it at all.
+
+## 10. Where to go deeper
+
+- Facebook's "Scaling Memcache at Facebook" (NSDI 2013) — leases, stale sets,
+  the thundering herd, and cross-region invalidation, all from production
+  experience at a scale that forced them to solve it properly. The single best
+  paper on this topic.
+- Vattani, Chierichetti & Lowenstein, "Optimal Probabilistic Cache Stampede
+  Prevention" (2015) — the early-expiration technique, with the maths.
+- Caffeine's design notes (Ben Manes) on W-TinyLFU admission — why a
+  well-designed local cache beats LRU on hit rate.
+- Redis client-side caching / RESP3 tracking documentation — server-pushed
+  invalidation for the L1 tier.
+- Debezium's documentation on cache invalidation as a CDC use case.
+
+## 11. Self-check
+
+1. Walk through the interleaving that leaves a permanently stale value when you
+   delete the cache *before* writing the database.
+2. Ordering (b) still has a race. Describe it, and explain why it's acceptable
+   in practice.
+3. Why delete rather than update the cache? Give the two-writer interleaving.
+4. Where does invalidation belong relative to transaction commit, and what
+   Spring mechanism gives you that?
+5. Why is CDC-based invalidation qualitatively different from getting the
+   application ordering right?
+6. Distinguish stampede, penetration and avalanche. Give one fix for each.
+7. What does probabilistic early expiration do that a mutex doesn't?
+8. Your cache has a 95% hit rate and you flush it at peak. What happens, and
+   what should have been in place?
