@@ -439,19 +439,62 @@ holds up, and it's the one Lab 4 demonstrates.
 
 ## 10. Self-check
 
-1. Where does a virtual thread's stack live, and what schedules it? Name one
-   consequence of each answer.
-2. Explain mounting and unmounting. What does `Thread.sleep` do on a virtual
-   thread that it doesn't do on a platform thread?
-3. Describe pinning, its two causes on Java 21, and how a connection pool can
-   deadlock an entire application because of it.
-4. Which JDK removed the `synchronized` pinning limitation, and why does the
-   version matter to a platform decision?
-5. You remove your thread pools and adopt virtual threads. What must you add,
-   and what happens under load if you don't?
-6. Why is pooling virtual threads an anti-pattern, and why is bounding
-   concurrency still necessary?
-7. What does `ThreadLocal` cost at a million virtual threads, and what is the
-   intended replacement?
-8. Give two cases where reactive is still the better choice, and one where a
-   half-reactive codebase is worse than either.
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 A thread is a stack plus a scheduler.">
+
+Where does a virtual thread's stack live, and what schedules it? Name one
+consequence of each answer.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§2 Mounting and unmounting.">
+
+Explain mounting and unmounting. What does `Thread.sleep` do on a virtual
+thread that it doesn't do on a platform thread?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§3 Pinning: when unmounting can't happen.">
+
+Describe pinning, its two causes on Java 21, and how a connection pool can
+deadlock an entire application because of it.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§3 Pinning: when unmounting can't happen — Version note that matters.">
+
+Which JDK removed the `synchronized` pinning limitation, and why does the
+version matter to a platform decision?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§4 What does not change — So you still need bulkheads.">
+
+You remove your thread pools and adopt virtual threads. What must you add,
+and what happens under load if you don't?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§4 What does not change.">
+
+Why is pooling virtual threads an anti-pattern, and why is bounding
+concurrency still necessary?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§4 What does not change — ThreadLocal becomes a memory problem.">
+
+What does `ThreadLocal` cost at a million virtual threads, and what is the
+intended replacement?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§6 So, reactive or virtual threads?">
+
+Give two cases where reactive is still the better choice, and one where a
+half-reactive codebase is worse than either.
+
+</SelfCheckItem>
+
+</SelfCheck>
