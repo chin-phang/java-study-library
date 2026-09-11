@@ -217,7 +217,7 @@ If you can answer those three for any log-shaped system, you can operate it.
 ### Lab 1 — watch WAL advance
 
 ```bash
-docker run --rm -d --name pg -e POSTGRES_PASSWORD=x -p 5432:5432 postgres:17
+docker run --rm -d --name pg -e POSTGRES_PASSWORD=x -p 5432:5432 postgres:18
 psql postgresql://postgres:x@localhost/postgres
 ```
 
@@ -341,7 +341,9 @@ documentation.
   still the best single thing to read on it.
 - Mohan et al., "ARIES" (1992) — the write-ahead logging and recovery algorithm
   that essentially every relational database implements.
-- PostgreSQL docs chapter 29 (Reliability and the WAL) and 27 (Replication).
+- PostgreSQL docs, "Reliability and the Write-Ahead Log" and "High
+  Availability, Load Balancing, and Replication" — by title, because the
+  numbering moves between major versions (28 and 26 in PostgreSQL 18).
 - Martin Kleppmann, *Designing Data-Intensive Applications*, chapters 3 and 5 —
   storage engines and replication, in that order.
 - Kafka's design documentation on the log, and KIP-405 (tiered storage) for how

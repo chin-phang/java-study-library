@@ -248,9 +248,10 @@ The lesson in one line: **never return or store the varargs array.**
 ## 7. What this does *not* cover
 
 - **Valhalla.** Value classes and generic specialisation would let `List<int>`
-  avoid boxing. Not shipped as of Java 21. It's the reason to prefer `record`
-  for data now — those types are the best candidates to become value classes
-  later.
+  avoid boxing. Still not shipped in any released JDK: JEP 401 (Value Objects)
+  is integrated for **preview** in JDK 28, and generic specialisation over it
+  comes later again. It's the reason to prefer `record` for data now — those
+  types are the best candidates to become value classes later.
 - **Type inference details.** Java 8's target typing and poly expressions are a
   separate topic; the practical rule is that `var x = new ArrayList<>()` infers
   `ArrayList<Object>`, which is almost never intended.

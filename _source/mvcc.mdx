@@ -207,7 +207,7 @@ visible as undo growth and purge lag.
 ## 7. Lab: watch tuples die
 
 ```bash
-docker run --rm -d --name pg -e POSTGRES_PASSWORD=x -p 5432:5432 postgres:17
+docker run --rm -d --name pg -e POSTGRES_PASSWORD=x -p 5432:5432 postgres:18
 psql postgresql://postgres:x@localhost/postgres
 ```
 
@@ -331,9 +331,10 @@ to look.
 
 ## 9. Where to go deeper
 
-- PostgreSQL docs, chapter 13 (Concurrency Control) and 25.1 (Routine
-  Vacuuming) — read 25.1 in full once; it is short and it is the operational
-  manual for this page.
+- PostgreSQL docs, "Concurrency Control" and "Routine Vacuuming" — read the
+  vacuuming one in full once; it is short and it is the operational manual for
+  this page. Go by title rather than number: chapters renumber between major
+  versions, and routine vacuuming is 24.1 in PostgreSQL 18.
 - Hironobu Suzuki, *The Internals of PostgreSQL*, chapters 5–6 — free online,
   with the clearest diagrams of tuple visibility and HOT anywhere.
 - `pgstattuple`, `pg_visibility`, `pg_freespacemap` — the tooling for observing

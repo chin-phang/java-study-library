@@ -174,8 +174,8 @@ with `System.nanoTime()` around a loop should be treated as unmeasured.
 
 - **Startup and the cold path.** Tiered compilation improves warmup, but it
   can't remove it. AppCDS, `-XX:TieredStopAtLevel=1` for short-lived processes,
-  Leyden's ahead-of-time work, and GraalVM native images all address this
-  differently.
+  Leyden's AOT cache (`-XX:AOTCache`, shipping since JDK 24 and extended in 25
+  and 26), and GraalVM native images all address this differently.
 - **GC pauses.** Separate mechanism entirely, though both are attributed to
   "JVM slowness".
 - **Safepoints.** A method must reach a safepoint poll to be deoptimised or for

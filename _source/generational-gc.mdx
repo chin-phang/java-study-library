@@ -189,8 +189,13 @@ hand often achieves nothing measurable.
 - **Humongous objects.** In G1, anything over half a region bypasses Eden
   entirely and is allocated in contiguous old-gen regions. A workload allocating
   8 MB byte arrays with a 4 MB region size never benefits from any of this.
-- **Non-generational collectors.** Pre-21 ZGC and Shenandoah were
+- **Non-generational collectors.** ZGC and Shenandoah both started
   single-generation; the hypothesis still held, they just couldn't exploit it.
+  Both have since moved: ZGC gained generations in JDK 21 (JEP 439), made them
+  the default in 23 (JEP 474) and removed the non-generational mode outright in
+  24 (JEP 490), so `-XX:+UseZGC` is now generational and nothing else.
+  Shenandoah's generational mode landed as an experimental option in 24
+  (JEP 404), with JEP 535 proposing it as the default in 28.
 - **Pause time.** Generational design reduces GC *work*. Pause length also
   depends on safepoint arrival ([Q78](/docs/java/jvm-memory-gc#q78)), which is
   a separate mechanism and a common source of "the GC log says 10ms but the

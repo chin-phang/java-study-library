@@ -220,8 +220,14 @@ it.
 Also unchanged: CPU-bound work is still bounded by cores; `ThreadLocal`-heavy
 code becomes a memory problem at a million threads
 ([`ScopedValue`](/docs/java/modern-java#q91) is the answer); and pinning inside
-`synchronized` blocks can block carriers in Java 21 specifically, which is worth
-auditing before you enable them ([Q62](/docs/java/concurrency#q62)).
+`synchronized` blocks can block carriers on Java 21 specifically, which is worth
+auditing before you enable them there ([Q62](/docs/java/concurrency#q62)).
+
+That last one has since been fixed: **JEP 491 removed `synchronized` pinning in
+JDK 24**, so from 24 onward a virtual thread blocked on a monitor unmounts and
+releases its carrier, and migrating `synchronized` to `ReentrantLock` purely for
+scalability is no longer necessary. Native frames and a few JVM-internal
+critical sections still pin, so the audit shrinks rather than disappears.
 
 ## 7. Lab: reproduce the outage
 
@@ -348,8 +354,12 @@ it's easy to miss, because everything looks faster in testing.
   core/queue/max rule explicitly — most people have simply never read it.
 - Little's Law: any queueing theory text, but the striking thing is how few
   assumptions it needs. Worth reading the proof once.
-- JEP 444 (Virtual Threads) and JEP 453 (Structured Concurrency) — the
-  motivation sections are the best writing on why thread-per-request came back.
+- JEP 444 (Virtual Threads) and the Structured Concurrency JEP — the motivation
+  sections are the best writing on why thread-per-request came back. Read the
+  *current* preview rather than the first: structured concurrency has re-previewed
+  six times (JEP 453 in JDK 21 through JEP 525 in JDK 26) and the API was
+  reshaped around `StructuredTaskScope.open()` on the way, so the early JEPs show
+  code that no longer compiles. The motivation sections have not changed.
 - Resilience4j's bulkhead documentation — both the semaphore and thread-pool
   implementations, and when each fits.
 - Marc Brooker's blog on queueing, timeouts and retries — the operational

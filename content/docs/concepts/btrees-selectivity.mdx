@@ -211,7 +211,7 @@ Beyond selectivity:
 Everything here runs against a throwaway PostgreSQL:
 
 ```bash
-docker run --rm -d --name pg -e POSTGRES_PASSWORD=x -p 5432:5432 postgres:17
+docker run --rm -d --name pg -e POSTGRES_PASSWORD=x -p 5432:5432 postgres:18
 psql postgresql://postgres:x@localhost/postgres
 ```
 
