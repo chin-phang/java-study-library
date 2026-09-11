@@ -1,5 +1,5 @@
 {
   "title": "Concepts",
   "description": "Deep-study pages on the load-bearing ideas.",
-  "pages": ["jmm", "thread-pools", "generics-erasure", "hashmap", "jvm-memory", "generational-gc", "jit", "btrees-selectivity", "mvcc", "the-log", "idempotency", "bounded-contexts", "dependency-inversion"]
+  "pages": ["jmm", "thread-pools", "generics-erasure", "hashmap", "jvm-memory", "generational-gc", "jit", "btrees-selectivity", "mvcc", "the-log", "broker-semantics", "idempotency", "bounded-contexts", "dependency-inversion"]
 }

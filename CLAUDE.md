@@ -287,6 +287,16 @@ dangles by design, which is most of them. So a renderer built today must
 tolerate dangling `unlocks` on day one; it will not meet a dangling
 `prerequisites` unless someone introduces one.
 
+**Fourteen, as of the same day** — `broker-semantics` converted straight
+after drafting, outside the two Core batches above, adding the sixth
+resolving edge: `broker-semantics → the-log`. Its own `unlocks`
+(`retries-and-backoff`, `outbox-pattern`) both dangle by design, same as the
+rest. The eventual full count is **twenty-six**, not twenty-five — the
+earlier estimate assumed all twelve Core drafts converting on top of the
+thirteen foundational pages; `broker-semantics` was a thirteenth Core page
+outside that count, drafted and converted the same day rather than queued
+behind it.
+
 ### The dependency graph — settled conventions
 
 Decided 2026-09-10, at the frontmatter review gate. Both are cheap now and
@@ -355,6 +365,14 @@ first few pages did not exercise:
 Anchors are validated per track, and the per-bank numbering restart does not
 bite: `#q3` under `data/modelling-indexing` resolves to the data bank's Q3, not
 the Java bank's.
+
+**Re-verified with `broker-semantics`** (2026-09-11), the first Core-tier page
+converted: `/docs/data/rabbitmq` renders "The model behind this answer" at
+exactly six anchors — `#q86`, `#q88`, `#q89`, `#q91`, `#q93`, `#q98` — matching
+its `questions:` list precisely. `backpressure` also claims `#q92` and `#q102`
+on the same page but is still a `_source/` draft, unconverted, so those two
+show no reverse link yet — expected, since `conceptsForPage()` only sees pages
+under `content/docs/concepts/`.
 
 **Why this needed a schema.** fumadocs' `pageSchema` is a Zod object with
 `$strip`: every key it does not declare — `concept`, `tier`, `prerequisites`,
@@ -436,15 +454,19 @@ runtime, then data, then distributed and design:
 The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
-**Core** — **twelve of twenty-one drafted** in `_source/` as of 2026-09-11, none
-converted yet. Six were the first batch (`virtual-threads`,
+**Core** — **thirteen of twenty-one drafted** in `_source/` as of 2026-09-11,
+**one of those thirteen also converted** into `content/docs/concepts/` the
+same day. Six were the first batch (`virtual-threads`,
 `cas-and-contention`, `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`); six more followed the same day (`aggregates`,
 `backpressure`, `coupling-and-cohesion`, `escape-analysis`,
-`locking-and-deadlock`, `partitioning`). `query-planning`, `class-loading` and
-`consistency-models` remain undrafted. Three were added on 2026-09-11 from the
-coverage audit below — `broker-semantics`, `stream-pipelines`, and
-`kafka-internals` promoted from Specialist.
+`locking-and-deadlock`, `partitioning`). Three more were added the same day
+from the coverage audit below — `broker-semantics`, `stream-pipelines`, and
+`kafka-internals` promoted from Specialist — and of those three,
+**`broker-semantics` was drafted and converted immediately**, the only Core
+page built so far; `stream-pipelines` and `kafka-internals` remain
+unplanned beyond the slug. `query-planning`, `class-loading` and
+`consistency-models` also remain undrafted.
 
 Titles below are the drafts' own where a draft exists, and the placeholder
 otherwise; as with the foundational tier, **where a draft and this table
@@ -466,7 +488,7 @@ the table, and **the `cas` slug** further down for the first one of these.
 | `escape-analysis` | Escape Analysis and When Allocation Disappears | drafted |
 | `locking-and-deadlock` | Locking and Deadlock | drafted |
 | `partitioning` | Partitioning — One Idea in Five Systems | drafted |
-| `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | |
+| `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | drafted, converted |
 | `kafka-internals` | Partitions, consumer groups, ISR and the high watermark | |
 | `stream-pipelines` | Stream pipelines — laziness, fusion and parallel decomposition | |
 | `class-loading` | Class loading and classloader leaks | |
@@ -554,6 +576,29 @@ a **conversion order**. Convert `isolation-levels` before `aggregates` or
 rule as `spring-proxy` before `persistence-context`, now with three more pages
 depending on it.
 
+**`broker-semantics`: drafted and converted the same day** (2026-09-11), the
+only Core page taken all the way to `content/docs/concepts/` so far.
+`prerequisites: [the-log]` resolves to a built page, so no conversion-order
+issue like the ones above. `unlocks: [retries-and-backoff, outbox-pattern]`
+reuses two existing Specialist slugs (both already promised by `idempotency`)
+rather than inventing new ones — multiple promises to one unwritten page is
+normal. All six `questions:` anchors (`data/rabbitmq#q86`, `#q88`, `#q89`,
+`#q91`, `#q93`, `#q98`) were checked against `content/docs/data/rabbitmq.mdx`
+before writing, not trusted. 9 sections, ~3,000 words — longer than either
+batch above, because it argues a contrast with a page (`the-log`) rather than
+explaining a self-contained mechanism. 7 self-check items, **with `where`
+pointers written at conversion time** rather than deferred, since the page was
+being read closely for conversion anyway. **Carries one diagram** — the
+fork between a queue's destructive read and a stream's cursor read — the
+first Core-tier page to have one; verified in the browser at 375px (viewBox
+586×944, rendered ≈58% scale, no horizontal overflow, no "Syntax error"
+text), following the same throwaway-render-then-check discipline as the
+foundational diagrams. Both `pnpm types:check` and `pnpm build` pass with the
+page in the sidebar. The self-check in `_source/broker-semantics.mdx` is a
+plain numbered list, matching every other draft in this table — the `where`
+pointers and `<SelfCheck>` JSX exist only in the converted page, per **The
+Question component** below.
+
 **Specialist** — 40 slugs, every one promised by a foundational page's
 `unlocks` and none of them written or planned. (`kafka-internals` was here until
 2026-09-11 and is now Core — see the coverage audit below.) They are listed so the names are
@@ -578,14 +623,18 @@ gotchas**.
 
 ### Coverage audit — which banks still have no concept page
 
-Measured 2026-09-11 across all 419 questions and all 25 concept pages (13 built
-plus 12 core drafts). **108 questions are claimed — 26%**, up from 93 (22%)
-before the second batch of six drafts. The counts below in **Everything else
-large is already planned** are the ones that move — `coupling-and-cohesion`
-takes one question each off `oop-fundamentals`, `solid-principles`,
-`architecture-styles` and `microservices-boundaries`; `partitioning` takes one
-off `collections`, two off `scaling-operations`, and one each off `kafka` and
-`redis-caching`.
+Measured 2026-09-11 across all 419 questions and all 26 concept pages (13
+foundational, built; plus 13 core drafts, one of which — `broker-semantics` —
+is also converted). **114 questions are claimed — 27%**, up from 108 (26%)
+before `broker-semantics` and up from 93 (22%) before the second batch of six
+drafts. The counts below in **Everything else large is already planned** are
+the ones that move — `coupling-and-cohesion` takes one question each off
+`oop-fundamentals`, `solid-principles`, `architecture-styles` and
+`microservices-boundaries`; `partitioning` takes one off `collections`, two
+off `scaling-operations`, and one each off `kafka` and `redis-caching`;
+`broker-semantics` takes six off `rabbitmq` (Q86, Q88, Q89, Q91, Q93, Q98),
+on top of the two `backpressure` already had (Q92, Q102) — eight of
+`rabbitmq`'s twenty now claimed, twelve still open.
 
 **That number is supposed to be low.** The tiering is the point: a small number
 of deeply understood mechanisms generate correct answers to a large number of
@@ -595,13 +644,17 @@ questions. The useful question is never "which questions are unclaimed" but
 **"which load-bearing mechanism has no page"**. By that test, three gaps were
 real and are now in the Core table:
 
-- **`broker-semantics`** — `data/rabbitmq` is 20 questions with **zero**
+- **`broker-semantics`** — `data/rabbitmq` was 20 questions with **zero**
   coverage and was the only section both large and entirely unplanned. One
-  mechanism generates half of it: the broker-managed queue with per-message
+  mechanism generates a third of it: the broker-managed queue with per-message
   acknowledgement, against the log's consumer-managed offset. `the-log` already
   sets this up and declines to finish it — *"a queue's read is destructive and a
   log's read is a cursor move"* — so this is the sibling that page implies.
-  `backpressure` takes Q92 and Q102 and nothing else there.
+  **Drafted and converted the same day** (see the Core table above), claiming
+  Q86, Q88, Q89, Q91, Q93 and Q98. `backpressure` separately takes Q92 and
+  Q102. Twelve of `rabbitmq`'s twenty questions remain unclaimed —
+  `design-patterns`-style recall (client mistakes, monitoring, zero-downtime
+  config changes) that doesn't reduce to one mechanism.
 - **`kafka-internals`, promoted Specialist → Core** — `data/kafka` is the
   largest section in the library at 30 questions, with 3 claimed. Partitions and
   consumer groups, ISR and `acks`, rebalancing and retention are core
@@ -1140,13 +1193,17 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
-**Concept pages add 10 more, so the library holds 29.** Of the thirteen
+**Concept pages add 11 more, so the library holds 30.** Of the thirteen
 foundational pages, **ten carry their own diagram** and **three link to a
 reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
 `java/jvm-memory-gc#q71`, `dependency-inversion` →
 `design/architecture-styles#q53`. Each of those three was checked by following
 the link and confirming the target still renders the picture the prose promises,
-which is the only verification a borrowed diagram gets.
+which is the only verification a borrowed diagram gets. **`broker-semantics`
+adds the eleventh** — the first Core-tier page with a diagram of its own — a
+queue-vs-stream fork, adjacent to rather than a copy of the AMQP routing
+diagram already on `data/rabbitmq#q86` and the DLX retry diagram on
+`data/rabbitmq#q90`.
 
 **Phone-readability, measured on all ten at 375px.** None overflows; the page
 body never scrolls horizontally. Rendered scale, worst first:
@@ -1157,6 +1214,7 @@ body never scrolls horizontally. Rendered scale, worst first:
 | 52% | `btrees-selectivity` | three-sibling fan-out, landscape |
 | 53% | `hashmap`, `idempotency` | three-way fan-out |
 | 55% | `mvcc` | |
+| 58% | `broker-semantics` | two-branch fork, one loop-back decision diamond |
 | 59% | `the-log` | |
 | 61% | `jit` | |
 | 99% | `thread-pools`, `bounded-contexts` | stacked subgraphs via `~~~` |
@@ -1167,6 +1225,10 @@ chain — that is the technique paying off, and it is worth reaching for. The tw
 at 50–52% are legible but the tightest in the library; they are the first place
 to look if the phone pass is ever tightened. All of them were left as drafted:
 changing a diagram is beyond a structural conversion.
+
+`broker-semantics` (Core tier, measured 2026-09-11) sits in the same range as
+the foundational middle of the pack — verified with `viewBox="0 0 586
+943.59375"` against a 343px rendered width at 375px viewport.
 
 ### A concept page links to a reference diagram, it does not copy it
 
@@ -1203,8 +1265,9 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **43 pages** (30 reference + 13
-concept), 419 questions, **29 diagrams**, 100 self-check items.
+Content first — and the content now exists: **44 pages** (30 reference + 14
+concept — 13 foundational plus `broker-semantics`, the first converted Core
+page), 419 questions, **30 diagrams**, 107 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
