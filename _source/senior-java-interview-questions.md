@@ -1,6 +1,6 @@
 # Senior Java Interview Question Bank
 
-**142 questions with model answers, explanations, and follow-ups.**
+**154 questions with model answers, explanations, and follow-ups.**
 
 How to use this: the *Answer* is what you say out loud (aim for 45–90 seconds). The *Why it matters* section is the reasoning behind it — read it so you can survive being pushed. The *Follow-ups* are what a good interviewer actually asks next, and they're where senior candidates get separated from mid-level ones.
 
@@ -21,6 +21,7 @@ A senior answer almost always has three parts: the mechanism, the trade-off, and
 9. [Persistence & JPA](#9-persistence--jpa) (Q111–Q120)
 10. [Distributed Systems, Microservices & Payments](#10-distributed-systems-microservices--payments) (Q121–Q133)
 11. [Testing, Debugging & Engineering Practice](#11-testing-debugging--engineering-practice) (Q134–Q142)
+12. [Modern Java (22 → 25)](#12-modern-java-22--25) (Q143–Q154)
 
 ---
 
@@ -2102,6 +2103,238 @@ The measure I use: is the team's throughput and quality less dependent on me ove
 - What's the hardest part of working here that isn't on the job description?
 
 **Why it matters.** Interviewers read these as signals about seniority. Asking about incident response and decision-making says you've operated systems and worked in teams; asking only about technology stack says you haven't yet.
+
+---
+
+## 12. Modern Java (22 → 25)
+
+### Q143. Java 21 → 25 is an LTS-to-LTS move. What actually changed, and how would you justify it?
+
+**Answer.** Four groups, and only one of them is a language story.
+
+- **21's rough edges got sanded.** `synchronized` no longer pins virtual threads (JEP 491, JDK 24), which removes the single biggest caveat on adopting them (Q144). `ScopedValue` finalised (JEP 506, JDK 25), so context propagation for virtual threads is no longer a preview bet (Q91).
+- **Three runtime features that change operations.** The AOT cache (JEP 483/514/515), compact object headers (JEP 519), and Generational Shenandoah as a product feature (JEP 521). These are flags, not code changes, and they're where the measurable wins are.
+- **Language finals that are mostly ergonomics.** Module import declarations, compact source files and instance `main`, flexible constructor bodies (Q154). Stream gatherers (Q147) and the Class-File API (Q148) are the two that genuinely add capability.
+- **Removals you must check for.** The Security Manager is permanently disabled (Q153), the 32-bit x86 port is gone (JEP 503), and `sun.misc.Unsafe`'s memory-access methods warn on use as of 24 and **throw** from 26 (JEP 498).
+
+**Why it matters.** The justification isn't the feature list — it's that 21 → 25 is a low-risk upgrade on the same LTS train that removes the main reason teams hesitated on virtual threads. The honest framing: "we get the pinning fix, a supported `ScopedValue`, and a startup lever, for a migration whose main risk is third-party libraries calling `Unsafe`."
+
+**Follow-up: What's the one thing you'd check before scheduling it?**
+Run the estate with `--sun-misc-unsafe-memory-access=warn` and see what fires. The methods are terminally deprecated, warn from 24, and throw from 26 — so whatever shows up is not a 25 problem but it is a *26* problem, and you want the inventory before the deadline rather than after. In practice the hits are old bytecode and serialisation libraries, the same set that broke on 8 → 17.
+
+---
+
+### Q144. `synchronized` no longer pins virtual threads. What changed, and what does it mean for adoption?
+
+**Answer.** In Java 21, a virtual thread that blocked inside a `synchronized` block or method could not unmount — it stayed **pinned** to its carrier, holding an OS thread hostage. With a small carrier pool, enough pinned threads deadlocked the application. The standard advice was to audit hot paths and replace `synchronized` with `ReentrantLock`, which is exactly the kind of mechanical, risky, whole-codebase change teams refuse to schedule.
+
+**JEP 491 (JDK 24)** reimplemented the object monitor so a virtual thread can acquire, hold and release a monitor independently of its carrier. Blocking on a monitor now unmounts and frees the carrier, and the thread is remounted when the monitor is available.
+
+What still pins: native frames — a JNI or FFM downcall that blocks, and a few JVM-internal critical sections. The `jdk.VirtualThreadPinned` JFR event now fires only for those.
+
+**Why it matters.** This is the difference between "virtual threads are promising" and "virtual threads are the default". The migration cost of thread-per-request dropped to roughly zero for ordinary Spring/JDBC code, because the `synchronized` in your connection pool and your logging framework stopped being your problem. If you evaluated virtual threads on 21 and shelved them, the evaluation is stale.
+
+**Follow-up: So there's nothing left to audit?**
+The audit shrank; it didn't vanish. You still need to bound concurrency — a million virtual threads against a 20-connection pool is the same overload with the queue moved, so semaphores and rate limiters replace pool sizes rather than disappearing (Q53). And `ThreadLocal`-heavy code is a memory problem at scale, which is what `ScopedValue` is for. Pinning was the *blocker*; capacity planning is still the *work*.
+
+---
+
+### Q145. What is `StableValue` and what does it replace?
+
+**Answer.** Preview in Java 25 (JEP 502). A `StableValue` holds a value that is set at most once, some time after construction, and is immutable thereafter — "deferred `final`".
+
+```java
+class Orchestrator {
+    private final StableValue<Logger> logger = StableValue.of();
+
+    Logger logger() {
+        return logger.orElseSet(() -> Logger.create(Orchestrator.class));   // at most once
+    }
+}
+```
+
+There are also `StableValue.supplier(...)`, which wraps the initialising lambda at the declaration site, and `StableValue.list(...)` for a fixed-size list of independently, lazily initialised elements.
+
+It replaces three uncomfortable idioms: **double-checked locking** with a `volatile` field (correct only if you get the `volatile` exactly right — Q57), the **holder-class idiom** (correct, but `static` only, and one extra class per field), and a plain **non-final lazily assigned field** (racy, and never constant-folded).
+
+**Why it matters.** The payoff is not concision, it's optimisation. The JVM treats a stable value's content as a constant once set, so it constant-folds through it exactly as it would through a `final` field. A `volatile` field never gets that. You get lazy initialisation *and* the codegen of an eager `final`, which is the combination that previously did not exist.
+
+**Follow-up: Would you use a preview API in production?**
+No — and this section is the reason to say so out loud. String templates were previewed in 21 and withdrawn entirely (Q89). Structured concurrency has re-previewed six times with a reshaped API (Q146). Preview features require `--enable-preview`, which pins you to the exact JDK version that compiled the class file. The right posture is to design so the eventual API drops in cleanly — here, hide it behind your own accessor method — and adopt on finalisation.
+
+---
+
+### Q146. Structured concurrency is still preview in 25. What does the API look like now, and would you use it?
+
+**Answer.** The idea has been stable since JEP 453 (JDK 21): if tasks fan out from one place, their lifetimes should nest like a block, so that an error in one cancels its siblings, the parent cannot return before its children finish, and a thread dump shows the hierarchy. The failure it prevents is the orphaned fan-out — a slow subtask still running, and still holding resources, after the request that spawned it returned.
+
+The **API**, however, has been reshaped repeatedly — six previews, JEP 453 (21) through JEP 525 (26). The earlier `new StructuredTaskScope.ShutdownOnFailure()` form is gone; current code opens a scope through a static factory and supplies a joiner:
+
+```java
+try (var scope = StructuredTaskScope.open(Joiner.<Response>allSuccessfulOrThrow())) {
+    var fraud   = scope.fork(() -> fraudCheck(payment));
+    var balance = scope.fork(() -> balanceCheck(payment));
+    scope.join();                       // both, or the first failure cancels the other
+    return authorise(fraud.get(), balance.get());
+}
+```
+
+**Why it matters.** This is the piece that makes virtual threads *structured* rather than just cheap. Without it, thread-per-request plus fan-out reproduces exactly the leak problems that unbounded executors had.
+
+**Follow-up: So what do you actually use today?**
+An executor with an explicit timeout and explicit cancellation, or a small helper that wraps the pattern, and a note in the ADR that this is a placeholder. The reason not to adopt the preview isn't stability of the concept — the concept is sound and unchanged across all six rounds — it's that the *type names and signatures* moved every time, so preview code costs a rewrite per JDK. Say that in an interview and you sound like you've maintained something; say "we use structured concurrency" on a 25 codebase and expect to be asked which preview.
+
+---
+
+### Q147. What are stream gatherers and when would you write one?
+
+**Answer.** Final in Java 24 (JEP 485). `Stream::gather(Gatherer)` is to intermediate operations what `collect(Collector)` is to terminal ones: the extension point the Streams API never had. Before it, any operation the JDK didn't ship — sliding windows, running totals, dedupe-by-key, chunking — meant leaving the pipeline.
+
+`java.util.stream.Gatherers` ships five: `fold`, `scan`, `windowFixed`, `windowSliding`, and `mapConcurrent`.
+
+```java
+// batch 500 payments per upstream call, without materialising the whole stream
+payments.stream()
+        .gather(Gatherers.windowFixed(500))
+        .map(acquirer::submitBatch)
+        .forEach(this::record);
+```
+
+A gatherer has up to four pieces — an initialiser for state, an integrator that receives each element and may emit zero or more downstream, an optional combiner for parallelism, and an optional finisher for anything held back at the end. The integrator can signal "stop", so gatherers short-circuit properly.
+
+**Why it matters.** `mapConcurrent` deserves separate mention: it runs a mapping function on virtual threads with a bounded concurrency limit, in encounter order. That is the idiomatic bounded fan-out for I/O-bound work in a stream, and it composes with the bulkhead argument in Q53 rather than fighting it.
+
+**Follow-up: When is a gatherer the wrong answer?**
+When a plain loop is clearer. A stateful gatherer with a custom integrator is more machinery than a `for` loop with two local variables, and the team has to read it. The strong cases are the ones where you're already in a long pipeline and the alternative is collecting to a list mid-way — that intermediate `toList()` is the thing gatherers exist to delete.
+
+---
+
+### Q148. What is the Class-File API, and why does it matter if you never call it?
+
+**Answer.** Final in Java 24 (JEP 484). `java.lang.classfile` is a standard, JDK-supplied API for parsing, generating and transforming class files — immutable element trees, lazy parsing, lambda-based builders, rather than ASM's visitor model.
+
+The reason it matters to people who will never write a line of it: **the JDK bundled a fork of ASM internally, and every agent, mocking framework and bytecode-weaving library depends on ASM or something like it.** Those libraries lag each new class-file version, which is precisely why a JDK upgrade historically broke Mockito, Lombok, cglib and Jackson before it broke your code. An API that ships *with* the JDK evolves with the class-file format by construction.
+
+**Why it matters.** It's the structural fix for the most common Java upgrade failure — "we can't move to the new LTS because our test framework can't read the bytecode." Over the next few LTS cycles the ecosystem migrating onto it is what makes upgrades boring.
+
+**Follow-up: Where would you legitimately use it directly?**
+Build-time code generation and analysis: a Gradle task that verifies no class in the domain package references an infrastructure package, a coverage or call-graph tool, a compile-time proxy generator. Runtime bytecode generation in application code is still almost always the wrong answer — it defeats AOT, it breaks native images, and it makes stack traces lie.
+
+---
+
+### Q149. What is the Foreign Function & Memory API, and what does it replace?
+
+**Answer.** Final in Java 22 (JEP 454), `java.lang.foreign`. It does two jobs that used to need two bad tools:
+
+- **Call native code** without JNI. No C shim to write, compile and ship per platform; you describe the function's signature and downcall to it from Java.
+- **Access off-heap memory** safely. `MemorySegment` is a region with spatial bounds (you cannot read past the end) and temporal bounds (you cannot read it after it's freed). `Arena` owns the lifetime — `confined` for single-threaded deterministic release, `shared` for multi-threaded, `automatic` for GC-managed.
+
+It replaces **JNI** (brittle, a native build per platform, and a crash rather than an exception when you get it wrong) and the memory-access half of **`sun.misc.Unsafe`** — which is terminally deprecated, warns from 24, and throws from 26 (JEP 498). Native access is itself restricted: you enable it per module with `--enable-native-access`, so the JVM can tell you which code is doing it.
+
+**Why it matters.** The `Unsafe` timeline is the actionable part. A large fraction of the Java ecosystem's off-heap code — caches, serialisation libraries, Netty-adjacent buffers — was written against `Unsafe`. The replacements are `VarHandle` for on-heap and `MemorySegment` for off-heap, and the libraries you depend on have to make that move before 26.
+
+**Follow-up: Does this mean you'd write native interop in an ordinary service?**
+No. The value is that the libraries underneath you can, safely and without a per-platform build. In application code the FFM API is for the rare case with no Java equivalent — a vendor HSM, a hardware crypto module, an existing C risk engine. Otherwise a bounds-checked, arena-scoped native call is still a native call, with all the deployment consequences.
+
+---
+
+### Q150. What is the AOT cache, and how does it compare to CDS and native image?
+
+**Answer.** Project Leyden's first shipment. **JEP 483 (JDK 24)** caches classes already *loaded and linked* from a training run, so a later start reads them instead of redoing the work. **JEP 514 (25)** simplified the workflow to one step, and **JEP 515 (25)** added method profiles to the cache, so the JIT starts warm rather than from zero.
+
+```bash
+java -XX:AOTMode=record -XX:AOTConfiguration=app.aotconf -cp app.jar com.example.App   # train
+java -XX:AOTMode=create -XX:AOTConfiguration=app.aotconf -XX:AOTCache=app.aot -cp app.jar
+java -XX:AOTCache=app.aot -cp app.jar com.example.App                                  # run
+```
+
+The JEP reports Spring PetClinic starting 42% faster, caching roughly 21,000 classes, at a cost of ~130 MB of cache.
+
+Against the alternatives: **AppCDS** shares parsed class *data* only — the AOT cache goes further by storing linked classes and profiles. **GraalVM native image** compiles ahead of time to a binary with near-instant start and a much smaller footprint, but gives up the JIT's peak throughput, requires closed-world analysis, and turns reflection and dynamic proxies into configuration files. The AOT cache keeps you on HotSpot with unchanged semantics.
+
+**Why it matters.** It puts a real option between "accept slow startup" and "rewrite for native image". For a service that scales to zero or autoscales hard, startup is a cost line, and this is a flag plus a build step rather than an architecture change.
+
+**Follow-up: What's the catch?**
+The cache is tied to the JDK version, the classpath and the machine's configuration, so it's a build artefact that must be regenerated with the application and invalidated when either changes — if it doesn't match, the JVM falls back silently to a normal start and you lose the benefit without an error. And the training run has to be *representative*: profile it against a realistic workload, not a smoke test, or you've cached the profile of your health check.
+
+---
+
+### Q151. What are compact object headers and when would you enable them?
+
+**Answer.** A product feature in Java 25 (JEP 519), after being experimental in 24 (JEP 450). It restructures the object header — the mark word plus class pointer — from 12 bytes to 8 on 64-bit with compressed oops.
+
+It is **opt-in**, not the default: `-XX:+UseCompactObjectHeaders`. (In 24 it also needed `-XX:+UnlockExperimentalVMOptions`.)
+
+Four bytes per object sounds trivial until you multiply. `new Object()` goes from 16 bytes to 8 after padding; an `Integer` from 16 to 8 — so the boxing arithmetic behind `Map<Integer,Integer>` improves materially. The JEP cites around 22% less heap on some benchmarks; the win scales with how *many* and how *small* your objects are, which is the profile of most business services.
+
+**Why it matters.** Less heap for the same live set means fewer collections, better cache locality, and more headroom under the same container limit. It's one of the rare changes that is purely a flag, with no code impact — which also means it's one of the few worth actually A/B testing rather than reasoning about.
+
+**Follow-up: Why isn't it the default, and what would you check before turning it on?**
+Because anything reading the header layout directly breaks — serialisation and off-heap libraries that assume a 12-byte header, agents, and some profilers and heap-analysis tooling. That is the check: run your real dependency set and your observability stack under the flag in a pre-production environment before believing the heap graph. Measure with JOL rather than inferring, and note the default arithmetic elsewhere in this bank (Q72) assumes headers *off*.
+
+---
+
+### Q152. What changed in the GC landscape between 21 and 25?
+
+**Answer.** Generational collection won, everywhere.
+
+- **ZGC** gained generations in 21 (JEP 439), made them the default in 23 (JEP 474), and the non-generational mode was **removed** in 24 (JEP 490). `-XX:+UseZGC` now means generational ZGC and nothing else; `-XX:+ZGenerational` is an obsolete flag that warns.
+- **Shenandoah** gained a generational mode experimentally in 24 (JEP 404) and it became a product feature in 25 (JEP 521). JEP 535 proposes making it the default in 28.
+- **G1** remains the default collector and got throughput work along the way (JEP 522 in 26 reduces write-barrier synchronisation).
+
+**Why it matters.** The practical selection advice is unchanged and simpler to state than it was: **G1 unless you have measured a pause problem, then generational ZGC.** What changed is that "which ZGC?" is no longer a question, and the old advice to avoid ZGC for allocation-heavy workloads — because it traced the whole heap every cycle — is obsolete. Anything you read predating 21 on this is misleading (Q73, Q74).
+
+**Follow-up: Does the generational hypothesis apply differently to a concurrent collector?**
+The hypothesis is a property of the *workload*, not the collector: most objects die young regardless. A non-generational concurrent collector still benefited from it — dead objects are never traced — it just couldn't *exploit* it, because it had no cheap young collection and had to scan everything each cycle. Adding generations lets it do frequent small young collections and touch the old generation rarely, which is why the change was worth the considerable implementation effort.
+
+---
+
+### Q153. The Security Manager is permanently disabled. What breaks, and what replaces it?
+
+**Answer.** JEP 486 (JDK 24) finished a removal that began with deprecation in 17 (JEP 411). Concretely, as of 24:
+
+- Starting the JVM with `-Djava.security.manager` is an **error** — the JVM refuses to start.
+- `System.setSecurityManager()` throws `UnsupportedOperationException`.
+- `System.getSecurityManager()` returns `null`; `AccessController.doPrivileged()` simply runs the action with no privilege elevation; `Policy.setPolicy()` throws.
+
+The classes remain so old code links, but nothing they promise is enforced.
+
+**Why it matters.** It was never a working sandbox for untrusted code in a server process — the threat model it was designed for (applets) is gone, the permission model was unusable at scale, and almost nobody ran with it enabled. The replacement is not an API: it's **isolation at the layer below** — containers, seccomp, a non-root user, read-only filesystems, network policy, and a separate process or VM for anything genuinely untrusted.
+
+**Follow-up: How would you find out whether this affects you?**
+Grep the dependency tree, not your own code — the risk is a library that calls `doPrivileged` or installs a policy on your behalf, and older application servers and some crypto and plugin frameworks did. The failure is quiet: `doPrivileged` silently stops elevating rather than throwing, so a permission check that used to pass may now behave differently. This is one of the few 21 → 25 items that deserves an explicit test rather than a build-passes check.
+
+---
+
+### Q154. Module imports, compact source files, flexible constructor bodies — which belong in production code?
+
+**Answer.** Three finals in Java 25, and they are not equally useful.
+
+**Flexible constructor bodies (JEP 513)** — genuinely useful. Statements are now allowed *before* `super(...)` or `this(...)`, in a **prologue**. Prologues run bottom-up, then the constructor bodies run top-down. The prologue may not read `this` — no instance fields or methods, no `super` — but it may validate arguments and assign this class's own uninitialised fields.
+
+```java
+public PaymentRequest(Money amount) {
+    if (amount.isNegative()) throw new IllegalArgumentException("negative amount");  // now legal
+    super(amount.currency());
+}
+```
+
+Previously that check had to move into a static helper inside the `super(...)` argument list, or happen after the superclass constructor had already run — which matters when the superclass constructor calls an overridable method.
+
+**Module import declarations (JEP 511)** — `import module java.base;` imports every public type from a module's exported packages. Convenient for scripts and teaching; in production it reintroduces the wildcard-import ambiguity problem at a much larger scale. Name clashes are a compile error, resolved by adding a more specific import.
+
+**Compact source files and instance `main` (JEP 512)** — a file with no class declaration and `void main()`, plus `java.lang.IO` for `println`/`readln`. Explicitly for learners and single-file scripts.
+
+```java
+void main() {
+    IO.println("Hello");
+}
+```
+
+**Why it matters.** The senior read is that JEP 512 is a teaching feature and JEP 511 is a convenience feature, and treating either as "the new style" for a codebase is a misreading of their stated purpose. JEP 513 is the one that changes how you write a class you'd ship.
+
+**Follow-up: Is there a real use for compact source files in a professional codebase?**
+Build and ops scripting, where the alternative is a shell script or Python. `java script.java` has run single-file programs directly since 11, and a compact source file with `IO.println` removes the remaining boilerplate — so a deployment or data-fix script can be written in the same language, with the same types and the same libraries, as the service it operates on. That's a genuine niche. It is not a reason to delete `public class` from your services.
 
 ---
 

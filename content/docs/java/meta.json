@@ -1,6 +1,6 @@
 {
   "title": "Java",
-  "description": "Reference Q&A — 142 questions.",
+  "description": "Reference Q&A — 154 questions.",
   "pages": [
     "core-language",
     "generics",
@@ -12,6 +12,7 @@
     "spring",
     "persistence",
     "distributed-systems",
-    "testing-practice"
+    "testing-practice",
+    "modern-java-22-25"
   ]
 }

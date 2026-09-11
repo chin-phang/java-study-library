@@ -195,7 +195,8 @@ hand often achieves nothing measurable.
   the default in 23 (JEP 474) and removed the non-generational mode outright in
   24 (JEP 490), so `-XX:+UseZGC` is now generational and nothing else.
   Shenandoah's generational mode landed as an experimental option in 24
-  (JEP 404), with JEP 535 proposing it as the default in 28.
+  (JEP 404), became a product feature in 25 (JEP 521), and JEP 535 proposes it
+  as the default in 28.
 - **Pause time.** Generational design reduces GC *work*. Pause length also
   depends on safepoint arrival ([Q78](/docs/java/jvm-memory-gc#q78)), which is
   a separate mechanism and a common source of "the GC log says 10ms but the

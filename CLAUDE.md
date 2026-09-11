@@ -100,7 +100,7 @@ reference file contains any linking markup, and all 29 remain byte-identical to
 Deep-study pages on the load-bearing ideas. Written to build a mental model, not
 to be recited. One concept page typically explains 5–15 reference questions.
 
-**Do not expand all 407 questions into concept pages.** That produces ~250k words
+**Do not expand all 419 questions into concept pages.** That produces ~250k words
 of padding. The tiering is the point: a small number of deeply understood
 mechanisms generate correct answers to a large number of questions.
 
@@ -108,7 +108,7 @@ mechanisms generate correct answers to a large number of questions.
 
 All in `_source/`, excluded from the build.
 
-### `senior-java-interview-questions.md` — 142 questions, ~27k words
+### `senior-java-interview-questions.md` — 154 questions, ~30k words
 
 | Section | Range | Target file |
 |---|---|---|
@@ -123,6 +123,7 @@ All in `_source/`, excluded from the build.
 | Persistence & JPA | Q111–120 | `java/persistence.mdx` |
 | Distributed Systems, Microservices & Payments | Q121–133 | `java/distributed-systems.mdx` |
 | Testing, Debugging & Engineering Practice | Q134–142 | `java/testing-practice.mdx` |
+| Modern Java (22 → 25) | Q143–154 | `java/modern-java-22-25.mdx` |
 
 ### `senior-data-messaging-interview-questions.md` — 145 questions, ~30k words
 
@@ -311,7 +312,7 @@ library precedes it. Any check on the graph should flag a dangling
 - **Reverse** — `conceptsForPage()` inverts every concept page's `questions:`
   list and passes the map through `QuestionsProvider`; `<Question>` renders "The
   model behind this answer" when its own `id` appears. **No reference file is
-  touched**, so nothing to hand-maintain across 407 questions.
+  touched**, so nothing to hand-maintain across 419 questions.
 
 Add a concept page, declare its `questions:`, and both directions appear. Write
 nothing on the reference side.
@@ -524,7 +525,7 @@ content/docs/
     meta.json
     jmm.mdx
     ...
-  java/                      # reference Q&A (11 files)
+  java/                      # reference Q&A (12 files)
   data/                      # reference Q&A (8 files)
   design/                    # reference Q&A (10 files)
   leading/                   # leadership essays, user-written
@@ -688,7 +689,7 @@ that is what makes the control appear on concept pages, which have no
 
 ## Conversion rules
 
-**All 29 sections are converted** — 407 questions, 283 follow-ups, every bank
+**All 30 sections are converted** — 419 questions, 295 follow-ups, every bank
 contiguous and duplicate-free. This section is now reference, not a task list.
 Read it before touching a converted file, or if a source bank is ever extended.
 
@@ -714,6 +715,30 @@ every `questions:` anchor valid on first check.
 `content/docs/java/concurrency.mdx` (Q48–Q70) is converted and is the reference
 implementation. Read it before converting anything else.
 
+### Extending a bank: append, never insert
+
+Settled 2026-09-11, when section 12 (Modern Java 22 → 25, Q143–Q154) was added
+to the Java bank. **New questions go in a new trailing section with the next
+free numbers, immediately before `## Closing notes`.**
+
+The temptation is to put JDK 22–25 material inside section 7, *Modern Java
+(8 → 21)*, where it belongs topically. Do not. Inserting at Q98 renumbers
+Q98–Q142 — 45 questions across five MDX files — and every `[#qNN]` anchor,
+every concept page `questions:` entry pointing into them, and every prose
+cross-reference ("the outbox pattern (Q136...)") breaks silently. Anchors are
+the library's only stable identifiers; renumbering is not a refactor, it is a
+break of every inbound link.
+
+The cost of appending is that a topic can span two non-adjacent sections and
+two MDX files. That is the correct trade. Section 7 keeps its `(8 → 21)`
+title, which stays accurate for what it contains.
+
+Extending a bank means updating, in the source file: the question count in the
+blurb, the `## Contents` list, and the new `## N.` heading. Then in this file:
+the bank's section table, the corpus counts, and `content/docs/<track>/meta.json`
+— whose `pages` list is explicit, so a new page builds fine and is silently
+missing from the sidebar if you forget it.
+
 ### Drop the source's own headings
 
 Fumadocs renders the page `<h1>` from the frontmatter `title`. It does not read
@@ -724,7 +749,7 @@ Each source bank is one document containing many sections:
 
 ```
 # Senior Java Interview Question Bank      <- document title, line 1
-**142 questions with model answers...**    <- document blurb
+**154 questions with model answers...**    <- document blurb
 ## Contents                                 <- document TOC
 1. [Core Language & OOP](#1-core-language--oop) (Q1-Q14)
 ...
@@ -836,7 +861,7 @@ for i, l in enumerate(lines, 1):
     if re.search(r'[<{]', re.sub(r'`[^`]*`', '', l)): print(i, l)
 ```
 
-**Final tally, all 29 sections measured: one bare `<` in 407 questions** —
+**Final tally, all 30 sections measured: one bare `<` in 419 questions** —
 `recovering <2% of heap` in java Q77, written as `&lt;2%`. Every other angle
 bracket and brace in the corpus was already fenced or backticked, the design
 bank included. Earlier drafts of this file warned that the Java and design banks
@@ -860,7 +885,7 @@ the current docs before changing anything here.
 Verified working end to end: the API returns question headings and collapsed
 answer text with correct `#qNN` anchors, and the Ctrl+K dialog shows them.
 
-407 questions across 29 pages is a small index — this should not need tuning.
+419 questions across 30 pages is a small index — this should not need tuning.
 
 ## Diagrams
 
@@ -996,8 +1021,8 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **42 pages** (29 reference + 13
-concept), 407 questions, **29 diagrams**, 100 self-check items.
+Content first — and the content now exists: **43 pages** (30 reference + 13
+concept), 419 questions, **29 diagrams**, 100 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
