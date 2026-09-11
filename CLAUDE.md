@@ -424,11 +424,12 @@ runtime, then data, then distributed and design:
 The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
-**Core** — **six of eighteen drafted** in `_source/` as of 2026-09-11, none
-converted yet. Eight of the eighteen are named by a foundational page's
-`unlocks`, so the graph reaches them: `query-planning`, `partitioning`,
-`escape-analysis`, `isolation-levels`, `virtual-threads`, `backpressure`, `cas`,
-`deadlock`.
+**Core** — **six of twenty-one drafted** in `_source/` as of 2026-09-11, none
+converted yet. Eight are named by a foundational page's `unlocks`, so the graph
+reaches them: `query-planning`, `partitioning`, `escape-analysis`,
+`isolation-levels`, `virtual-threads`, `backpressure`, `cas`, `deadlock`. Three
+were added on 2026-09-11 from the coverage audit below — `broker-semantics`,
+`stream-pipelines`, and `kafka-internals` promoted from Specialist.
 
 Titles below are the drafts' own where a draft exists, and the placeholder
 otherwise; as with the foundational tier, **where a draft and this table
@@ -442,6 +443,9 @@ disagreed, the draft won**.
 | `cache-invalidation` | Cache Invalidation and the Races in Each Ordering | drafted |
 | `spring-proxy` | The Proxy Boundary in Spring | drafted |
 | `persistence-context` | The Persistence Context and Dirty Checking | drafted |
+| `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | |
+| `kafka-internals` | Partitions, consumer groups, ISR and the high watermark | |
+| `stream-pipelines` | Stream pipelines — laziness, fusion and parallel decomposition | |
 | `escape-analysis` | Escape analysis and when allocation disappears | |
 | `class-loading` | Class loading and classloader leaks | |
 | `query-planning` | Query planning and cardinality estimation | |
@@ -490,8 +494,9 @@ they are the user's fresh prose:
 - `cache-invalidation.mdx` and `isolation-levels.mdx` pin `postgres:17` in their
   labs; the other four Postgres labs were moved to `postgres:18`.
 
-**Specialist** — 41 slugs, every one promised by a foundational page's
-`unlocks` and none of them written or planned. They are listed so the names are
+**Specialist** — 40 slugs, every one promised by a foundational page's
+`unlocks` and none of them written or planned. (`kafka-internals` was here until
+2026-09-11 and is now Core — see the coverage audit below.) They are listed so the names are
 fixed and a later page cannot invent a second spelling; titles get decided when
 someone writes the page. Grouped by what promises them:
 
@@ -502,7 +507,7 @@ someone writes the page. Grouped by what promises them:
 - **`jit`** unlocks `latency-troubleshooting`, `benchmarking`, `startup-optimisation`
 - **`btrees-selectivity`** unlocks `composite-indexes`, `covering-indexes`
 - **`mvcc`** unlocks `vacuum-and-bloat`, `long-transactions`, `replication-lag`, `write-skew`
-- **`the-log`** unlocks `replication`, `cdc-and-outbox`, `event-sourcing`, `kafka-internals`, `crash-recovery`
+- **`the-log`** unlocks `replication`, `cdc-and-outbox`, `event-sourcing`, `kafka-internals` (**now Core**), `crash-recovery`
 - **`idempotency`** unlocks `retries-and-backoff`, `outbox-pattern`, `saga-pattern`, `exactly-once`, `reconciliation`
 - **`bounded-contexts`** unlocks `service-decomposition`, `anti-corruption-layer`, `modular-monolith`, `event-design`, `team-topologies`
 - **`dependency-inversion`** unlocks `anti-corruption-layer`, `modular-monolith`, `hexagonal-architecture`, `testing-strategy`
@@ -510,6 +515,66 @@ someone writes the page. Grouped by what promises them:
 
 Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
 gotchas**.
+
+### Coverage audit — which banks still have no concept page
+
+Measured 2026-09-11 across all 419 questions and all 19 concept pages (13 built
+plus the 6 core drafts). **93 questions are claimed — 22%.**
+
+**That number is supposed to be low.** The tiering is the point: a small number
+of deeply understood mechanisms generate correct answers to a large number of
+questions, and a page exists for a *mechanism*, not to cover a section. Do not
+treat 22% as a backlog, and do not raise it by writing pages that restate
+questions. The useful question is never "which questions are unclaimed" but
+**"which load-bearing mechanism has no page"**. By that test, three gaps were
+real and are now in the Core table:
+
+- **`broker-semantics`** — `data/rabbitmq` is 20 questions with **zero**
+  coverage and was the only section both large and entirely unplanned. One
+  mechanism generates half of it: the broker-managed queue with per-message
+  acknowledgement, against the log's consumer-managed offset. `the-log` already
+  sets this up and declines to finish it — *"a queue's read is destructive and a
+  log's read is a cursor move"* — so this is the sibling that page implies.
+  `backpressure` takes Q92 and Q102 and nothing else there.
+- **`kafka-internals`, promoted Specialist → Core** — `data/kafka` is the
+  largest section in the library at 30 questions, with 3 claimed. Partitions and
+  consumer groups, ISR and `acks`, rebalancing and retention are core
+  mechanisms, not specialist ones. The slug already existed; the tier was wrong.
+- **`stream-pipelines`** — `java/streams` is 11 questions with 1 claimed, and no
+  planned slug contained "stream", so this was an omission rather than a
+  deferral. The mechanism is the lazy, fused, single-pass traversal driven by
+  the terminal operation, plus spliterator decomposition for parallelism.
+
+**Two zero-coverage sections are deliberate, not oversights.** A later session
+will find them and should not "fix" them:
+
+- **`design/design-patterns`** (19 questions, zero). Mostly recall by nature —
+  "Adapter vs Facade vs Proxy" is a distinction to memorise, with no mechanism
+  underneath. The part that does have one is already `expression-problem`
+  (Q33, Q39, Q44 — Strategy today, Visitor superseded by pattern matching,
+  functional features changing which patterns apply). The remainder, on what
+  patterns are for and when to remove one, is judgement and belongs in
+  `leading/`.
+- **`java/testing-practice`** (9 questions, zero). Five of the nine — Q138–Q142,
+  incident walkthrough, code review, decisions that survive two years,
+  mentoring, what to ask an interviewer — are verbatim the leadership-track
+  topics, which **must be user-written**. Only Q134–Q137 suit a concept page,
+  and that is `testing-strategy`, already planned. The gap is assigned, just to
+  a track that is unwritten.
+
+`java/modern-java-22-25` also reads as zero-coverage and is not a gap: it is
+itself a delta summary, added the same day.
+
+Everything else large is already planned and needs no new slug:
+`microservices-boundaries` (16 unclaimed → `service-decomposition`,
+`modular-monolith`), `oop-fundamentals` (13 → `coupling-cohesion`),
+`scaling-operations` (14 → `replication`, `partitioning`), `redis-caching`
+(20 → `caching`, plus `hot-keys` from `cache-invalidation`'s `unlocks`), and
+`query-performance` (13 → `query-planning`).
+
+Re-run the audit by intersecting every `[#qNN]` anchor under `content/docs/`
+with every concept page's `questions:` list — including drafts in `_source/`,
+or the six core drafts will read as uncovered.
 
 ## The leadership track
 
