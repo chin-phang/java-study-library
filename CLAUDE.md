@@ -462,19 +462,22 @@ runtime, then data, then distributed and design:
 The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
-**Core** — **fourteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**two of those fourteen also converted** into `content/docs/concepts/` the
+**Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
+**three of those fifteen also converted** into `content/docs/concepts/` the
 same day. Six were the first batch (`virtual-threads`,
 `cas-and-contention`, `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`); six more followed the same day (`aggregates`,
 `backpressure`, `coupling-and-cohesion`, `escape-analysis`,
 `locking-and-deadlock`, `partitioning`). Three more were added the same day
 from the coverage audit below — `broker-semantics`, `stream-pipelines`, and
-`kafka-internals` promoted from Specialist — and of those three,
-**`broker-semantics` and `kafka-internals` were each drafted and converted
-immediately**, the only two Core pages built so far; `stream-pipelines`
-remains unplanned beyond the slug. `query-planning`, `class-loading` and
-`consistency-models` also remain undrafted.
+`kafka-internals` promoted from Specialist — and **all three of those were
+drafted and converted the same day**, now the three Core pages built so far.
+`stream-pipelines` claims five of `java/streams`' eleven questions (Q37, Q38,
+Q40, Q41, Q44 — deliberately not Q47, already claimed three times over) and
+`prerequisites: []`, a deliberate root: nothing in the built graph is a
+genuine dependency, and `thread-pools` is an adjacent cross-reference in §5,
+not a prerequisite. `query-planning`, `class-loading` and
+`consistency-models` remain undrafted.
 
 Titles below are the drafts' own where a draft exists, and the placeholder
 otherwise; as with the foundational tier, **where a draft and this table
@@ -498,7 +501,7 @@ the table, and **the `cas` slug** further down for the first one of these.
 | `partitioning` | Partitioning — One Idea in Five Systems | drafted |
 | `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | drafted, converted |
 | `kafka-internals` | Partitions, Consumer Groups, ISR and the High Watermark | drafted, converted |
-| `stream-pipelines` | Stream pipelines — laziness, fusion and parallel decomposition | |
+| `stream-pipelines` | Stream Pipelines: Laziness, Fusion, and Parallel Decomposition | drafted, converted |
 | `class-loading` | Class loading and classloader leaks | |
 | `query-planning` | Query planning and cardinality estimation | |
 | `consistency-models` | Consistency models and choosing per operation | |
@@ -655,28 +658,40 @@ someone writes the page. Grouped by what promises them:
 - **`kafka-internals`** (drafted 2026-09-11, Core tier) unlocks `multi-region-replication`,
   `schema-evolution` — both new slugs, fixed here before either page exists. Neither was
   previously promised by any other page, so no collision to resolve.
+- **`stream-pipelines`** (drafted 2026-09-11, Core tier) unlocks `custom-collectors`,
+  `reactive-streams`, `spliterator-design` — three new slugs, fixed here before any of
+  them exist. `reactive-streams` covers the push-based Flow API/RxJava contrast the
+  draft's §2 raises and declines to develop; `custom-collectors` covers the
+  `Collector.Characteristics.CONCURRENT` design space the draft's §4 flags as a
+  contract, not a runtime check; `spliterator-design` covers writing a `trySplit()`
+  that actually balances, for a source that isn't already `ArrayList` or an array.
+  None was previously promised by any other page.
 
 Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
-gotchas**.
+gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
 
 ### Coverage audit — which banks still have no concept page
 
-Measured 2026-09-11 across all 419 questions and all 27 concept pages (13
-foundational, built; plus 14 core drafts, two of which — `broker-semantics`
-and `kafka-internals` — are also converted). **119 questions are claimed —
-28%**, up from 114 (27%) before `kafka-internals`, up from 108 (26%) before
-`broker-semantics`, and up from 93 (22%) before the second batch of six
-drafts. The counts below in **Everything else large is already planned** are
-the ones that move — `coupling-and-cohesion` takes one question each off
-`oop-fundamentals`, `solid-principles`, `architecture-styles` and
-`microservices-boundaries`; `partitioning` takes one off `collections`, two
-off `scaling-operations`, and one each off `kafka` and `redis-caching`;
-`broker-semantics` takes six off `rabbitmq` (Q86, Q88, Q89, Q91, Q93, Q98),
-on top of the two `backpressure` already had (Q92, Q102) — eight of
-`rabbitmq`'s twenty now claimed, twelve still open; `kafka-internals` takes
-five off `kafka` (Q108, Q110, Q114, Q116, Q131), on top of the four `the-log`
-(Q106, Q113), `idempotency` (Q109) and `partitioning` (Q112) already had —
-nine of `kafka`'s thirty now claimed, twenty-one still open.
+Measured 2026-09-11 across all 419 questions and all 28 concept pages (13
+foundational, built; plus 15 core drafts, two of which — `broker-semantics`
+and `kafka-internals` — are also converted). **124 questions are claimed —
+30%**, up from 119 (28%) before `stream-pipelines`, up from 114 (27%) before
+`kafka-internals`, up from 108 (26%) before `broker-semantics`, and up from
+93 (22%) before the second batch of six drafts. The counts below in
+**Everything else large is already planned** are the ones that move —
+`coupling-and-cohesion` takes one question each off `oop-fundamentals`,
+`solid-principles`, `architecture-styles` and `microservices-boundaries`;
+`partitioning` takes one off `collections`, two off `scaling-operations`, and
+one each off `kafka` and `redis-caching`; `broker-semantics` takes six off
+`rabbitmq` (Q86, Q88, Q89, Q91, Q93, Q98), on top of the two `backpressure`
+already had (Q92, Q102) — eight of `rabbitmq`'s twenty now claimed, twelve
+still open; `kafka-internals` takes five off `kafka` (Q108, Q110, Q114,
+Q116, Q131), on top of the four `the-log` (Q106, Q113), `idempotency` (Q109)
+and `partitioning` (Q112) already had — nine of `kafka`'s thirty now
+claimed, twenty-one still open; `stream-pipelines` takes five off
+`java/streams` (Q37, Q38, Q40, Q41, Q44) — six of `streams`' eleven now
+claimed (the pre-existing one is Q47, held by `generational-gc`, `jit` and
+`escape-analysis`), five still open (Q39, Q42, Q43, Q45, Q46).
 
 **That number is supposed to be low.** The tiering is the point: a small number
 of deeply understood mechanisms generate correct answers to a large number of
@@ -705,10 +720,27 @@ real and are now in the Core table:
   ones. The slug already existed; the tier was wrong. **Drafted and
   converted the same day**, claiming Q108, Q110, Q114, Q116 and Q131 — see
   the Core table above.
-- **`stream-pipelines`** — `java/streams` is 11 questions with 1 claimed, and no
+- **`stream-pipelines`** — `java/streams` was 11 questions with 1 claimed, and no
   planned slug contained "stream", so this was an omission rather than a
   deferral. The mechanism is the lazy, fused, single-pass traversal driven by
   the terminal operation, plus spliterator decomposition for parallelism.
+  **Drafted and converted the same day**, claiming Q37, Q38, Q40, Q41 and
+  Q44 — see the Core table above. `prerequisites: []`: nothing in the built
+  graph is a genuine dependency, and the ForkJoinPool/`thread-pools`
+  connection the draft makes in §5 is flagged there explicitly as an
+  adjacent-guarantee cross-reference, not a prerequisite, per the same
+  judgement call `persistence-context` → `spring-proxy` and
+  `escape-analysis` → `jit`/`generational-gc` made for genuine dependencies
+  versus this one. 5 `questions:` anchors checked against
+  `content/docs/java/streams.mdx` before writing. 9 sections, ~2,770 words,
+  7 self-check items, with `where` pointers written at conversion time,
+  same discipline as `broker-semantics` and `kafka-internals`. **Carries
+  one diagram** — the spliterator split-compute-combine tree, not a copy of
+  anything on `java/streams` or in CLAUDE.md's completed-19 reference-bank
+  diagram list (which doesn't include `java/streams` at all) — verified in
+  the browser at 375px (viewBox 548.5×971, rendered ≈63% scale, no
+  horizontal overflow, no "Syntax error" text). Both `pnpm types:check` and
+  `pnpm build` pass with the page in the sidebar.
 
 **Two zero-coverage sections are deliberate, not oversights.** A later session
 will find them and should not "fix" them:
@@ -1239,7 +1271,7 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
-**Concept pages add 13 more, so the library holds 32.** Of the thirteen
+**Concept pages add 14 more, so the library holds 33.** Of the thirteen
 foundational pages, **ten carry their own diagram** and **three link to a
 reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
 `java/jvm-memory-gc#q71`, `dependency-inversion` →
@@ -1252,7 +1284,10 @@ diagram already on `data/rabbitmq#q86` and the DLX retry diagram on
 `data/rabbitmq#q90`. **`kafka-internals` adds the twelfth and thirteenth** —
 an ISR/high-watermark failure trace and an eager-vs-cooperative rebalance
 comparison, neither a copy of the reference bank's own Q110 (assignment
-flow) or Q116 (ISR/high-watermark steady state) pictures.
+flow) or Q116 (ISR/high-watermark steady state) pictures. **`stream-pipelines`
+adds the fourteenth** — a spliterator split-compute-combine tree, not a copy
+of anything on `java/streams` (none of Q37–Q47 carries a diagram) or in the
+reference-bank target-19 list, which doesn't include `java/streams` at all.
 
 **Phone-readability, measured on all ten at 375px.** None overflows; the page
 body never scrolls horizontally. Rendered scale, worst first:
@@ -1285,6 +1320,13 @@ both checked the same way: the ISR/high-watermark trace at `viewBox="0 0
 505.375 1110"` against a 343px rendered width (≈68%), and the
 eager-vs-cooperative rebalance comparison at `viewBox="0 0 586
 820.015625"` (≈58%) — both legible, neither the tightest in the library.
+
+`stream-pipelines` (Core tier, measured 2026-09-11) carries one diagram, the
+spliterator split-compute-combine tree, checked the same way: `viewBox="0 0
+548.5 971"` against a 343px rendered width at 375px viewport (≈63%), no
+horizontal overflow on the page body, no "Syntax error" text — in the same
+legible middle of the range as `the-log` and `jit`, not the tightest in the
+library.
 
 ### A concept page links to a reference diagram, it does not copy it
 
@@ -1321,10 +1363,10 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **45 pages** (30 reference + 15
-concept — 13 foundational plus `broker-semantics` and `kafka-internals`, the
-two converted Core pages so far), 419 questions, **32 diagrams**, 114
-self-check items.
+Content first — and the content now exists: **46 pages** (30 reference + 16
+concept — 13 foundational plus `broker-semantics`, `kafka-internals` and
+`stream-pipelines`, the three converted Core pages so far), 419 questions,
+**33 diagrams**, 121 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
