@@ -694,22 +694,19 @@ Read it before touching a converted file, or if a source bank is ever extended.
 
 **And all thirteen concept drafts** (2026-09-11), to the same discipline: the
 only diff between `_source/<page>.mdx` and `content/docs/concepts/<page>.mdx` is
-the self-check markup, proved by hashing the prose region of each pair. One
-exception, deliberate and recorded here:
+the self-check markup, proved by hashing the prose region of each pair. **No
+exceptions remain** — the last one closed on 2026-09-11.
 
-> **`hashmap` line 321 — one link target repaired.**
-> `/docs/data/microservices-data#q116` → `/docs/java/persistence#q116`. The
-> original was dead rather than a forward reference: there is no
-> `data/microservices-data` page and none is planned, since the only
-> `microservices-data` is in the **design** track at Q89–95, which has no q116.
-> `Q116` exists in three banks; the surrounding prose names the JPA case and
-> paraphrases `java/persistence#q116`'s three options exactly, so the intended
-> target is unambiguous. Treated as markup, since link correctness is
-> conversion work.
->
-> **Still open, and prose so not touched:** that same line reads "in the design
-> bank's persistence material" when the material is in the **Java** bank. A
-> one-word fix to the draft (`design` → `Java`) that only the user should make.
+> **Closed: `hashmap` line 321.** During conversion the page repaired a dead
+> link, `/docs/data/microservices-data#q116` → `/docs/java/persistence#q116`
+> (there is no `data/microservices-data` page and none is planned; the only
+> `microservices-data` is in the **design** track at Q89–95, which has no
+> q116), leaving the page and its draft diverged on one line. The remaining
+> half was prose — the line also said "in the design bank's persistence
+> material" when the material is in the **Java** bank — and was left for the
+> user. The user fixed the draft on 2026-09-11, dropping the bank clause
+> entirely rather than correcting the word, and the page was re-synced to
+> match. Draft and page are byte-identical outside the self-check again.
 
 Everything else needed no repair — no MDX hazards in any of the thirteen, and
 every `questions:` anchor valid on first check.

@@ -318,8 +318,7 @@ that eliminates an entire class of undebuggable defect, and records made it
 cheap enough that there's no excuse.
 
 **Watch for `hashCode` on entities.** The JPA case
-([Q116](/docs/java/persistence#q116) in the design bank's persistence
-material) is where this bites in real codebases. Business key, or
+([Q116](/docs/java/persistence#q116)) is where this bites in real codebases. Business key, or
 client-generated UUID, or a constant hash — never the surrogate ID alone.
 
 **Pre-size collections in hot paths, and only there.** `HashMap.newHashMap(n)`
