@@ -487,16 +487,16 @@ The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**eight of those fifteen also converted** into `content/docs/concepts/` —
+**nine of those fifteen also converted** into `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
 immediately after `cas-and-contention`, `cache-invalidation`
-immediately after `isolation-levels`, and `spring-proxy` immediately after
-`cache-invalidation`, all five same day. Six were the
+immediately after `isolation-levels`, `spring-proxy` immediately after
+`cache-invalidation`, and `persistence-context` immediately after
+`spring-proxy`, all six same day. Six were the
 first batch (`virtual-threads`, `cas-and-contention`, `isolation-levels`,
-`cache-invalidation`, `spring-proxy`, `persistence-context`) — now five of
-those six converted, `persistence-context` still only
-drafted; six more
+`cache-invalidation`, `spring-proxy`, `persistence-context`) — **all six now
+converted**, closing that batch out; six more
 followed the same day (`aggregates`, `backpressure`, `coupling-and-cohesion`,
 `escape-analysis`, `locking-and-deadlock`, `partitioning`). Three more were
 added the same day from the coverage audit below — `broker-semantics`,
@@ -637,6 +637,41 @@ on `java/spring#q101` was verified in the browser ("The model behind this
 answer: The Proxy Boundary in Spring"). It's in the sidebar after
 `dependency-inversion`.
 
+**`persistence-context`: converted 2026-09-12**, the ninth Core page taken
+to `content/docs/concepts/`, immediately after `spring-proxy`, and the sixth
+and last of the original first batch — closing it out. Checked for staleness
+before converting: dirty checking, flush ordering, the four entity states,
+`persist`/`merge`/`save`, N+1 fixes and the hashCode trap are all
+version-agnostic JPA/Hibernate mechanics, and the one claim worth
+re-verifying — that `spring.jpa.open-in-view` still defaults to `true` in
+Spring Boot — was confirmed current (there's an open GitHub issue proposing
+to flip the default in a future Boot 4.x release, but it has not shipped, so
+the draft's "Boot's default — turn it off" stands unchanged). No currency
+fix was needed. `prerequisites: [spring-proxy, mvcc]` resolves to two built
+Core/foundational pages, fulfilling the edge `spring-proxy` promised at
+draft time (**"Six core drafts are waiting" → `persistence-context →
+spring-proxy` and `→ mvcc`**) — no conversion-order issue, since both were
+already converted. All five `questions:` anchors (`java/persistence#q111`,
+`#q112`, `#q113`, `#q116`, `#q120`) were checked against
+`content/docs/java/persistence.mdx` before writing, along with the prose
+cross-references to `#q119` in §6 and `#q120`/`#q112`/`#q113`/`#q116` inline.
+**Carries one diagram** — an entity-lifecycle flowchart (transient → managed
+→ detached/removed → gone, with `merge()` returning to managed) — added at
+conversion time rather than present in the draft. Unlike every other
+Core-tier conversion so far, this is not a link-don't-copy judgement:
+`content/docs/java/persistence.mdx` has no diagrams of any kind, so nothing
+existed to link to, and the page's own §8 ("Teach the four states on a
+whiteboard... it takes ten minutes") names the exact picture this adds. 8
+self-check items, with `where` pointers written at conversion time, same
+discipline as the other converted Core pages. Both `pnpm types:check` and
+`pnpm build` pass; the diagram was verified in the browser at 375px
+(`viewBox="0 0 683.41015625 550"`, ≈50% rendered scale, no horizontal
+overflow, no "Syntax error" text), and the reverse link was checked on all
+four reference anchors with a diagram of their own excluded (there are none)
+— `#q111`, `#q112`, `#q113` and `#q116` each show "The model behind this
+answer: The Persistence Context and Dirty Checking". It's in the sidebar
+after `spring-proxy`.
+
 Titles below are the drafts' own where a draft exists, and the placeholder
 otherwise; as with the foundational tier, **where a draft and this table
 disagreed, the draft won**, which is why the slug collision below existed
@@ -650,7 +685,7 @@ underneath the table for the closed record.
 | `isolation-levels` | Isolation Levels and the Anomalies They Permit | drafted, converted |
 | `cache-invalidation` | Cache Invalidation and the Races in Each Ordering | drafted, converted |
 | `spring-proxy` | The Proxy Boundary in Spring | drafted, converted |
-| `persistence-context` | The Persistence Context and Dirty Checking | drafted |
+| `persistence-context` | The Persistence Context and Dirty Checking | drafted, converted |
 | `aggregates` | Aggregates as Consistency Boundaries | drafted |
 | `backpressure` | Backpressure and the Unbounded Queue | drafted |
 | `coupling-and-cohesion` | Coupling, Cohesion, and What Makes a Change Expensive | drafted |
@@ -803,7 +838,7 @@ no "Syntax error" text). Both `pnpm types:check` and `pnpm build` pass with
 the page in the sidebar. The self-check in `_source/kafka-internals.mdx` is
 a plain numbered list, matching the rest of this table.
 
-**Specialist** — 40 slugs, every one promised by a foundational page's
+**Specialist** — 44 slugs, every one promised by a foundational page's
 `unlocks` and none of them written or planned. (`kafka-internals` was here until
 2026-09-11 and is now Core — see the coverage audit below.) They are listed so the names are
 fixed and a later page cannot invent a second spelling; titles get decided when
@@ -832,6 +867,17 @@ someone writes the page. Grouped by what promises them:
   contract, not a runtime check; `spliterator-design` covers writing a `trySplit()`
   that actually balances, for a source that isn't already `ArrayList` or an array.
   None was previously promised by any other page.
+- **`persistence-context`** (drafted and converted 2026-09-12, Core tier)
+  unlocks `n-plus-one`, `jpa-performance`, `optimistic-locking`, `cqrs` —
+  four new slugs, fixed here before any of them exist. `n-plus-one` covers
+  the fixes ranked in §4 in more depth than a Core page's own tolerance for
+  length allows; `jpa-performance` covers batching, statement caching and
+  connection-pool interaction beyond what §3 and Lab 6 establish;
+  `optimistic-locking` is the `@Version`/retry mechanism `java/persistence#q114`
+  already answers at recall depth, given a concept page of its own;
+  `cqrs` covers separating the read and write model properly, which §4
+  names as "the on-ramp to" but explicitly declines to develop. None was
+  previously promised by any other page.
 
 Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
 gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
@@ -842,14 +888,14 @@ Measured 2026-09-11 across all 419 questions and all 28 concept pages (13
 foundational, built; plus 15 core drafts — six now converted,
 `broker-semantics`, `kafka-internals`, `stream-pipelines` and, as of
 2026-09-12, `virtual-threads`, `cas-and-contention` and `isolation-levels` —
-plus `cache-invalidation` and `spring-proxy`, converted the same day, for
-eight in total).
+plus `cache-invalidation`, `spring-proxy` and `persistence-context`,
+converted the same day, for nine in total).
 **124 questions are claimed — 30%**, up from 119 (28%) before
 `stream-pipelines`, up from 114 (27%) before `kafka-internals`, up from 108
 (26%) before `broker-semantics`, and up from 93 (22%) before the second batch
-of six drafts. Neither `virtual-threads`'s, `cas-and-contention`'s,
-`isolation-levels`'s, `cache-invalidation`'s, nor `spring-proxy`'s conversion
-moves this
+of six drafts. None of `virtual-threads`'s, `cas-and-contention`'s,
+`isolation-levels`'s, `cache-invalidation`'s, `spring-proxy`'s, nor
+`persistence-context`'s conversion moves this
 number — their `questions:` were already counted as drafts; converting a
 drafted page changes where a claim lives, not whether it's counted. The
 counts below in
@@ -1446,7 +1492,7 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
-**Concept pages add 15 more, so the library holds 34.** Of the thirteen
+**Concept pages add 16 more, so the library holds 35.** Of the thirteen
 foundational pages, **ten carry their own diagram** and **three link to a
 reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
 `java/jvm-memory-gc#q71`, `dependency-inversion` →
@@ -1485,7 +1531,15 @@ count**: the caller→proxy→target boundary and self-invocation bypass it
 explains in §2 is already drawn on `java/spring#q101`, so §2 keeps its
 plain-text ASCII sketch as scaffolding and adds one linking sentence to
 Q101's diagram, the same judgement `jmm`, `virtual-threads` and
-`isolation-levels` made for their own borrowed pictures.
+`isolation-levels` made for their own borrowed pictures. **`persistence-context`
+adds the sixteenth** — converted immediately after `spring-proxy`, same day —
+an entity-lifecycle flowchart (transient → managed → detached/removed → gone,
+with `merge()` returning to managed). Nothing on `content/docs/java/persistence.mdx`
+carries a diagram at all, so this is a clean case of **Add a diagram only if it
+shows something the reference bank doesn't already** rather than a
+link-don't-copy judgement — and the page's own §8 explicitly recommends
+teaching the four states as a whiteboard diagram, which is the diagram this
+adds.
 
 **Phone-readability, measured on all ten at 375px.** None overflows; the page
 body never scrolls horizontally. Rendered scale, worst first:
@@ -1493,6 +1547,7 @@ body never scrolls horizontally. Rendered scale, worst first:
 | Scale | Page | Shape |
 |---|---|---|
 | 50% | `generational-gc` | decision diamond beside a side branch |
+| 50% | `persistence-context` | linear chain with one two-way fan-out and a loop-back |
 | 52% | `btrees-selectivity` | three-sibling fan-out, landscape |
 | 53% | `hashmap`, `idempotency` | three-way fan-out |
 | 55% | `mvcc` | |
@@ -1533,6 +1588,12 @@ viewport (≈58%), no horizontal overflow, no "Syntax error" text — in the sam
 range as `broker-semantics` and `kafka-internals`'s rebalance diagram, not the
 tightest in the library.
 
+`persistence-context` (Core tier, measured 2026-09-12) carries one diagram,
+the entity-lifecycle flowchart, checked the same way: `viewBox="0 0
+683.41015625 550"` against a 343px rendered width at 375px viewport (≈50%),
+no horizontal overflow, no "Syntax error" text — tied with `generational-gc`
+for the tightest in the library, still legible at that scale on screen.
+
 ### A concept page links to a reference diagram, it does not copy it
 
 Decided on the JMM page when the concept pattern was finished. The
@@ -1568,13 +1629,15 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **51 pages** (30 reference + 21
+Content first — and the content now exists: **52 pages** (30 reference + 22
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
-`isolation-levels`, `cache-invalidation` and `spring-proxy`, the eight
-converted Core pages so far), 419 questions, **34 diagrams**
-(`cache-invalidation` and `spring-proxy` carry none — `spring-proxy` links
-to `java/spring#q101` instead), 161 self-check items.
+`isolation-levels`, `cache-invalidation`, `spring-proxy` and
+`persistence-context`, the nine converted Core pages so far), 419 questions,
+**35 diagrams**
+(`cas-and-contention`, `isolation-levels`, `cache-invalidation` and
+`spring-proxy` carry none — `spring-proxy` links to `java/spring#q101`
+instead), 169 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 

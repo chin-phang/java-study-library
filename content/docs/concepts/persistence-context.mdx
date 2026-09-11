@@ -1,0 +1,467 @@
+---
+title: The Persistence Context and Dirty Checking
+concept: persistence-context
+tier: core
+prerequisites: [spring-proxy, mvcc]
+unlocks: [n-plus-one, jpa-performance, optimistic-locking, cqrs]
+questions: [java/persistence#q111, java/persistence#q112, java/persistence#q113, java/persistence#q116, java/persistence#q120]
+estimatedStudyTime: 3h
+---
+
+> **Recall layer.** The interview answers are
+> [Q111](/docs/java/persistence#q111) and
+> [Q120](/docs/java/persistence#q120). This page builds the model.
+
+## 1. The problem it exists to solve
+
+Four behaviours that look like bugs in the framework.
+
+**One.** You change a field on an entity and never call `save()`. It's in the
+database anyway.
+
+```java
+@Transactional
+public void applyDiscount(Long id) {
+    Payment p = repo.findById(id).orElseThrow();
+    p.setAmount(p.getAmount().multiply(new BigDecimal("0.9")));
+    // no save(). It persists.
+}
+```
+
+**Two.** You call `merge()` and your changes vanish.
+
+```java
+@Transactional
+public void update(Payment detached) {
+    em.merge(detached);
+    detached.setStatus(SETTLED);   // silently lost
+}
+```
+
+**Three.** You delete a row and insert a replacement with the same unique key,
+in that order, and get a constraint violation — from statements you wrote in
+the correct order.
+
+**Four.** An exception is thrown from a line that looks harmless, at commit
+time, several frames away from the code that caused it.
+
+None of these is a bug. All four follow from one thing: **JPA is not a
+data-access API, it is a unit-of-work implementation.** You are not issuing
+statements. You are manipulating an in-memory graph, and something else decides
+what SQL to run and when.
+
+Until that model is in place, JPA behaves arbitrarily. Once it is, all four
+become predictable.
+
+## 2. The persistence context
+
+A first-level cache and a unit of work, scoped to the `EntityManager` — in
+Spring, usually to the transaction, which means it is scoped to the
+[proxy boundary](/docs/concepts/spring-proxy).
+
+It holds every entity you've loaded or persisted, keyed by identity, plus a
+**snapshot** of each entity's state at load time.
+
+Two properties follow immediately.
+
+**Identity guarantee.** Within one context, `em.find(Payment.class, 1L)` twice
+returns the *same object reference*. Not equal — identical. The context is a
+map, and a second lookup is a cache hit, not a query.
+
+**Dirty checking.** At flush, Hibernate walks every managed entity and compares
+it field-by-field against its snapshot. Anything that differs gets an `UPDATE`.
+
+That's behaviour one. You never call `save()` on a managed entity because
+mutating it inside a transaction *is* the save. Calling `save()` is at best
+redundant.
+
+It also explains a cost people don't account for: **the context holds a second
+copy of every entity you touch**, and flush is O(entities × fields). Load
+50,000 entities into one context and dirty checking alone becomes a
+performance problem, independent of the SQL.
+
+### The four states
+
+| State | Meaning |
+|---|---|
+| **Transient** | New object, no identity, context doesn't know it |
+| **Managed** | In the context, tracked, changes auto-flush |
+| **Detached** | Was managed, context closed or `clear()`ed. Changes go nowhere. |
+| **Removed** | Scheduled for `DELETE` at flush |
+
+```mermaid
+flowchart TD
+  T["transient — new object, no identity"] -->|persist| M["managed — tracked, dirty-checked"]
+  M -->|"detach() / context closes"| D["detached — changes go nowhere"]
+  M -->|remove| R["removed — scheduled for DELETE"]
+  D -->|"merge() — returns a new managed copy"| M
+  R -->|flush| G["gone — row deleted"]
+```
+
+Most JPA confusion is a state confusion. "Why didn't my change save?" is nearly
+always "the entity was detached."
+
+### `persist` vs `merge` vs `save`
+
+`persist(e)` makes a transient entity managed. The *same* object becomes
+managed.
+
+`merge(e)` copies the state of a detached entity onto a managed instance
+**and returns that instance**. The object you passed in stays detached.
+
+```java
+Payment managed = em.merge(detached);
+managed.setStatus(SETTLED);     // ✓ persists
+detached.setStatus(SETTLED);    // ✗ goes nowhere
+```
+
+That's behaviour two, and it is the single most common JPA bug. The rule:
+**always use the return value of `merge`.**
+
+Spring Data's `save()` picks between them by asking whether the entity is new
+(null ID, or `Persistable.isNew()`). Convenient, and it means `save()` on an
+entity with an ID does a `SELECT` before the `UPDATE` — a hidden query people
+are surprised to find in their logs.
+
+## 3. Flush: when, and in what order
+
+**When** is governed by `FlushMode`:
+
+- `AUTO` (default) — before a query whose results could be affected by pending
+  changes, and always at commit.
+- `COMMIT` — only at commit.
+- `MANUAL` — only when you say.
+
+**In what order** is the part that surprises people. Hibernate does *not*
+execute your statements in the order you wrote them. It orders by operation
+type:
+
+1. inserts, in the order the entities were persisted
+2. updates
+3. collection deletions
+4. collection insertions/updates
+5. **deletes — last**
+
+So behaviour three:
+
+```java
+repo.delete(existingWithKey);     // queued
+repo.save(newWithSameKey);        // queued
+// flush: INSERT runs first, then DELETE → unique constraint violation
+```
+
+The fix is an explicit `flush()` between them, which forces the delete out
+before the insert.
+
+And behaviour four: because statements execute at flush, a constraint violation
+surfaces at the commit boundary rather than at the line that caused it. The
+stack trace points at the transaction interceptor. This is why JPA exceptions
+are so much harder to locate than JDBC ones.
+
+### Write-behind is the payoff
+
+The reason for all this is batching and deduplication. Ten mutations to one
+entity produce one `UPDATE`. Fifty inserts can go out as one batched round
+trip. The unit of work exists to make that possible
+([Q120](/docs/java/persistence#q120)).
+
+To actually get batching: set `hibernate.jdbc.batch_size`, enable
+`order_inserts` and `order_updates`, and **don't use `IDENTITY` ID
+generation** — `IDENTITY` requires executing each insert immediately to get the
+ID back, which disables batching entirely. Use a sequence.
+
+## 4. Lazy loading, and where the context ends
+
+A lazy association is a proxy. Touch it and Hibernate loads it — **if the
+context is still open**. If the transaction has ended, you get
+`LazyInitializationException` ([Q112](/docs/java/persistence#q112)).
+
+The proxy boundary is therefore also the lazy-loading boundary. A service
+method returns an entity, the controller serialises it, a lazy field is
+touched, and the context closed at the method's return.
+
+Three responses, only one of which is good:
+
+**Wrong:** make everything `EAGER`. Now every query drags the object graph,
+including for the 90% of use cases that don't need it.
+
+**Wrong:** `spring.jpa.open-in-view=true` (Boot's default — turn it off). It
+holds the context *and a database connection* open for the entire HTTP request
+including view rendering. Lazy loads then happen scattered through the
+presentation layer, N+1 queries become invisible, and connection pool
+exhaustion becomes a mystery because connections are held during JSON
+serialisation.
+
+**Right:** fetch exactly what you need inside the transaction — `JOIN FETCH`,
+`@EntityGraph`, or best, a **DTO projection** that selects the columns the
+caller actually wants. Map to DTOs at the transaction boundary so entities
+never escape it.
+
+That last option also skips the persistence context entirely for read paths: no
+snapshot, no dirty checking, no proxies. For a read-heavy endpoint that's a
+large saving, and it's the on-ramp to CQRS.
+
+### N+1 is a consequence, not a separate topic
+
+Load N orders, touch `order.getCustomer()` on each, get N more queries. It's
+invisible with 5 rows in development and fatal with 5,000 in production.
+
+Fixes, in rough order of preference
+([Q113](/docs/java/persistence#q113)):
+
+- **DTO projection** — no entities, no lazy loading, exactly the columns needed.
+- **`@EntityGraph`** — declarative fetch plan on the repository method.
+- **`@BatchSize` / `hibernate.default_batch_fetch_size`** — turns N queries into
+  N/50 `IN (...)` queries. Excellent default, low effort, works with pagination.
+- **`JOIN FETCH`** — one query, but two collection fetches give a cartesian
+  product, and combining it with pagination makes Hibernate paginate **in
+  memory** (it warns: `firstResult/maxResults specified with collection fetch`).
+  That's an OOM at scale.
+
+**Detect it automatically.** Enable `hibernate.generate_statistics` and assert
+query counts in integration tests, or fail a test when a request exceeds a
+threshold. Code review will not catch N+1; a counter will.
+
+## 5. Entity identity and the hashing trap
+
+Entities go into `Set`s — `@OneToMany` collections are usually sets. So
+`equals`/`hashCode` must be stable across all four states, including *before*
+the ID is assigned.
+
+The failure: add a transient entity to a `HashSet`, flush, the ID is populated,
+the hash changes, and the entity is stranded in the wrong bucket — exactly the
+mechanism from the [HashMap page](/docs/concepts/hashmap), in a place you
+didn't expect it.
+
+Options ([Q116](/docs/java/persistence#q116)):
+
+1. **Business key** — a natural, unique, immutable field. Best when one exists.
+2. **Client-generated UUID** assigned at construction, so the ID never changes.
+   My default for new systems, and it also decouples you from sequences.
+3. **Database ID with a constant `hashCode`** — correct but degrades sets to
+   linear scan.
+
+Never the default `Object` identity (breaks after detach/merge), and never a
+mutable field.
+
+## 6. What this does *not* cover
+
+- **The second-level cache.** L1 is the persistence context, always on,
+  transaction-scoped. L2 is shared across sessions and is a separate decision
+  with its own staleness problems.
+- **Locking.** `@Version` and `SELECT FOR UPDATE` interact with the context but
+  are governed by [isolation levels](/docs/concepts/isolation-levels).
+- **Bulk operations.** JPQL `UPDATE`/`DELETE` bypass the context entirely and
+  leave it stale — you must `clear()` afterwards or you'll read pre-update
+  state from L1.
+- **When not to use JPA at all.** Reporting, analytics, bulk loads and tuned
+  SQL are better served by jOOQ or `JdbcClient`
+  ([Q119](/docs/java/persistence#q119)).
+
+## 7. Lab: make the model visible
+
+Any Spring Boot app with JPA and a real database (Testcontainers or Docker
+PostgreSQL). Turn on SQL logging first — you cannot learn this without seeing
+the statements:
+
+```properties
+spring.jpa.properties.hibernate.generate_statistics=true
+logging.level.org.hibernate.SQL=DEBUG
+logging.level.org.hibernate.orm.jdbc.bind=TRACE
+```
+
+### Lab 1 — dirty checking with no save
+
+```java
+@Transactional
+public void noSave(Long id) {
+    Payment p = repo.findById(id).orElseThrow();
+    p.setStatus(Status.SETTLED);
+    // nothing else
+}
+```
+
+Watch the `UPDATE` appear in the log at commit. Then add `em.detach(p)` before
+the setter and watch it not appear. **That pair is the entire concept.**
+
+### Lab 2 — the merge trap
+
+```java
+@Transactional
+public void mergeDemo(Payment detached) {
+    Payment managed = em.merge(detached);
+    detached.setStatus(Status.SETTLED);   // lost
+    // assert: no UPDATE for status in the log
+}
+```
+
+Then assign to the return value instead and watch the `UPDATE` appear. Also
+assert `managed != detached` — two objects, which is the whole explanation.
+
+### Lab 3 — identity guarantee
+
+```java
+Payment a = em.find(Payment.class, 1L);
+Payment b = em.find(Payment.class, 1L);
+System.out.println(a == b);          // true — and only one SELECT in the log
+em.clear();
+Payment c = em.find(Payment.class, 1L);
+System.out.println(a == c);          // false — second SELECT appears
+```
+
+### Lab 4 — flush ordering breaks your SQL
+
+```java
+@Transactional
+public void deleteThenInsert() {
+    repo.delete(repo.findByRef("REF-1"));
+    repo.save(new Payment("REF-1", ...));      // same unique key
+}
+```
+
+Constraint violation. Add `repo.flush()` between them and it passes. **Read the
+log ordering** — the INSERT precedes the DELETE, which is the thing to
+remember.
+
+### Lab 5 — N+1, and four fixes measured
+
+```java
+List<Order> orders = orderRepo.findAll();          // 1 query
+orders.forEach(o -> o.getCustomer().getName());    // N queries
+```
+
+Count queries with `generate_statistics`. Then apply each fix in turn —
+`@BatchSize(50)`, `@EntityGraph`, `JOIN FETCH`, DTO projection — and record the
+query count and wall-clock for each.
+
+Then combine `JOIN FETCH` with `Pageable` and find the
+`firstResult/maxResults specified with collection fetch` warning in the log.
+**That warning means the pagination is happening in your heap**, and spotting
+it in a real log later is worth the five minutes.
+
+### Lab 6 — assert query counts in a test
+
+```java
+@Test @Transactional
+void listingDoesNotNPlusOne() {
+    var stats = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+    stats.clear();
+    service.listOrders();
+    assertThat(stats.getPrepareStatementCount()).isLessThanOrEqualTo(3);
+}
+```
+
+**This is the highest-value thing on the page.** A test like this on each
+read-heavy endpoint turns N+1 from a production discovery into a build failure.
+
+### Lab 7 — the open-in-view cost
+
+Set `spring.jpa.open-in-view=true`, hit an endpoint that lazily loads during
+serialisation, and watch connection-pool metrics (`hikaricp_connections_active`)
+while under load. Then set it to `false` and watch the
+`LazyInitializationException` appear — which is the bug the setting was hiding
+all along.
+
+## 8. Leading on this
+
+**Turn `open-in-view` off on every new service, and put it in the template.**
+It's on by default, it hides N+1, and it holds connections through view
+rendering. The `LazyInitializationException`s you get when you disable it are
+not a regression — they are a list of places where entities are escaping the
+transaction, which is a list you want.
+
+**Require a query-count assertion on read-heavy endpoints.** Lab 6. This is the
+single control that prevents the most common JPA performance defect, and it
+costs three lines per test.
+
+**Make DTO projections the default for read paths.** Entities are for the write
+model where invariants live; reads want exactly the columns the caller uses. It
+sidesteps lazy loading, dirty checking and serialisation surprises at once, and
+it's the on-ramp to separating read and write models properly.
+
+**Ban entity IDs as `hashCode` without a stated strategy.** Business key,
+client-generated UUID, or constant hash — one of the three, decided once, in a
+base class or a documented convention. The stranded-in-a-`HashSet` bug is
+undebuggable from the calling code.
+
+**Watch for `@Transactional` methods that span network calls.** The context and
+its connection are held for the whole method. This is the same point as the
+[MVCC page](/docs/concepts/mvcc) and the
+[Spring proxy page](/docs/concepts/spring-proxy), and it shows up here as
+connection pool exhaustion rather than bloat. The three pages describe one
+mistake from three angles.
+
+**Teach the four states on a whiteboard.** Transient, managed, detached,
+removed, and which transitions each API call performs. Most JPA confusion on a
+team resolves to not having that diagram, and it takes ten minutes.
+
+## 9. Where to go deeper
+
+- Vlad Mihalcea, *High-Performance Java Persistence* — the definitive treatment,
+  and his blog is the best free resource on flush ordering, batching and
+  identifier strategies.
+- The JPA specification on entity lifecycle. Dry, short, and worth reading the
+  state-transition section once from the normative text.
+- Hibernate's user guide on flushing, batching and fetching strategies.
+- Thorben Janssen's writing on entity graphs and projections.
+- `hibernate.generate_statistics` and the `Statistics` API, for building the
+  assertions in Lab 6 into your own test harness.
+
+## 10. Self-check
+
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 Dirty checking.">
+
+You modify a managed entity and never call `save()`. Explain precisely why
+it persists, and what the framework compared against what.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§2 persist vs merge vs save.">
+
+`em.merge(detached); detached.setX(...)` — why is the change lost? What
+should the code have been?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§3 Flush: when, and in what order.">
+
+Give the flush ordering rule and the concrete bug it causes.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§3 And behaviour four, on the flush-ordering paragraph.">
+
+Why do JPA constraint violations surface at commit rather than at the
+offending line, and what does that do to the stack trace?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§4 Lazy loading, and where the context ends.">
+
+What is `open-in-view`, why is it on by default, and name two distinct
+problems it causes.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§4 N+1 is a consequence, not a separate topic.">
+
+Rank four fixes for N+1 and say when `JOIN FETCH` is actively dangerous.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§5 Entity identity and the hashing trap.">
+
+Why does adding a transient entity to a `HashSet` before flush corrupt the
+set? Which other concept page describes the same mechanism?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§3 Write-behind is the payoff.">
+
+Why does `IDENTITY` ID generation disable JDBC batching?
+
+</SelfCheckItem>
+
+</SelfCheck>
