@@ -487,9 +487,10 @@ The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**five of those fifteen also converted** into `content/docs/concepts/` — three
-the same day the drafts landed, `virtual-threads` on 2026-09-12, and
-`cas-and-contention` the same day as `virtual-threads`. Six were the
+**six of those fifteen also converted** into `content/docs/concepts/` — three
+the same day the drafts landed, `virtual-threads` on 2026-09-12,
+`cas-and-contention` the same day as `virtual-threads`, and `isolation-levels`
+immediately after `cas-and-contention`, same day. Six were the
 first batch (`virtual-threads`, `cas-and-contention`, `isolation-levels`,
 `cache-invalidation`, `spring-proxy`, `persistence-context`); six more
 followed the same day (`aggregates`, `backpressure`, `coupling-and-cohesion`,
@@ -555,6 +556,32 @@ in the sidebar between `jmm` and `thread-pools`. **This conversion also
 resolved the `cas`/`deadlock` slug collision** — see the closed note under
 **Two more slug collisions** below.
 
+**`isolation-levels`: converted 2026-09-12**, the sixth Core page taken to
+`content/docs/concepts/`, immediately after `cas-and-contention`. One
+currency fix, unlike `cas-and-contention`'s clean conversion: the Lab 7
+`docker run` pinned `postgres:17`, the same stale pin flagged (and
+deliberately left) under **Two currency items carried into these drafts**
+below — updated to `postgres:18` to match the other four Postgres labs in the
+corpus, in both `_source/isolation-levels.mdx` and the converted page, so they
+no longer diverge on that line. Nothing else in the draft is version-pinned —
+the isolation-level defaults, the SQLSTATE codes, the SSI mechanism — so
+no other correction was needed. `prerequisites: [mvcc]` resolves to a built
+foundational page, satisfying the conversion-order note under **The second
+six drafts** below for this page specifically; `aggregates` and
+`locking-and-deadlock` still only resolve to `isolation-levels` as a
+converted page as of now, not yet converted themselves. All five
+`questions:` anchors (`data/transactions-mvcc#q31`, `#q32`, `#q35`, `#q36`,
+`java/spring#q103`) were checked against the built reference pages before
+writing. **Carries no diagram of its own** — the write-skew interleaving
+(doctors on call) it uses as its canonical example is already drawn as a
+`sequenceDiagram` on `data/transactions-mvcc#q32`, so per **A concept page
+links to a reference diagram, it does not copy it** the page adds one
+sentence linking to it in §2 rather than redrawing it, the same judgement
+call `jmm` made for `java/concurrency#q48`. 8 self-check items, with `where`
+pointers written at conversion time, same discipline as the other converted
+Core pages. Both `pnpm types:check` and `pnpm build` pass, and it's in the
+sidebar between `mvcc` and `the-log`.
+
 Titles below are the drafts' own where a draft exists, and the placeholder
 otherwise; as with the foundational tier, **where a draft and this table
 disagreed, the draft won**, which is why the slug collision below existed
@@ -565,7 +592,7 @@ underneath the table for the closed record.
 |---|---|---|
 | `virtual-threads` | Virtual Threads — Continuations, Mounting, and Pinning | drafted, converted |
 | `cas-and-contention` | CAS, Contention, and Lock-Free Structures | drafted, converted |
-| `isolation-levels` | Isolation Levels and the Anomalies They Permit | drafted |
+| `isolation-levels` | Isolation Levels and the Anomalies They Permit | drafted, converted |
 | `cache-invalidation` | Cache Invalidation and the Races in Each Ordering | drafted |
 | `spring-proxy` | The Proxy Boundary in Spring | drafted |
 | `persistence-context` | The Persistence Context and Dirty Checking | drafted |
@@ -635,8 +662,13 @@ they are the user's fresh prose:
   fix requested directly rather than found and left for the user, so it is not
   a byte-identity exception in the same sense: draft and page match, both
   post-fix.
-- `cache-invalidation.mdx` and `isolation-levels.mdx` pin `postgres:17` in their
-  labs; the other four Postgres labs were moved to `postgres:18`.
+- `cache-invalidation.mdx` and `isolation-levels.mdx` pinned `postgres:17` in
+  their labs; the other four Postgres labs had already moved to `postgres:18`.
+  `isolation-levels.mdx` was **fixed on 2026-09-12, at conversion** — see the
+  Core table entry above — bringing it in line with the other four.
+  `cache-invalidation.mdx` still pins `postgres:17` and remains flagged,
+  deliberately not edited, since it is unconverted user prose and this was not
+  a requested fix for that page.
 
 **Audit of the second six drafts** (`aggregates`, `backpressure`,
 `coupling-and-cohesion`, `escape-analysis`, `locking-and-deadlock`,
@@ -646,20 +678,27 @@ valid across the six. 10–12 sections, 2,200–2,600 words, 8 self-check items
 each, none carries a diagram — one section longer on average than the first
 batch, still inside the 9–11-section pattern's tolerance.
 
-**`prerequisites` resolution is mixed, unlike the first batch.** Three resolve
-to *built* pages: `backpressure` → `thread-pools`,
-`coupling-and-cohesion` → `dependency-inversion`, `escape-analysis` →
-`jit` + `generational-gc`. Three resolve only to *drafted, unconverted* pages
-from the first batch: `aggregates` → `isolation-levels` (and → `bounded-contexts`,
-built), `locking-and-deadlock` → `isolation-levels`, `partitioning` →
-`cas-and-contention` (and → `hashmap`, built). This is the `persistence-context`
-→ `spring-proxy` situation from the first batch, generalised: not a dangling
-edge by the library's definition (`prerequisites` names a written page, and a
-draft in `_source/` is written prose, just not yet converted), but it does fix
-a **conversion order**. Convert `isolation-levels` before `aggregates` or
-`locking-and-deadlock`, and `cas-and-contention` before `partitioning` — same
-rule as `spring-proxy` before `persistence-context`, now with three more pages
-depending on it.
+**`prerequisites` resolution was mixed at draft time, unlike the first batch.**
+Three resolved to *built* pages from the start: `backpressure` →
+`thread-pools`, `coupling-and-cohesion` → `dependency-inversion`,
+`escape-analysis` → `jit` + `generational-gc`. Three resolved only to
+*drafted, unconverted* pages from the first batch: `aggregates` →
+`isolation-levels` (and → `bounded-contexts`, built), `locking-and-deadlock` →
+`isolation-levels`, `partitioning` → `cas-and-contention` (and → `hashmap`,
+built). This was the `persistence-context` → `spring-proxy` situation from the
+first batch, generalised: not a dangling edge by the library's definition
+(`prerequisites` names a written page, and a draft in `_source/` is written
+prose, just not yet converted), but it did fix a **conversion order**: convert
+`isolation-levels` before `aggregates` or `locking-and-deadlock`, and
+`cas-and-contention` before `partitioning` — same rule as `spring-proxy`
+before `persistence-context`.
+
+**Both resolved on 2026-09-12** — `isolation-levels` and `cas-and-contention`
+converted the same day (see the Core table entries above) — so as of now
+`aggregates`, `locking-and-deadlock` and `partitioning` each resolve to at
+least one *built* foundational-or-Core page rather than only a draft. The
+ordering constraint is satisfied; nothing further blocks converting any of
+the three.
 
 **`broker-semantics`: drafted and converted the same day** (2026-09-11), the
 only Core page taken all the way to `content/docs/concepts/` so far.
@@ -747,15 +786,16 @@ gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
 ### Coverage audit — which banks still have no concept page
 
 Measured 2026-09-11 across all 419 questions and all 28 concept pages (13
-foundational, built; plus 15 core drafts — five now converted,
+foundational, built; plus 15 core drafts — six now converted,
 `broker-semantics`, `kafka-internals`, `stream-pipelines` and, as of
-2026-09-12, `virtual-threads` and `cas-and-contention`). **124 questions are
-claimed — 30%**, up from 119 (28%) before `stream-pipelines`, up from 114
-(27%) before `kafka-internals`, up from 108 (26%) before `broker-semantics`,
-and up from 93 (22%) before the second batch of six drafts. Neither
-`virtual-threads`'s nor `cas-and-contention`'s conversion moves this number —
-their `questions:` were already counted as drafts; converting a drafted page
-changes where a claim lives, not whether it's counted. The counts below in
+2026-09-12, `virtual-threads`, `cas-and-contention` and `isolation-levels`).
+**124 questions are claimed — 30%**, up from 119 (28%) before
+`stream-pipelines`, up from 114 (27%) before `kafka-internals`, up from 108
+(26%) before `broker-semantics`, and up from 93 (22%) before the second batch
+of six drafts. Neither `virtual-threads`'s, `cas-and-contention`'s, nor
+`isolation-levels`'s conversion moves this number — their `questions:` were
+already counted as drafts; converting a drafted page changes where a claim
+lives, not whether it's counted. The counts below in
 **Everything else large is already planned** are the ones that move —
 `coupling-and-cohesion` takes one question each off `oop-fundamentals`,
 `solid-principles`, `architecture-styles` and `microservices-boundaries`;
@@ -1373,6 +1413,14 @@ in the draft, since `java/concurrency#q63` has no diagram to link to instead.
 It is also the second foundational-tier-style "link, don't copy" case in the
 Core tier: §2–3's mount/unmount/pinning mechanism links to
 `java/concurrency#q62`'s existing diagram rather than redrawing it.
+`cas-and-contention` carries no diagram at all, converted the same day.
+**`isolation-levels` is the third Core-tier "link, don't copy" case** —
+converted immediately after `cas-and-contention`, same day — and, like
+`cas-and-contention`, **adds nothing to the count**: the write-skew
+interleaving it uses as its canonical example (doctors on call) is already
+drawn as a `sequenceDiagram` on `data/transactions-mvcc#q32`, so §2 adds one
+linking sentence rather than a redrawn diagram, the same judgement `jmm` and
+`virtual-threads` made for their own borrowed pictures.
 
 **Phone-readability, measured on all ten at 375px.** None overflows; the page
 body never scrolls horizontally. Rendered scale, worst first:
@@ -1455,21 +1503,21 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **48 pages** (30 reference + 18
+Content first — and the content now exists: **49 pages** (30 reference + 19
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
-`stream-pipelines`, `virtual-threads` and `cas-and-contention`, the five
-converted Core pages so far), 419 questions, **34 diagrams**, 137 self-check
-items.
+`stream-pipelines`, `virtual-threads`, `cas-and-contention` and
+`isolation-levels`, the six converted Core pages so far), 419 questions,
+**34 diagrams**, 145 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has eighteen real
+- Concept dependency graph as a study path — **now has nineteen real
   nodes.** Read **The dependency graph — settled conventions** before
-  starting: nine roots (eight foundational plus `stream-pipelines`), ten
-  resolving `prerequisites` edges (`jmm → cas-and-contention` is the newest),
+  starting: nine roots (eight foundational plus `stream-pipelines`), eleven
+  resolving `prerequisites` edges (`isolation-levels → mvcc` is the newest),
   and a large majority of `unlocks` targets pointing at unwritten specialist
   pages. Tolerating dangling `unlocks` is a day-one requirement, not an edge
   case.

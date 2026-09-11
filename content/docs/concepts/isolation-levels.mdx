@@ -362,17 +362,60 @@ single-threaded tests cannot see any of the anomalies on this page.
 
 ## 10. Self-check
 
-1. Your service uses `@Transactional` with default settings on PostgreSQL. Which
-   anomalies are you exposed to?
-2. Write the lost-update sequence as an interleaving of two transactions, and
-   then rewrite the code so it cannot happen at the same isolation level.
-3. Define write skew and explain why snapshot isolation permits it. Why is it
-   not simply a lost update?
-4. PostgreSQL's `SERIALIZABLE` doesn't block. What does it do instead, and what
-   must your application provide?
-5. Why can't you retry just the failed commit?
-6. MySQL and PostgreSQL have different default isolation levels. Give a concrete
-   bug that could appear on migration in either direction.
-7. Name three ways to prevent a lost update without changing the isolation
-   level, and say when you'd pick each.
-8. When is an exclusion constraint a better answer than `SERIALIZABLE`?
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§3 The levels, and what each permits.">
+
+Your service uses `@Transactional` with default settings on PostgreSQL. Which
+anomalies are you exposed to?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§1 The problem it exists to solve, and §5(a) Make the operation atomic in SQL.">
+
+Write the lost-update sequence as an interleaving of two transactions, and
+then rewrite the code so it cannot happen at the same isolation level.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§2 The anomalies, precisely, and §3 The naming is a historical artefact.">
+
+Define write skew and explain why snapshot isolation permits it. Why is it
+not simply a lost update?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§4 Why SERIALIZABLE isn't the obvious answer.">
+
+PostgreSQL's `SERIALIZABLE` doesn't block. What does it do instead, and what
+must your application provide?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§4 Why SERIALIZABLE isn't the obvious answer — the retry-wrapper paragraph.">
+
+Why can't you retry just the failed commit?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§3 Defaults differ.">
+
+MySQL and PostgreSQL have different default isolation levels. Give a concrete
+bug that could appear on migration in either direction.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§5 What to actually do.">
+
+Name three ways to prevent a lost update without changing the isolation
+level, and say when you'd pick each.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§5(e) Express the invariant as a constraint.">
+
+When is an exclusion constraint a better answer than `SERIALIZABLE`?
+
+</SelfCheckItem>
+
+</SelfCheck>
