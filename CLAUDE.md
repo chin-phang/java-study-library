@@ -486,8 +486,37 @@ runtime, then data, then distributed and design:
 The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
+**`aggregates`: converted 2026-09-12**, the tenth Core page taken to
+`content/docs/concepts/`, immediately after `persistence-context`. Checked
+for staleness before converting: the three aggregate rules, reference-by-ID,
+domain vs. integration events, sagas as compensation not rollback, and the
+write-skew connection are all DDD modelling patterns with no version-pinned
+API or JEP — unlike `virtual-threads`, nothing here needed a currency fix.
+`prerequisites: [bounded-contexts, isolation-levels]` resolves to two built
+pages (`bounded-contexts` foundational, `isolation-levels` Core, converted
+2026-09-12) — this is the edge the second-six-drafts audit flagged
+(**`aggregates → isolation-levels`**) as blocked on `isolation-levels`
+converting first; it now resolves cleanly. All five `questions:` anchors
+(`design/ddd#q48`, `#q49`, `design/microservices-data#q92`,
+`data/transactions-mvcc#q32`, `java/distributed-systems#q123`) were checked
+against the built reference pages before writing. **Carries no diagram of
+its own** — `design/ddd#q48` already draws exactly the root/children/
+ID-reference structure §2 explains (it's on the diagrams target list:
+"aggregate boundary and transactional scope (Q48)"), so per **A concept page
+links to a reference diagram, it does not copy it** §2 adds one linking
+sentence pointing at Q48's diagram instead of drawing a new one — the fifth
+Core-tier "link, don't copy" case, after `virtual-threads`, `isolation-levels`,
+and `spring-proxy` (`cache-invalidation` and `persistence-context` needed no
+diagram of any kind). Adds nothing to the diagram count. 8 self-check items,
+with `where` pointers written at conversion time, same discipline as the
+other converted Core pages. Both `pnpm types:check` and `pnpm build` pass,
+and the reverse link on `design/ddd#q48` was verified in the browser ("The
+model behind this answer: Aggregates as Consistency Boundaries"), alongside
+the Q48 mermaid diagram rendering with no "Syntax error" text. It's in the
+sidebar after `persistence-context`.
+
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**nine of those fifteen also converted** into `content/docs/concepts/` —
+**ten of those fifteen also converted** into `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
 immediately after `cas-and-contention`, `cache-invalidation`
@@ -686,7 +715,7 @@ underneath the table for the closed record.
 | `cache-invalidation` | Cache Invalidation and the Races in Each Ordering | drafted, converted |
 | `spring-proxy` | The Proxy Boundary in Spring | drafted, converted |
 | `persistence-context` | The Persistence Context and Dirty Checking | drafted, converted |
-| `aggregates` | Aggregates as Consistency Boundaries | drafted |
+| `aggregates` | Aggregates as Consistency Boundaries | drafted, converted |
 | `backpressure` | Backpressure and the Unbounded Queue | drafted |
 | `coupling-and-cohesion` | Coupling, Cohesion, and What Makes a Change Expensive | drafted |
 | `escape-analysis` | Escape Analysis and When Allocation Disappears | drafted |
@@ -1539,7 +1568,14 @@ carries a diagram at all, so this is a clean case of **Add a diagram only if it
 shows something the reference bank doesn't already** rather than a
 link-don't-copy judgement — and the page's own §8 explicitly recommends
 teaching the four states as a whiteboard diagram, which is the diagram this
-adds.
+adds. **`aggregates` is the fifth Core-tier "link, don't copy" case** —
+converted immediately after `persistence-context`, same day — and also
+**adds nothing to the count**: the root/children/ID-reference structure §2
+explains is already drawn on `design/ddd#q48` (it's on the diagrams target
+list, "aggregate boundary and transactional scope (Q48)"), so §2 adds one
+linking sentence to Q48's diagram instead of drawing a new one, the same
+judgement `jmm`, `virtual-threads`, `isolation-levels` and `spring-proxy`
+made for their own borrowed pictures.
 
 **Phone-readability, measured on all ten at 375px.** None overflows; the page
 body never scrolls horizontally. Rendered scale, worst first:
@@ -1629,15 +1665,17 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **52 pages** (30 reference + 22
+Content first — and the content now exists: **53 pages** (30 reference + 23
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
-`isolation-levels`, `cache-invalidation`, `spring-proxy` and
-`persistence-context`, the nine converted Core pages so far), 419 questions,
+`isolation-levels`, `cache-invalidation`, `spring-proxy`,
+`persistence-context` and `aggregates`, the ten converted Core pages so
+far), 419 questions,
 **35 diagrams**
-(`cas-and-contention`, `isolation-levels`, `cache-invalidation` and
-`spring-proxy` carry none — `spring-proxy` links to `java/spring#q101`
-instead), 169 self-check items.
+(`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
+`spring-proxy` and `aggregates` carry none — `spring-proxy` links to
+`java/spring#q101` and `aggregates` links to `design/ddd#q48` instead), 177
+self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 

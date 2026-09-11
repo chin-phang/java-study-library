@@ -390,16 +390,59 @@ contract. Make the translation an explicit step someone has to write
 
 ## 11. Self-check
 
-1. State the three aggregate rules. Which does most of the work, and why?
-2. What specifically does referencing by ID buy you, beyond tidiness? Name four
-   things.
-3. Two forces determine aggregate size. Name them and the question that
-   resolves the tension.
-4. `Customer` holds `List<Order>`. Give the question you'd ask, and three
-   possible outcomes depending on the answer.
-5. Explain the relationship between write skew and aggregate boundaries. Why
-   does an invariant *inside* one aggregate make skew impossible?
-6. Give five ways to enforce an invariant spanning two aggregates, ranked.
-7. Why must domain events be published after commit, and what's the mechanism
-   in-process versus across services?
-8. Why are "aggregates that reference by ID" already service boundaries?
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 What an aggregate is.">
+
+State the three aggregate rules. Which does most of the work, and why?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§3 Why reference by ID.">
+
+What specifically does referencing by ID buy you, beyond tidiness? Name four
+things.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§4 Sizing: the real tension.">
+
+Two forces determine aggregate size. Name them and the question that resolves
+the tension.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§4 The classic sizing mistake.">
+
+`Customer` holds `List<Order>`. Give the question you'd ask, and three
+possible outcomes depending on the answer.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§6 Aggregates and write skew.">
+
+Explain the relationship between write skew and aggregate boundaries. Why does
+an invariant *inside* one aggregate make skew impossible?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§6 Aggregates and write skew.">
+
+Give five ways to enforce an invariant spanning two aggregates, ranked.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§5 Across aggregates: events and sagas.">
+
+Why must domain events be published after commit, and what's the mechanism
+in-process versus across services?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§3 Why reference by ID.">
+
+Why are "aggregates that reference by ID" already service boundaries?
+
+</SelfCheckItem>
+
+</SelfCheck>
