@@ -46,7 +46,7 @@ Package by layer (`controllers/`, `services/`, `repositories/`, `models/`) group
 
 Package by feature (`payment/`, `refund/`, `settlement/`, each containing its own controller, service, repository and model) puts everything a change touches in one place. It allows package-private visibility, so a feature's internals are genuinely hidden. And it makes the codebase's *purpose* visible from the directory listing — "screaming architecture".
 
-The strongest argument: a feature package is a candidate module, and a module is a candidate service. Package-by-feature is the on-ramp to a modular monolith and then, if needed, to extraction (Q96).
+The strongest argument: a feature package is a candidate module, and a module is a candidate service. Package-by-feature is the on-ramp to a modular monolith and then, if needed, to extraction (Q67).
 
 <FollowUp q="How do you enforce it?">
 

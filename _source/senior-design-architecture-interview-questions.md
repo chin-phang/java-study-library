@@ -59,7 +59,7 @@ account.withdraw(amount);   // throws InsufficientFundsException
 
 In the second form, the overdraft rule cannot be bypassed and cannot be duplicated across seventeen call sites. That's the payoff — the invariant has exactly one home.
 
-**Why it matters.** This connects directly to the anemic domain model problem (Q10). Getters and setters everywhere means business logic has nowhere to live except in services, which then becomes a procedural codebase with objects used as data bags.
+**Why it matters.** This connects directly to the anemic domain model problem (Q6). Getters and setters everywhere means business logic has nowhere to live except in services, which then becomes a procedural codebase with objects used as data bags.
 
 **Follow-up: But frameworks need setters — JPA, Jackson.**
 They need *a* way to populate state, not public setters. JPA can use field access. Jackson can use constructor binding with `@JsonCreator`, or a separate DTO that maps to your domain object. The framework's needs are a serialisation concern; letting them dictate your domain model's API is the tail wagging the dog. Keeping a boundary DTO layer is a small cost that buys you a domain model you control.
@@ -178,14 +178,14 @@ It moves this into the type system: `String` and `String?` are different types a
 **Answer.** Small, named for the role rather than the implementation, and stable. Specifically:
 
 - **Named for the client's need**, not the provider. `PaymentAuthorizer` beats `StripeServiceInterface` — the name should survive replacing the implementation.
-- **Minimal** — every method is one more thing every implementor must provide and every mock must stub (Q19, ISP).
+- **Minimal** — every method is one more thing every implementor must provide and every mock must stub (Q18, ISP).
 - **No implementation leakage** — no method that only makes sense for one implementation, no checked exceptions specific to one technology (`SQLException` in a repository interface tells you the abstraction failed).
 - **Cohesive** — the methods belong together and are likely to be used together.
 
 The test I apply: could I write a second, genuinely different implementation without changing the interface? If the interface has one implementation and always will, it may be pure ceremony — which is a real and common problem in Java codebases.
 
 **Follow-up: Should every class have an interface?**
-No. The one-interface-per-class habit came from mocking frameworks that couldn't mock classes and from DI containers that needed proxies. Both limitations are gone. Add an interface when you have or genuinely anticipate multiple implementations, when you need to invert a dependency across an architectural boundary (Q73), or when it's a published extension point. Otherwise it's an extra file that makes navigation worse.
+No. The one-interface-per-class habit came from mocking frameworks that couldn't mock classes and from DI containers that needed proxies. Both limitations are gone. Add an interface when you have or genuinely anticipate multiple implementations, when you need to invert a dependency across an architectural boundary (Q53), or when it's a published extension point. Otherwise it's an extra file that makes navigation worse.
 
 ---
 
@@ -320,7 +320,7 @@ The second half is the whole point, and it's about *who owns the interface*. If 
 
 Being able to separate these three is a strong senior signal, because most people use them interchangeably.
 
-**Why it matters.** DIP is the mechanism behind hexagonal architecture (Q73) — the ports are domain-owned interfaces, the adapters are the details that depend on them.
+**Why it matters.** DIP is the mechanism behind hexagonal architecture (Q53) — the ports are domain-owned interfaces, the adapters are the details that depend on them.
 
 ---
 
@@ -362,7 +362,7 @@ The failure mode: a `Customer` DTO and a `Customer` entity have the same fields,
 
 The counter-heuristics: **WET** (write everything twice — wait for the third occurrence), and **AHA** (avoid hasty abstractions, Kent C. Dodds) — prefer duplication over the wrong abstraction (Q12).
 
-**Why it matters.** Over-applied DRY is one of the top causes of accidental coupling in large codebases, particularly the shared-library problem in microservices (Q92). The question to ask before deduplicating: *if this changes for one caller, should it change for all of them?* If the answer is no, it isn't duplication.
+**Why it matters.** Over-applied DRY is one of the top causes of accidental coupling in large codebases, particularly the shared-library problem in microservices (Q66). The question to ask before deduplicating: *if this changes for one caller, should it change for all of them?* If the answer is no, it isn't duplication.
 
 ---
 
@@ -377,7 +377,7 @@ For irreversible or expensive-to-reverse decisions — the data model, the publi
 **Why it matters.** YAGNI applied indiscriminately produces systems where the database has no tenant column and adding multi-tenancy is a year of work. The skill isn't choosing between the two principles, it's classifying the decision correctly.
 
 **Follow-up: What's a cheap way to preserve optionality without building it?**
-Design the *seam* without the implementation: keep the boundary clean and the dependency inverted, so a future implementation can be slotted in. That costs one interface, not a plugin framework. And write down in an ADR (Q83) what you deliberately didn't build and what would trigger revisiting it.
+Design the *seam* without the implementation: keep the boundary clean and the dependency inverted, so a future implementation can be slotted in. That costs one interface, not a plugin framework. And write down in an ADR (Q57) what you deliberately didn't build and what would trigger revisiting it.
 
 ---
 
@@ -395,7 +395,7 @@ Coupling:
 - **SDP** (Stable Dependencies) — depend in the direction of stability.
 - **SAP** (Stable Abstractions) — stable packages should be abstract, so they can be extended without modification.
 
-**Why it matters.** These transfer directly to microservices: CCP is the argument for decomposing by business capability rather than technical layer (Q87), ADP is why circular service dependencies are a distributed-monolith smell (Q93), and SDP explains why shared libraries must be more stable than their consumers.
+**Why it matters.** These transfer directly to microservices: CCP is the argument for decomposing by business capability rather than technical layer (Q63), ADP is why circular service dependencies are a distributed-monolith smell (Q65), and SDP explains why shared libraries must be more stable than their consumers.
 
 **Follow-up: How do you enforce ADP?**
 ArchUnit tests in the build. A test asserting "no cycles between top-level packages" and "the domain package depends on nothing outside itself" catches architectural erosion at PR time, which is the only time it's cheap to fix.
@@ -493,7 +493,7 @@ Enum singleton (serialization-safe, thread-safe, concise) or the holder idiom (Q
 
 **Answer.** All three wrap something, with different intent:
 
-- **Adapter** — converts one interface into another so incompatible things can work together. Intent: compatibility. `Arrays.asList` adapts an array to a List; an anti-corruption layer (Q68) is an adapter at architectural scale.
+- **Adapter** — converts one interface into another so incompatible things can work together. Intent: compatibility. `Arrays.asList` adapts an array to a List; an anti-corruption layer (Q50) is an adapter at architectural scale.
 - **Facade** — provides a simpler interface over a complex subsystem. Intent: simplification. It doesn't change the interface of one thing; it hides several things behind one.
 - **Proxy** — provides the *same* interface as the target, controlling access to it. Intent: control. Variants: virtual (lazy loading — a Hibernate lazy proxy), protection (security checks), remote (RPC stub), smart (caching, reference counting). Spring's `@Transactional` is a proxy.
 
@@ -578,7 +578,7 @@ Publishing an event inside a transaction and having a listener act on it *before
 
 The fintech case is compelling: a payment moves through Pending → Authorised → Captured → Settled, with Failed and Refunded branches. Without the pattern, every method starts with a switch on status and the legal transitions are implicit in scattered `if`s. With it, `AuthorisedPayment.capture()` is valid and `PendingPayment.capture()` throws — the state machine is in the type system.
 
-**Why it matters.** It makes illegal transitions *unrepresentable* rather than merely checked, which is the same instinct as value objects (Q8).
+**Why it matters.** It makes illegal transitions *unrepresentable* rather than merely checked, which is the same instinct as value objects (Q7).
 
 **Follow-up: What's the Java 21 alternative?**
 A sealed interface with a record per state and pattern matching on transitions. You get exhaustiveness checking from the compiler — add a state and every transition function fails to compile until you handle it — which the class-based State pattern doesn't give you. For a state machine with a fixed set of states, that's strictly better. For very complex machines, a dedicated state machine library with a declarative transition table is more maintainable than either.
@@ -657,7 +657,7 @@ It encapsulates a query predicate as a domain object, so business rules like "ov
 - **Service Locator** (Q25) — hidden dependencies, runtime failures.
 - **Anemic domain model** (Q6) with fat services.
 - **Primitive obsession** (Q8).
-- **Distributed monolith** (Q93) — the most expensive of all, because you pay microservice costs for monolith coupling.
+- **Distributed monolith** (Q65) — the most expensive of all, because you pay microservice costs for monolith coupling.
 - **Shotgun surgery** — one conceptual change requiring edits in fifteen files. This is the clearest signal that the boundaries are wrong.
 - **Speculative generality** — abstractions, parameters and extension points built for requirements that never arrived.
 
@@ -734,9 +734,9 @@ The important part is **strategic**: identifying bounded contexts, mapping the r
 
 **Answer.** A boundary within which a model and its language are consistent. "Customer" means something different to billing (a payer with a payment method and a credit limit), to support (a person with a ticket history), and to fraud (a risk profile with device fingerprints). A bounded context is the scope within which one definition holds.
 
-Finding them: look for **linguistic seams** — the same word meaning different things, or different words meaning the same thing. Look at how the business is organised, because organisational boundaries usually reflect real ones (Conway's law, Q95). Run an **event storming** session: get domain experts to lay out domain events on a wall in time order, and the clusters and handoffs that emerge are strong candidates for context boundaries.
+Finding them: look for **linguistic seams** — the same word meaning different things, or different words meaning the same thing. Look at how the business is organised, because organisational boundaries usually reflect real ones (Conway's law, Q69). Run an **event storming** session: get domain experts to lay out domain events on a wall in time order, and the clusters and handoffs that emerge are strong candidates for context boundaries.
 
-**Why it matters.** Bounded contexts are the single best guide to microservice boundaries (Q87). A service that spans two contexts will have a confused model; two services inside one context will be permanently chatty and change together.
+**Why it matters.** Bounded contexts are the single best guide to microservice boundaries (Q63). A service that spans two contexts will have a confused model; two services inside one context will be permanently chatty and change together.
 
 **Follow-up: Isn't one shared canonical model simpler?**
 It's the seductive wrong answer. A canonical `Customer` used by billing, support and fraud accumulates every field any context needs, means nothing precisely, and every change requires agreement across three teams. Bounded contexts accept translation cost at the boundary in exchange for models that are actually correct within each context.
@@ -781,7 +781,7 @@ Without one, their concepts propagate: their field names, their status codes, th
 
 The implementation is unglamorous — an adapter (Q31) that maps their DTOs to your domain types and back, with the mapping logic isolated and tested. The value is that when they change, or you replace them, exactly one package changes.
 
-**Why it matters.** In fintech you integrate with a lot of systems you don't control and whose models you'd never choose. The ACL is what keeps your domain yours. It's also the pattern that makes the strangler fig (Q96) work.
+**Why it matters.** In fintech you integrate with a lot of systems you don't control and whose models you'd never choose. The ACL is what keeps your domain yours. It's also the pattern that makes the strangler fig (Q68) work.
 
 ---
 
@@ -844,7 +844,7 @@ Package by layer (`controllers/`, `services/`, `repositories/`, `models/`) group
 
 Package by feature (`payment/`, `refund/`, `settlement/`, each containing its own controller, service, repository and model) puts everything a change touches in one place. It allows package-private visibility, so a feature's internals are genuinely hidden. And it makes the codebase's *purpose* visible from the directory listing — "screaming architecture".
 
-The strongest argument: a feature package is a candidate module, and a module is a candidate service. Package-by-feature is the on-ramp to a modular monolith and then, if needed, to extraction (Q96).
+The strongest argument: a feature package is a candidate module, and a module is a candidate service. Package-by-feature is the on-ramp to a modular monolith and then, if needed, to extraction (Q67).
 
 **Follow-up: How do you enforce it?**
 ArchUnit rules: no feature package may depend on another feature package's internals — only on its published interface or on shared kernel packages. Run it in CI. Without enforcement, package-by-feature erodes back into a ball of mud within a year.
@@ -963,11 +963,11 @@ The signals I'd use:
 
 1. **Bounded contexts** (Q47) — linguistic seams are the strongest evidence.
 2. **What changes together** — CCP (Q24). If two things always appear in the same change, they belong in the same service.
-3. **Team ownership** — a service should have one owning team (Q95). A service owned by two teams will have coordination overhead worse than a monolith.
+3. **Team ownership** — a service should have one owning team (Q69). A service owned by two teams will have coordination overhead worse than a monolith.
 4. **Data cohesion** — a service should own its data completely. If a boundary requires a distributed transaction on every operation, it's in the wrong place.
 5. **Different rates of change or scale** — a fraud-scoring engine that changes daily and needs GPU capacity has a genuine reason to be separate from an account service that changes quarterly.
 
-**Why it matters.** The test I apply: **can this service be deployed without coordinating with another team?** If not, the boundary is decorative — you have a distributed monolith (Q66).
+**Why it matters.** The test I apply: **can this service be deployed without coordinating with another team?** If not, the boundary is decorative — you have a distributed monolith (Q65).
 
 ---
 
@@ -1213,7 +1213,7 @@ Organisational more than technical: the provider team must treat a failing contr
 
 ### Q81. How do you prevent cascading failure across services?
 
-**Answer.** Layered defences, each covered in the data/messaging bank (Q125–Q126) but composed here:
+**Answer.** Layered defences, each covered in the Java bank (Q125–Q126) but composed here:
 
 - **Timeouts everywhere**, forming a decreasing budget down the call chain. A missing socket timeout is the most common root cause of a total outage.
 - **Circuit breakers** so a failing dependency stops consuming your threads and stops adding load to its recovery.
@@ -1274,7 +1274,7 @@ Three things that make it work in practice:
 - **Circuit breaker with a meaningful fallback** — for a payment provider, that might mean failing over to a secondary acquirer, which turns an outage into a routing decision.
 - **Bulkhead** — cap concurrent calls so a provider slowdown can't consume your capacity.
 - **Asynchronous where possible** — accept the request, acknowledge to the user, process against the provider in the background with retries.
-- **Idempotency keys** on every call (Q121 in the data bank), because you *will* time out without knowing the outcome.
+- **Idempotency keys** on every call (Q121 in the Java bank), because you *will* time out without knowing the outcome.
 - **A reconciliation process** — the only reliable way to resolve "unknown" outcomes is to ask the provider later what actually happened, and to have a scheduled job that does so.
 - **Contract tests against their sandbox**, run on a schedule outside the main pipeline.
 
@@ -1311,7 +1311,7 @@ The narrow legitimate exceptions: during a **migration** (extracting a service, 
 Every one of those needs a stated reason and an owner. "It was easier" isn't one.
 
 **Follow-up: What if a service needs another's data?**
-Options in order of preference: ask via its API (simple, always fresh, adds a synchronous dependency); subscribe to its events and keep a local read model (fast, no runtime dependency, eventually consistent, duplicated storage); or, if the query genuinely spans services, build a dedicated read model fed by events (CQRS, Q95). What you don't do is read its tables.
+Options in order of preference: ask via its API (simple, always fresh, adds a synchronous dependency); subscribe to its events and keep a local read model (fast, no runtime dependency, eventually consistent, duplicated storage); or, if the query genuinely spans services, build a dedicated read model fed by events (CQRS, Q90). What you don't do is read its tables.
 
 ---
 

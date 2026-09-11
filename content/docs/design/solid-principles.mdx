@@ -115,7 +115,7 @@ The second half is the whole point, and it's about *who owns the interface*. If 
 
 Being able to separate these three is a strong senior signal, because most people use them interchangeably.
 
-**Why it matters.** DIP is the mechanism behind hexagonal architecture (Q73) — the ports are domain-owned interfaces, the adapters are the details that depend on them.
+**Why it matters.** DIP is the mechanism behind hexagonal architecture (Q53) — the ports are domain-owned interfaces, the adapters are the details that depend on them.
 
 </Question>
 
@@ -166,7 +166,7 @@ The failure mode: a `Customer` DTO and a `Customer` entity have the same fields,
 
 The counter-heuristics: **WET** (write everything twice — wait for the third occurrence), and **AHA** (avoid hasty abstractions, Kent C. Dodds) — prefer duplication over the wrong abstraction (Q12).
 
-**Why it matters.** Over-applied DRY is one of the top causes of accidental coupling in large codebases, particularly the shared-library problem in microservices (Q92). The question to ask before deduplicating: *if this changes for one caller, should it change for all of them?* If the answer is no, it isn't duplication.
+**Why it matters.** Over-applied DRY is one of the top causes of accidental coupling in large codebases, particularly the shared-library problem in microservices (Q66). The question to ask before deduplicating: *if this changes for one caller, should it change for all of them?* If the answer is no, it isn't duplication.
 
 </Question>
 
@@ -184,7 +184,7 @@ For irreversible or expensive-to-reverse decisions — the data model, the publi
 
 <FollowUp q="What's a cheap way to preserve optionality without building it?">
 
-Design the *seam* without the implementation: keep the boundary clean and the dependency inverted, so a future implementation can be slotted in. That costs one interface, not a plugin framework. And write down in an ADR (Q83) what you deliberately didn't build and what would trigger revisiting it.
+Design the *seam* without the implementation: keep the boundary clean and the dependency inverted, so a future implementation can be slotted in. That costs one interface, not a plugin framework. And write down in an ADR (Q57) what you deliberately didn't build and what would trigger revisiting it.
 
 </FollowUp>
 
@@ -206,7 +206,7 @@ Coupling:
 - **SDP** (Stable Dependencies) — depend in the direction of stability.
 - **SAP** (Stable Abstractions) — stable packages should be abstract, so they can be extended without modification.
 
-**Why it matters.** These transfer directly to microservices: CCP is the argument for decomposing by business capability rather than technical layer (Q87), ADP is why circular service dependencies are a distributed-monolith smell (Q93), and SDP explains why shared libraries must be more stable than their consumers.
+**Why it matters.** These transfer directly to microservices: CCP is the argument for decomposing by business capability rather than technical layer (Q63), ADP is why circular service dependencies are a distributed-monolith smell (Q65), and SDP explains why shared libraries must be more stable than their consumers.
 
 <FollowUp q="How do you enforce ADP?">
 

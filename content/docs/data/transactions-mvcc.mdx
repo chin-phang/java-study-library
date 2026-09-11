@@ -241,7 +241,7 @@ When I'd use it: essentially never across services. Within one database, use a s
 
 The alternatives are worse: polling an `updated_at` column misses deletes, misses intermediate states, and races with clock skew; triggers writing to an audit table double the write cost and are easy to forget on new tables.
 
-Debezium is the standard implementation, publishing to Kafka. Uses: feeding a data warehouse, maintaining search indexes and caches, the outbox pattern (Q137), and migrating between systems with dual-running.
+Debezium is the standard implementation, publishing to Kafka. Uses: feeding a data warehouse, maintaining search indexes and caches, the outbox pattern (Q136), and migrating between systems with dual-running.
 
 <FollowUp q="What are the operational hazards?">
 

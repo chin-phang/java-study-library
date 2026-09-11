@@ -49,11 +49,11 @@ The signals I'd use:
 
 1. **Bounded contexts** (Q47) — linguistic seams are the strongest evidence.
 2. **What changes together** — CCP (Q24). If two things always appear in the same change, they belong in the same service.
-3. **Team ownership** — a service should have one owning team (Q95). A service owned by two teams will have coordination overhead worse than a monolith.
+3. **Team ownership** — a service should have one owning team (Q69). A service owned by two teams will have coordination overhead worse than a monolith.
 4. **Data cohesion** — a service should own its data completely. If a boundary requires a distributed transaction on every operation, it's in the wrong place.
 5. **Different rates of change or scale** — a fraud-scoring engine that changes daily and needs GPU capacity has a genuine reason to be separate from an account service that changes quarterly.
 
-**Why it matters.** The test I apply: **can this service be deployed without coordinating with another team?** If not, the boundary is decorative — you have a distributed monolith (Q66).
+**Why it matters.** The test I apply: **can this service be deployed without coordinating with another team?** If not, the boundary is decorative — you have a distributed monolith (Q65).
 
 </Question>
 

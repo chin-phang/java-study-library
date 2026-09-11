@@ -45,7 +45,7 @@ Organisational more than technical: the provider team must treat a failing contr
 
 <Question id="q81">
 
-**Answer.** Layered defences, each covered in the data/messaging bank (Q125–Q126) but composed here:
+**Answer.** Layered defences, each covered in the Java bank (Q125–Q126) but composed here:
 
 - **Timeouts everywhere**, forming a decreasing budget down the call chain. A missing socket timeout is the most common root cause of a total outage.
 - **Circuit breakers** so a failing dependency stops consuming your threads and stops adding load to its recovery.
@@ -120,7 +120,7 @@ Three things that make it work in practice:
 - **Circuit breaker with a meaningful fallback** — for a payment provider, that might mean failing over to a secondary acquirer, which turns an outage into a routing decision.
 - **Bulkhead** — cap concurrent calls so a provider slowdown can't consume your capacity.
 - **Asynchronous where possible** — accept the request, acknowledge to the user, process against the provider in the background with retries.
-- **Idempotency keys** on every call (Q121 in the data bank), because you *will* time out without knowing the outcome.
+- **Idempotency keys** on every call (Q121 in the Java bank), because you *will* time out without knowing the outcome.
 - **A reconciliation process** — the only reliable way to resolve "unknown" outcomes is to ask the provider later what actually happened, and to have a scheduled job that does so.
 - **Contract tests against their sandbox**, run on a schedule outside the main pipeline.
 
@@ -164,7 +164,7 @@ Every one of those needs a stated reason and an owner. "It was easier" isn't one
 
 <FollowUp q="What if a service needs another's data?">
 
-Options in order of preference: ask via its API (simple, always fresh, adds a synchronous dependency); subscribe to its events and keep a local read model (fast, no runtime dependency, eventually consistent, duplicated storage); or, if the query genuinely spans services, build a dedicated read model fed by events (CQRS, Q95). What you don't do is read its tables.
+Options in order of preference: ask via its API (simple, always fresh, adds a synchronous dependency); subscribe to its events and keep a local read model (fast, no runtime dependency, eventually consistent, duplicated storage); or, if the query genuinely spans services, build a dedicated read model fed by events (CQRS, Q90). What you don't do is read its tables.
 
 </FollowUp>
 

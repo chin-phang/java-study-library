@@ -44,7 +44,7 @@ account.withdraw(amount);   // throws InsufficientFundsException
 
 In the second form, the overdraft rule cannot be bypassed and cannot be duplicated across seventeen call sites. That's the payoff — the invariant has exactly one home.
 
-**Why it matters.** This connects directly to the anemic domain model problem (Q10). Getters and setters everywhere means business logic has nowhere to live except in services, which then becomes a procedural codebase with objects used as data bags.
+**Why it matters.** This connects directly to the anemic domain model problem (Q6). Getters and setters everywhere means business logic has nowhere to live except in services, which then becomes a procedural codebase with objects used as data bags.
 
 <FollowUp q="But frameworks need setters — JPA, Jackson.">
 
@@ -197,7 +197,7 @@ It moves this into the type system: `String` and `String?` are different types a
 **Answer.** Small, named for the role rather than the implementation, and stable. Specifically:
 
 - **Named for the client's need**, not the provider. `PaymentAuthorizer` beats `StripeServiceInterface` — the name should survive replacing the implementation.
-- **Minimal** — every method is one more thing every implementor must provide and every mock must stub (Q19, ISP).
+- **Minimal** — every method is one more thing every implementor must provide and every mock must stub (Q18, ISP).
 - **No implementation leakage** — no method that only makes sense for one implementation, no checked exceptions specific to one technology (`SQLException` in a repository interface tells you the abstraction failed).
 - **Cohesive** — the methods belong together and are likely to be used together.
 
@@ -205,7 +205,7 @@ The test I apply: could I write a second, genuinely different implementation wit
 
 <FollowUp q="Should every class have an interface?">
 
-No. The one-interface-per-class habit came from mocking frameworks that couldn't mock classes and from DI containers that needed proxies. Both limitations are gone. Add an interface when you have or genuinely anticipate multiple implementations, when you need to invert a dependency across an architectural boundary (Q73), or when it's a published extension point. Otherwise it's an extra file that makes navigation worse.
+No. The one-interface-per-class habit came from mocking frameworks that couldn't mock classes and from DI containers that needed proxies. Both limitations are gone. Add an interface when you have or genuinely anticipate multiple implementations, when you need to invert a dependency across an architectural boundary (Q53), or when it's a published extension point. Otherwise it's an extra file that makes navigation worse.
 
 </FollowUp>
 

@@ -88,7 +88,7 @@ Enum singleton (serialization-safe, thread-safe, concise) or the holder idiom (Q
 
 **Answer.** All three wrap something, with different intent:
 
-- **Adapter** — converts one interface into another so incompatible things can work together. Intent: compatibility. `Arrays.asList` adapts an array to a List; an anti-corruption layer (Q68) is an adapter at architectural scale.
+- **Adapter** — converts one interface into another so incompatible things can work together. Intent: compatibility. `Arrays.asList` adapts an array to a List; an anti-corruption layer (Q50) is an adapter at architectural scale.
 - **Facade** — provides a simpler interface over a complex subsystem. Intent: simplification. It doesn't change the interface of one thing; it hides several things behind one.
 - **Proxy** — provides the *same* interface as the target, controlling access to it. Intent: control. Variants: virtual (lazy loading — a Hibernate lazy proxy), protection (security checks), remote (RPC stub), smart (caching, reference counting). Spring's `@Transactional` is a proxy.
 
@@ -195,7 +195,7 @@ Publishing an event inside a transaction and having a listener act on it *before
 
 The fintech case is compelling: a payment moves through Pending → Authorised → Captured → Settled, with Failed and Refunded branches. Without the pattern, every method starts with a switch on status and the legal transitions are implicit in scattered `if`s. With it, `AuthorisedPayment.capture()` is valid and `PendingPayment.capture()` throws — the state machine is in the type system.
 
-**Why it matters.** It makes illegal transitions *unrepresentable* rather than merely checked, which is the same instinct as value objects (Q8).
+**Why it matters.** It makes illegal transitions *unrepresentable* rather than merely checked, which is the same instinct as value objects (Q7).
 
 <FollowUp q="What's the Java 21 alternative?">
 
@@ -296,7 +296,7 @@ It encapsulates a query predicate as a domain object, so business rules like "ov
 - **Service Locator** (Q25) — hidden dependencies, runtime failures.
 - **Anemic domain model** (Q6) with fat services.
 - **Primitive obsession** (Q8).
-- **Distributed monolith** (Q93) — the most expensive of all, because you pay microservice costs for monolith coupling.
+- **Distributed monolith** (Q65) — the most expensive of all, because you pay microservice costs for monolith coupling.
 - **Shotgun surgery** — one conceptual change requiring edits in fifteen files. This is the clearest signal that the boundaries are wrong.
 - **Speculative generality** — abstractions, parameters and extension points built for requirements that never arrived.
 

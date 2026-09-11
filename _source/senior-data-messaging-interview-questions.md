@@ -580,7 +580,7 @@ When I'd use it: essentially never across services. Within one database, use a s
 
 The alternatives are worse: polling an `updated_at` column misses deletes, misses intermediate states, and races with clock skew; triggers writing to an audit table double the write cost and are easy to forget on new tables.
 
-Debezium is the standard implementation, publishing to Kafka. Uses: feeding a data warehouse, maintaining search indexes and caches, the outbox pattern (Q137), and migrating between systems with dual-running.
+Debezium is the standard implementation, publishing to Kafka. Uses: feeding a data warehouse, maintaining search indexes and caches, the outbox pattern (Q136), and migrating between systems with dual-running.
 
 **Follow-up: What are the operational hazards?**
 The replication slot is the big one — if the consumer stops, WAL accumulates on the primary until the disk fills and the database stops. Always monitor slot lag and set `max_slot_wal_keep_size`. Also: schema changes flowing through as DDL events your consumers must tolerate, initial snapshot load on a huge table, and the fact that CDC exposes your internal schema as a public interface, which is exactly why the outbox pattern (publishing intentional events rather than raw table changes) is usually better than CDC-on-business-tables.
@@ -749,7 +749,7 @@ Data residency and regulatory isolation requirements — a Malaysian regulator r
 
 ### Q55. How do you keep a search index or cache in sync with the database?
 
-**Answer.** Never dual-write from the application — that's the same dual-write problem as messaging (Q122), and it silently diverges. Options:
+**Answer.** Never dual-write from the application — that's the same dual-write problem as messaging (Q136), and it silently diverges. Options:
 
 1. **Outbox + async projector** — the write transaction records an event; a consumer updates the index. Atomic with the write, at-least-once delivery, idempotent apply.
 2. **CDC** — Debezium tails the log and drives the projector. No application change, but couples the projection to the physical schema.
@@ -1234,7 +1234,7 @@ Long-running work holds an unacknowledged message the whole time. Check the cons
 3. **Publisher confirms** — the broker acks the publish once it's safely handled. Without this, `basicPublish` is fire-and-forget over TCP: the broker can be down and your publish "succeeds".
 4. **Consumer acknowledgement after processing**, not before.
 
-And the honest caveat: even with all four, a single broker's disk can die. Real durability needs replication — **quorum queues** (Q94), which replicate via Raft across nodes.
+And the honest caveat: even with all four, a single broker's disk can die. Real durability needs replication — **quorum queues** (Q91), which replicate via Raft across nodes.
 
 **Follow-up: Publisher confirms vs transactions?**
 AMQP transactions (`tx.select`/`tx.commit`) are synchronous and roughly 250× slower — they're effectively unusable at volume. Confirms are asynchronous: you publish continuously and handle `ack`/`nack` callbacks, tracking outstanding sequence numbers so you can republish on `nack` or on connection loss. That's the pattern to use. Note confirms are per-channel and asynchronous, so a naive "publish then wait for confirm" per message throws away the benefit.

@@ -83,7 +83,7 @@ Long-running work holds an unacknowledged message the whole time. Check the cons
 3. **Publisher confirms** — the broker acks the publish once it's safely handled. Without this, `basicPublish` is fire-and-forget over TCP: the broker can be down and your publish "succeeds".
 4. **Consumer acknowledgement after processing**, not before.
 
-And the honest caveat: even with all four, a single broker's disk can die. Real durability needs replication — **quorum queues** (Q94), which replicate via Raft across nodes.
+And the honest caveat: even with all four, a single broker's disk can die. Real durability needs replication — **quorum queues** (Q91), which replicate via Raft across nodes.
 
 <FollowUp q="Publisher confirms vs transactions?">
 

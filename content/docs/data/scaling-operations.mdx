@@ -177,7 +177,7 @@ Data residency and regulatory isolation requirements — a Malaysian regulator r
 
 <Question id="q55">
 
-**Answer.** Never dual-write from the application — that's the same dual-write problem as messaging (Q122), and it silently diverges. Options:
+**Answer.** Never dual-write from the application — that's the same dual-write problem as messaging (Q136), and it silently diverges. Options:
 
 1. **Outbox + async projector** — the write transaction records an event; a consumer updates the index. Atomic with the write, at-least-once delivery, idempotent apply.
 2. **CDC** — Debezium tails the log and drives the projector. No application change, but couples the projection to the physical schema.

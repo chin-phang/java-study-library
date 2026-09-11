@@ -23,9 +23,9 @@ The important part is **strategic**: identifying bounded contexts, mapping the r
 
 **Answer.** A boundary within which a model and its language are consistent. "Customer" means something different to billing (a payer with a payment method and a credit limit), to support (a person with a ticket history), and to fraud (a risk profile with device fingerprints). A bounded context is the scope within which one definition holds.
 
-Finding them: look for **linguistic seams** — the same word meaning different things, or different words meaning the same thing. Look at how the business is organised, because organisational boundaries usually reflect real ones (Conway's law, Q95). Run an **event storming** session: get domain experts to lay out domain events on a wall in time order, and the clusters and handoffs that emerge are strong candidates for context boundaries.
+Finding them: look for **linguistic seams** — the same word meaning different things, or different words meaning the same thing. Look at how the business is organised, because organisational boundaries usually reflect real ones (Conway's law, Q69). Run an **event storming** session: get domain experts to lay out domain events on a wall in time order, and the clusters and handoffs that emerge are strong candidates for context boundaries.
 
-**Why it matters.** Bounded contexts are the single best guide to microservice boundaries (Q87). A service that spans two contexts will have a confused model; two services inside one context will be permanently chatty and change together.
+**Why it matters.** Bounded contexts are the single best guide to microservice boundaries (Q63). A service that spans two contexts will have a confused model; two services inside one context will be permanently chatty and change together.
 
 <FollowUp q="Isn't one shared canonical model simpler?">
 
@@ -96,7 +96,7 @@ Without one, their concepts propagate: their field names, their status codes, th
 
 The implementation is unglamorous — an adapter (Q31) that maps their DTOs to your domain types and back, with the mapping logic isolated and tested. The value is that when they change, or you replace them, exactly one package changes.
 
-**Why it matters.** In fintech you integrate with a lot of systems you don't control and whose models you'd never choose. The ACL is what keeps your domain yours. It's also the pattern that makes the strangler fig (Q96) work.
+**Why it matters.** In fintech you integrate with a lot of systems you don't control and whose models you'd never choose. The ACL is what keeps your domain yours. It's also the pattern that makes the strangler fig (Q68) work.
 
 </Question>
 
