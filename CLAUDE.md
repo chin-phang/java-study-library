@@ -605,8 +605,64 @@ caused), and the reverse link on `design/oop-fundamentals#q4` was verified
 in the browser ("The model behind this answer: Coupling, Cohesion, and What
 Makes a Change Expensive"). It's in the sidebar after `aggregates`.
 
+**`escape-analysis`: converted 2026-09-12**, the thirteenth Core page taken
+to `content/docs/concepts/`, immediately after `coupling-and-cohesion` — the
+fourth of the second six drafts converted. Checked for staleness before
+converting, and one thing needed fixing: "Where to go deeper" and §7 both
+cited "JEP drafts for Project Valhalla's value classes" — vague even at draft
+time, and stale by conversion, since Valhalla now has a real, numbered JEP.
+Corrected both to **JEP 401: Value Classes and Objects (Preview)**, which
+had its first preview in JDK 25 and is now targeting **JDK 28** (March 2027,
+with early-access builds already at `jdk.java.net/valhalla`), plus its
+companion **JEP 539: Strict Field Initialization in the JVM**. Fixed in both
+`_source/escape-analysis.mdx` and the converted page, the same "state the
+current status rather than guess at a moving target" correction
+`virtual-threads` made for its own JEP references. Everything else in the
+draft — scalar replacement, lock elision, `FreqInlineSize`,
+`-XX:+PrintEscapeAnalysis`/`-XX:+PrintEliminateLocks`, the Choi/Gupta/Serrano
+citation — is stable JIT mechanics with no version exposure, so no other
+correction was needed.
+
+**A second fix, in the frontmatter, not the prose.** The draft's `unlocks`
+listed `lock-elision` alongside `performance-tuning`, `value-types` and
+`valhalla` — but lock elision is §4 *of this page*, not a page that comes
+next, the same mistake the JMM page's original `unlocks` made before it was
+corrected (see **`unlocks` — the pages that come next**). Dropped it.
+`value-types` and `valhalla` were also two slugs for one unwritten page —
+consolidated to `value-types`, matching the feature-named style every other
+Specialist slug uses rather than a project name. Final: `unlocks:
+[performance-tuning, value-types]`, fixed in both the draft and the
+converted page.
+
+`prerequisites: [jit, generational-gc]` resolves to two built foundational
+pages, no conversion-order issue. All four `questions:` anchors were checked
+against the built reference pages before writing: `java/jvm-memory-gc#q79`
+and `#q80` (JIT compilation and escape analysis itself), `java/concurrency#q58`
+(safe publication — a new claim, not previously held by any concept page),
+and `java/streams#q47`, which `stream-pipelines` had already flagged as
+"claimed three times over" if a third page took it — this is that third
+claim, fulfilling the prediction: `#q80` and `#q47` are now each claimed by
+three concept pages (`generational-gc`, `jit`, `escape-analysis`), the first
+time any question in the library has hit three. **Carries one diagram**,
+added at conversion time rather than present in the draft: a flowchart of
+the shared escape-analysis gate — inlined? escapes? — branching into scalar
+replacement and, independently, lock elision. Checked against the reference
+bank first: neither `java/jvm-memory-gc#q79` nor `#q80` carries a diagram of
+its own, both stop at prose, so this shows a mechanism the reference bank
+doesn't, per **Add a diagram only if it shows something the reference bank
+doesn't already** — a clean case like `persistence-context`'s and
+`coupling-and-cohesion`'s, not a link-don't-copy judgement. 8 self-check
+items, with `where` pointers written at conversion time, same discipline as
+the other converted Core pages. Both `pnpm types:check` and `pnpm build`
+pass; the diagram was verified in the browser at 375px (`viewBox="0 0
+621.9609375 1558"`, ≈55% rendered scale, no horizontal overflow, no "Syntax
+error" text), and the reverse link was verified on both `java/jvm-memory-gc#q80`
+(now listing all three claiming pages) and `java/concurrency#q58` (listing
+`escape-analysis` and `jmm`). It's in the sidebar after `jit`, ahead of
+`btrees-selectivity`.
+
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**thirteen of those fifteen also converted** into `content/docs/concepts/` —
+**fourteen of those fifteen also converted** into `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
 immediately after `cas-and-contention`, `cache-invalidation`
@@ -619,10 +675,11 @@ converted**, closing that batch out; six more
 followed the same day (`aggregates`, `backpressure`, `coupling-and-cohesion`,
 `escape-analysis`, `locking-and-deadlock`, `partitioning`). Of that second
 six, `aggregates` converted 2026-09-12 immediately after `persistence-context`,
-`backpressure` converted immediately after `aggregates`, and
-`coupling-and-cohesion` converted immediately after `backpressure` — three of
-the six taken to `content/docs/concepts/` so far; `escape-analysis`,
-`locking-and-deadlock` and `partitioning` remain drafted
+`backpressure` converted immediately after `aggregates`,
+`coupling-and-cohesion` converted immediately after `backpressure`, and
+`escape-analysis` converted immediately after `coupling-and-cohesion` — four
+of the six taken to `content/docs/concepts/` so far; `locking-and-deadlock`
+and `partitioning` remain drafted
 only. Three more were
 added the same day from the coverage audit below — `broker-semantics`,
 `stream-pipelines`, and `kafka-internals` promoted from Specialist — and all
@@ -814,7 +871,7 @@ underneath the table for the closed record.
 | `aggregates` | Aggregates as Consistency Boundaries | drafted, converted |
 | `backpressure` | Backpressure and the Unbounded Queue | drafted, converted |
 | `coupling-and-cohesion` | Coupling, Cohesion, and What Makes a Change Expensive | drafted, converted |
-| `escape-analysis` | Escape Analysis and When Allocation Disappears | drafted |
+| `escape-analysis` | Escape Analysis and When Allocation Disappears | drafted, converted |
 | `locking-and-deadlock` | Locking and Deadlock | drafted |
 | `partitioning` | Partitioning — One Idea in Five Systems | drafted |
 | `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | drafted, converted |
@@ -1014,15 +1071,15 @@ foundational, built; plus 15 core drafts — six now converted,
 `broker-semantics`, `kafka-internals`, `stream-pipelines` and, as of
 2026-09-12, `virtual-threads`, `cas-and-contention` and `isolation-levels` —
 plus `cache-invalidation`, `spring-proxy`, `persistence-context`,
-`aggregates`, `backpressure` and `coupling-and-cohesion`, all six converted
-the same day or the day after, for twelve in total).
+`aggregates`, `backpressure`, `coupling-and-cohesion` and `escape-analysis`,
+all seven converted the same day or the day after, for thirteen in total).
 **124 questions are claimed — 30%**, up from 119 (28%) before
 `stream-pipelines`, up from 114 (27%) before `kafka-internals`, up from 108
 (26%) before `broker-semantics`, and up from 93 (22%) before the second batch
 of six drafts. None of `virtual-threads`'s, `cas-and-contention`'s,
 `isolation-levels`'s, `cache-invalidation`'s, `spring-proxy`'s,
-`persistence-context`'s, `aggregates`'s, `backpressure`'s, nor
-`coupling-and-cohesion`'s conversion moves this
+`persistence-context`'s, `aggregates`'s, `backpressure`'s,
+`coupling-and-cohesion`'s, nor `escape-analysis`'s conversion moves this
 number — their `questions:` were already counted as drafts; converting a
 drafted page changes where a claim lives, not whether it's counted. The
 counts below in
@@ -1619,7 +1676,7 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
-**Concept pages add 17 more, so the library holds 36.** Of the thirteen
+**Concept pages add 18 more, so the library holds 37.** Of the thirteen
 foundational pages, **ten carry their own diagram** and **three link to a
 reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
 `java/jvm-memory-gc#q71`, `dependency-inversion` →
@@ -1687,9 +1744,16 @@ quadrant-chart type. Neither of the page's claimed reference anchors
 (`design/oop-fundamentals#q4`, `design/solid-principles#q24`) carries a
 diagram of its own, so nothing existed to link to; this is a clean **Add a
 diagram only if it shows something the reference bank doesn't already** case
-like `persistence-context`'s, not a link-don't-copy judgement.
+like `persistence-context`'s, not a link-don't-copy judgement. **`escape-analysis`
+adds the eighteenth** — converted immediately after `coupling-and-cohesion` —
+a flowchart of the shared escape gate branching into scalar replacement and
+lock elision. Neither of its two escape-analysis-specific reference anchors
+(`java/jvm-memory-gc#q79`, `#q80`) carries a diagram of its own — both stop
+at prose — so nothing existed to link to; another clean **Add a diagram only
+if it shows something the reference bank doesn't already** case, not a
+link-don't-copy judgement.
 
-**Phone-readability, measured on all eleven at 375px.** None overflows; the
+**Phone-readability, measured on all twelve at 375px.** None overflows; the
 page body never scrolls horizontally. Rendered scale, worst first:
 
 | Scale | Page | Shape |
@@ -1698,7 +1762,7 @@ page body never scrolls horizontally. Rendered scale, worst first:
 | 50% | `persistence-context` | linear chain with one two-way fan-out and a loop-back |
 | 52% | `btrees-selectivity` | three-sibling fan-out, landscape |
 | 53% | `hashmap`, `idempotency` | three-way fan-out |
-| 55% | `mvcc` | |
+| 55% | `mvcc`, `escape-analysis` | |
 | 58% | `broker-semantics`, `kafka-internals` (rebalance diagram) | two-branch fork, one loop-back decision diamond |
 | 59% | `the-log` | |
 | 61% | `jit` | |
@@ -1778,18 +1842,18 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **55 pages** (30 reference + 25
+Content first — and the content now exists: **56 pages** (30 reference + 26
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
-`persistence-context`, `aggregates`, `backpressure` and
-`coupling-and-cohesion`, the twelve converted
+`persistence-context`, `aggregates`, `backpressure`,
+`coupling-and-cohesion` and `escape-analysis`, the thirteen converted
 Core pages so far), 419 questions,
-**36 diagrams**
+**37 diagrams**
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
-instead), 193 self-check items.
+instead), 201 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 

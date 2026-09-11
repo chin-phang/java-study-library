@@ -108,6 +108,25 @@ This is a genuine argument against manually "optimising away" synchronisation
 on objects you're confident are thread-confined: the compiler may already have
 done it, correctly, with a formal proof rather than your confidence.
 
+Both techniques share one gate — the object must first be proven not to
+escape — and then apply independently:
+
+```mermaid
+flowchart TD
+  A["Allocation inside a hot method"] --> B{"Inlined into one compilation unit?"}
+  B -- no --> Z["Real allocation"]
+  B -- yes --> C{"Reference escapes the unit?"}
+  C -- "global or argument escape" --> Z
+  C -- "no escape" --> D["Scalar replacement: fields become locals"]
+  D --> E{"Object was synchronized on?"}
+  E -- no --> F["No allocation, nothing to lock"]
+  E -- yes --> G["Lock elision: monitor ops removed"]
+  G --> F
+```
+
+Neither `java/jvm-memory-gc#q79` nor `#q80` draws this — both stop at prose —
+so this is new, not a copy.
+
 ## 5. Why it's fragile — and why that matters more than the mechanism
 
 Both optimisations depend on a chain of preconditions, and each one is a place
@@ -332,18 +351,61 @@ that argument precisely.
 
 ## 11. Self-check
 
-1. Define the three escape states and say which are eligible for optimisation.
-2. What is scalar replacement, concretely — what does the compiled code look
-   like for an object that qualifies?
-3. Why can a `synchronized` block on a local object be removed entirely, and
-   what proof does the compiler have that makes it safe?
-4. An allocation shows zero cost in JMH today and non-zero after a refactor
-   that added no new allocation sites. Explain how that's possible.
-5. Why does passing an object to a `Blackhole` change whether it allocates?
-6. A method is just below `FreqInlineSize` and gets inlined; a teammate adds a
-   log statement and it's no longer inlined. What happens to escape analysis
-   for objects inside it?
-7. Someone proposes replacing a small immutable value object with primitive
-   parameters "to reduce allocation." What would you ask for before agreeing?
-8. Why is "I optimised away the lock because I know this object is
-   thread-confined" sometimes a correctness bug rather than a performance win?
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 What escapes means.">
+
+Define the three escape states and say which are eligible for optimisation.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§3 Scalar replacement: deleting the object.">
+
+What is scalar replacement, concretely — what does the compiled code look
+like for an object that qualifies?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§4 Lock elision: deleting the synchronisation.">
+
+Why can a `synchronized` block on a local object be removed entirely, and
+what proof does the compiler have that makes it safe?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§5 Why it's fragile — the profile staying stable.">
+
+An allocation shows zero cost in JMH today and non-zero after a refactor
+that added no new allocation sites. Explain how that's possible.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§5 Why it's fragile — it doesn't apply if the object is stored anywhere.">
+
+Why does passing an object to a `Blackhole` change whether it allocates?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§5 Why it's fragile — it depends on inlining succeeding.">
+
+A method is just below `FreqInlineSize` and gets inlined; a teammate adds a
+log statement and it's no longer inlined. What happens to escape analysis
+for objects inside it?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§6 The design implication.">
+
+Someone proposes replacing a small immutable value object with primitive
+parameters "to reduce allocation." What would you ask for before agreeing?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§9 Leading on this — the JMM symmetry point.">
+
+Why is "I optimised away the lock because I know this object is
+thread-confined" sometimes a correctness bug rather than a performance win?
+
+</SelfCheckItem>
+
+</SelfCheck>
