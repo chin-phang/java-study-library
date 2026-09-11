@@ -487,8 +487,9 @@ The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**four of those fifteen also converted** into `content/docs/concepts/` — three
-the same day the drafts landed, `virtual-threads` on 2026-09-12. Six were the
+**five of those fifteen also converted** into `content/docs/concepts/` — three
+the same day the drafts landed, `virtual-threads` on 2026-09-12, and
+`cas-and-contention` the same day as `virtual-threads`. Six were the
 first batch (`virtual-threads`, `cas-and-contention`, `isolation-levels`,
 `cache-invalidation`, `spring-proxy`, `persistence-context`); six more
 followed the same day (`aggregates`, `backpressure`, `coupling-and-cohesion`,
@@ -530,16 +531,40 @@ now lists two claiming pages (`thread-pools`, `virtual-threads`) — the second
 verified case of a question claimed by two concept pages, after
 `java/jvm-memory-gc#q80` and `java/streams#q47`.
 
+**`cas-and-contention`: converted 2026-09-12**, the fifth Core page taken to
+`content/docs/concepts/`, immediately after `virtual-threads`. The draft
+needed no currency fix — unlike `virtual-threads`'s JEP references, nothing
+in it (CAS, MESI, `LongAdder`/`Striped64`, `@Contended`,
+`AtomicStampedReference`, `perf c2c`) is version-pinned, so it converted as
+written. `prerequisites: [jmm]` resolves to a built page. All five
+`questions:` anchors (`java/concurrency#q51`, `#q49`, `#q50`, `#q59`,
+`#q67`) were checked against `content/docs/java/concurrency.mdx` before
+writing — none of Q49–51/59/67 carries a diagram there, and none is on the
+reference-bank target-19 list, so a diagram was permitted by **Add a diagram
+only if it shows something the reference bank doesn't already**. **Carries no
+diagram**: the mechanism (cache-line ping-pong, MESI states, the cost table)
+is already fully carried by prose and the two tables in §2–3, matching this
+page's own draft audit above (**"none carries a diagram"**) rather than
+`virtual-threads`'s exception. `java/concurrency#q49` is now claimed by both
+`jmm` and `cas-and-contention` — the third verified case of a question
+claimed by two concept pages, after `java/jvm-memory-gc#q80` /
+`java/streams#q47` and `java/concurrency#q62`. 8 self-check items, with
+`where` pointers written at conversion time, same discipline as the other
+converted Core pages. Both `pnpm types:check` and `pnpm build` pass, and it's
+in the sidebar between `jmm` and `thread-pools`. **This conversion also
+resolved the `cas`/`deadlock` slug collision** — see the closed note under
+**Two more slug collisions** below.
+
 Titles below are the drafts' own where a draft exists, and the placeholder
 otherwise; as with the foundational tier, **where a draft and this table
-disagreed, the draft won** — which is why two rows below no longer match the
-slugs this table originally fixed. See **Two more slug collisions** underneath
-the table, and **the `cas` slug** further down for the first one of these.
+disagreed, the draft won**, which is why the slug collision below existed
+until `cas-and-contention` converted. See **Two more slug collisions**
+underneath the table for the closed record.
 
 | `concept:` | Page | Draft |
 |---|---|---|
 | `virtual-threads` | Virtual Threads — Continuations, Mounting, and Pinning | drafted, converted |
-| `cas-and-contention` | CAS, Contention, and Lock-Free Structures | drafted |
+| `cas-and-contention` | CAS, Contention, and Lock-Free Structures | drafted, converted |
 | `isolation-levels` | Isolation Levels and the Anomalies They Permit | drafted |
 | `cache-invalidation` | Cache Invalidation and the Races in Each Ordering | drafted |
 | `spring-proxy` | The Proxy Boundary in Spring | drafted |
@@ -562,36 +587,30 @@ the table, and **the `cas` slug** further down for the first one of these.
 
 ### Two more slug collisions
 
-Same shape as the `cas` collision below, found the same way — this table fixed
-a slug before the draft existed, and the draft's author picked a different one:
+Same shape as the `cas` collision, found the same way — this table fixed a
+slug before the draft existed, and the draft's author picked a different one:
 
 - **`coupling-cohesion` → `coupling-and-cohesion`.** No page's `unlocks`
   reference the old spelling yet, so nothing dangles — this is a table-only
   fix, already applied above.
-- **`deadlock` → `locking-and-deadlock`.** `content/docs/concepts/jmm.mdx`
-  declares `unlocks: [cas, deadlock, virtual-threads]`, so `deadlock` has the
-  same problem `cas` does — see **the `cas` slug** below, which now covers
-  both. Resolve both together when `jmm` is next touched: either edit its
-  `unlocks` to `[cas-and-contention, locking-and-deadlock, virtual-threads]`
-  (diverges `jmm` from its `_source` draft, so record it the way the
-  `hashmap` line repair was recorded) or rename both drafts' slugs to match
-  `jmm`'s original spelling. The user's call; do not pick one silently.
+- **`deadlock` → `locking-and-deadlock`.** Was the same problem as `cas`
+  below; closed the same way, the same day. See the closed note immediately
+  below.
 
-**The `cas` slug changed to `cas-and-contention`, and one edge is now
-mis-spelled — and as of the second batch, so is `deadlock` (see **Two more
-slug collisions** above).** `content/docs/concepts/jmm.mdx` declares
-`unlocks: [cas, deadlock, virtual-threads]`, written before either draft
-existed. Neither `cas` nor `deadlock` will ever resolve, while the real pages
-declare `prerequisites: [jmm]` — so the graph gets both jmm→X edges from one
-direction and two permanent dangling promises from the other. Nothing breaks
-(a dangling `unlocks` is legal by design), but it is the "second spelling"
-this table exists to prevent, now twice over. **Resolve both before
-converting `cas-and-contention` or `locking-and-deadlock`**: either edit
-`jmm`'s `unlocks` to `[cas-and-contention, locking-and-deadlock,
-virtual-threads]`, which diverges the page from
-`_source/java-memory-model-concept-page.md` and so needs the same deliberate
-recording as the `hashmap` link repair, or rename both drafts' slugs to match
-`jmm`'s original spelling. The user's call; do not pick one silently.
+**Closed 2026-09-12, at `cas-and-contention`'s conversion.** Before this,
+`content/docs/concepts/jmm.mdx` declared `unlocks: [cas, deadlock,
+virtual-threads]` — written before either draft existed, so neither slug
+would ever have resolved once the real pages landed as `cas-and-contention`
+and `locking-and-deadlock`. The user's call (asked directly, not picked
+silently): **edit `jmm`'s `unlocks`** to `[cas-and-contention,
+locking-and-deadlock, virtual-threads]`, rather than rename the drafts. This
+diverges `content/docs/concepts/jmm.mdx` from
+`_source/java-memory-model-concept-page.md` by that one frontmatter line —
+`_source` still reads `unlocks: [cas, deadlock, virtual-threads]`, left
+alone, the same deliberate divergence pattern as the `hashmap` line repair
+below. `jmm → cas-and-contention` is now a real, resolving edge; `jmm →
+locking-and-deadlock` still dangles by design until that page converts, same
+as any other `unlocks` target that's drafted but not yet built.
 
 **Audit of the first six drafts** (2026-09-11, measured, the same pass the
 foundational drafts got before conversion): no stray H1s, **zero MDX
@@ -728,15 +747,15 @@ gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
 ### Coverage audit — which banks still have no concept page
 
 Measured 2026-09-11 across all 419 questions and all 28 concept pages (13
-foundational, built; plus 15 core drafts — four now converted,
+foundational, built; plus 15 core drafts — five now converted,
 `broker-semantics`, `kafka-internals`, `stream-pipelines` and, as of
-2026-09-12, `virtual-threads`). **124 questions are claimed — 30%**, up from
-119 (28%) before `stream-pipelines`, up from 114 (27%) before
-`kafka-internals`, up from 108 (26%) before `broker-semantics`, and up from
-93 (22%) before the second batch of six drafts. `virtual-threads`'s
-conversion does not move this number — its `questions:` were already counted
-as a draft; converting a drafted page changes where a claim lives, not
-whether it's counted. The counts below in
+2026-09-12, `virtual-threads` and `cas-and-contention`). **124 questions are
+claimed — 30%**, up from 119 (28%) before `stream-pipelines`, up from 114
+(27%) before `kafka-internals`, up from 108 (26%) before `broker-semantics`,
+and up from 93 (22%) before the second batch of six drafts. Neither
+`virtual-threads`'s nor `cas-and-contention`'s conversion moves this number —
+their `questions:` were already counted as drafts; converting a drafted page
+changes where a claim lives, not whether it's counted. The counts below in
 **Everything else large is already planned** are the ones that move —
 `coupling-and-cohesion` takes one question each off `oop-fundamentals`,
 `solid-principles`, `architecture-styles` and `microservices-boundaries`;
@@ -1436,22 +1455,24 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **47 pages** (30 reference + 17
+Content first — and the content now exists: **48 pages** (30 reference + 18
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
-`stream-pipelines` and `virtual-threads`, the four converted Core pages so
-far), 419 questions, **34 diagrams**, 129 self-check items.
+`stream-pipelines`, `virtual-threads` and `cas-and-contention`, the five
+converted Core pages so far), 419 questions, **34 diagrams**, 137 self-check
+items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has seventeen real
+- Concept dependency graph as a study path — **now has eighteen real
   nodes.** Read **The dependency graph — settled conventions** before
-  starting: nine roots (eight foundational plus `stream-pipelines`), nine
-  resolving `prerequisites` edges, and a large majority of `unlocks` targets
-  pointing at unwritten specialist pages. Tolerating
-  dangling `unlocks` is a day-one requirement, not an edge case.
+  starting: nine roots (eight foundational plus `stream-pipelines`), ten
+  resolving `prerequisites` edges (`jmm → cas-and-contention` is the newest),
+  and a large majority of `unlocks` targets pointing at unwritten specialist
+  pages. Tolerating dangling `unlocks` is a day-one requirement, not an edge
+  case.
 - ~~Self-check questions collapsed by default~~ — built, see **The Question component**
 
 Out of scope: accounts, sync, spaced-repetition scheduling, a backend.
