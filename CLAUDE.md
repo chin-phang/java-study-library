@@ -487,14 +487,15 @@ The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**seven of those fifteen also converted** into `content/docs/concepts/` —
+**eight of those fifteen also converted** into `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
-immediately after `cas-and-contention`, and `cache-invalidation`
-immediately after `isolation-levels`, all four same day. Six were the
+immediately after `cas-and-contention`, `cache-invalidation`
+immediately after `isolation-levels`, and `spring-proxy` immediately after
+`cache-invalidation`, all five same day. Six were the
 first batch (`virtual-threads`, `cas-and-contention`, `isolation-levels`,
-`cache-invalidation`, `spring-proxy`, `persistence-context`) — now four of
-those six converted, `spring-proxy` and `persistence-context` still only
+`cache-invalidation`, `spring-proxy`, `persistence-context`) — now five of
+those six converted, `persistence-context` still only
 drafted; six more
 followed the same day (`aggregates`, `backpressure`, `coupling-and-cohesion`,
 `escape-analysis`, `locking-and-deadlock`, `partitioning`). Three more were
@@ -608,6 +609,34 @@ discipline as the other converted Core pages. Both `pnpm types:check` and
 `pnpm build` pass, and it's in the sidebar between `the-log` and
 `broker-semantics`.
 
+**`spring-proxy`: converted 2026-09-12**, the eighth Core page taken to
+`content/docs/concepts/`, immediately after `cache-invalidation`, and the
+first conversion pass whose only content change is a diagram-avoidance
+sentence rather than a currency fix — checked for staleness anyway (the
+mechanism is version-agnostic: bean post-processing, JDK-vs-CGLIB proxying,
+self-invocation, `TransactionTemplate`, AspectJ weaving, and Spring AOT
+computing proxies at build time for GraalVM native images), and confirmed
+current against the Spring Framework 7 reference docs and Spring Boot 4 AOT
+documentation — CGLIB-by-default (`proxyTargetClass=true`), the
+`postProcessAfterInitialization` proxy-creation step, and build-time proxy
+generation under native-image are all unchanged. `prerequisites:
+[dependency-inversion]` resolves to a built foundational page, no
+conversion-order issue. All five `questions:` anchors (`java/spring#q99`,
+`#q100`, `#q101`, `#q102`, `#q110`) were checked against
+`content/docs/java/spring.mdx` before writing. **Carries no diagram of its
+own** — `java/spring#q101` already draws the exact caller→proxy→target
+boundary and self-invocation bypass this page's §2 explains, so per **A
+concept page links to a reference diagram, it does not copy it** the draft's
+plain-text ASCII box stays as scaffolding and a linking sentence was added
+pointing at Q101's diagram instead of drawing a new one — the fourth
+Core-tier "link, don't copy" case after `isolation-levels`, and it adds
+nothing to the diagram count. 8 self-check items, with `where` pointers
+written at conversion time, same discipline as the other converted Core
+pages. Both `pnpm types:check` and `pnpm build` pass, and the reverse link
+on `java/spring#q101` was verified in the browser ("The model behind this
+answer: The Proxy Boundary in Spring"). It's in the sidebar after
+`dependency-inversion`.
+
 Titles below are the drafts' own where a draft exists, and the placeholder
 otherwise; as with the foundational tier, **where a draft and this table
 disagreed, the draft won**, which is why the slug collision below existed
@@ -620,7 +649,7 @@ underneath the table for the closed record.
 | `cas-and-contention` | CAS, Contention, and Lock-Free Structures | drafted, converted |
 | `isolation-levels` | Isolation Levels and the Anomalies They Permit | drafted, converted |
 | `cache-invalidation` | Cache Invalidation and the Races in Each Ordering | drafted, converted |
-| `spring-proxy` | The Proxy Boundary in Spring | drafted |
+| `spring-proxy` | The Proxy Boundary in Spring | drafted, converted |
 | `persistence-context` | The Persistence Context and Dirty Checking | drafted |
 | `aggregates` | Aggregates as Consistency Boundaries | drafted |
 | `backpressure` | Backpressure and the Unbounded Queue | drafted |
@@ -812,12 +841,15 @@ gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
 Measured 2026-09-11 across all 419 questions and all 28 concept pages (13
 foundational, built; plus 15 core drafts — six now converted,
 `broker-semantics`, `kafka-internals`, `stream-pipelines` and, as of
-2026-09-12, `virtual-threads`, `cas-and-contention` and `isolation-levels`).
+2026-09-12, `virtual-threads`, `cas-and-contention` and `isolation-levels` —
+plus `cache-invalidation` and `spring-proxy`, converted the same day, for
+eight in total).
 **124 questions are claimed — 30%**, up from 119 (28%) before
 `stream-pipelines`, up from 114 (27%) before `kafka-internals`, up from 108
 (26%) before `broker-semantics`, and up from 93 (22%) before the second batch
 of six drafts. Neither `virtual-threads`'s, `cas-and-contention`'s,
-`isolation-levels`'s, nor `cache-invalidation`'s conversion moves this
+`isolation-levels`'s, `cache-invalidation`'s, nor `spring-proxy`'s conversion
+moves this
 number — their `questions:` were already counted as drafts; converting a
 drafted page changes where a claim lives, not whether it's counted. The
 counts below in
@@ -1445,7 +1477,15 @@ converted immediately after `cas-and-contention`, same day — and, like
 interleaving it uses as its canonical example (doctors on call) is already
 drawn as a `sequenceDiagram` on `data/transactions-mvcc#q32`, so §2 adds one
 linking sentence rather than a redrawn diagram, the same judgement `jmm` and
-`virtual-threads` made for their own borrowed pictures.
+`virtual-threads` made for their own borrowed pictures. `cache-invalidation`
+carries no diagram either, converted immediately after. **`spring-proxy` is
+the fourth Core-tier "link, don't copy" case** — converted immediately
+after `cache-invalidation`, same day — and also **adds nothing to the
+count**: the caller→proxy→target boundary and self-invocation bypass it
+explains in §2 is already drawn on `java/spring#q101`, so §2 keeps its
+plain-text ASCII sketch as scaffolding and adds one linking sentence to
+Q101's diagram, the same judgement `jmm`, `virtual-threads` and
+`isolation-levels` made for their own borrowed pictures.
 
 **Phone-readability, measured on all ten at 375px.** None overflows; the page
 body never scrolls horizontally. Rendered scale, worst first:
@@ -1528,12 +1568,13 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **50 pages** (30 reference + 20
+Content first — and the content now exists: **51 pages** (30 reference + 21
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
-`isolation-levels` and `cache-invalidation`, the seven converted Core pages
-so far), 419 questions, **34 diagrams** (`cache-invalidation` carries none),
-153 self-check items.
+`isolation-levels`, `cache-invalidation` and `spring-proxy`, the eight
+converted Core pages so far), 419 questions, **34 diagrams**
+(`cache-invalidation` and `spring-proxy` carry none — `spring-proxy` links
+to `java/spring#q101` instead), 161 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 

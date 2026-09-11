@@ -351,16 +351,61 @@ the context and asserts rollback behaviour is the only thing that catches it.
 
 ## 9. Self-check
 
-1. Explain why `@Transactional(REQUIRES_NEW)` on an internally-called method
-   silently does nothing. Say what object the call actually reaches.
-2. Why can't CGLIB proxy a `final` method? Derive the answer from the
-   mechanism rather than recalling the rule.
-3. Why doesn't `@Transactional` work in `@PostConstruct`? Which lifecycle step
-   is the reason?
-4. Give four fixes for self-invocation and rank them, with reasoning.
-5. Your method catches an exception, logs it, and returns normally. What does
-   the transaction do, and why?
-6. `@PreAuthorize` on an internally-called method — describe the security
-   consequence and why no test caught it.
-7. Why does a plain unit test pass while the production behaviour is wrong?
-8. What would AspectJ weaving change, and what does it cost?
+Answer these without looking. If you can't, re-read the relevant section.
+
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 Spring annotations are not language features.">
+
+Explain why `@Transactional(REQUIRES_NEW)` on an internally-called method
+silently does nothing. Say what object the call actually reaches.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§2 Two proxy flavours.">
+
+Why can't CGLIB proxy a `final` method? Derive the answer from the
+mechanism rather than recalling the rule.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§4 What else the boundary explains — `@Transactional` on `@PostConstruct` does nothing.">
+
+Why doesn't `@Transactional` work in `@PostConstruct`? Which lifecycle step
+is the reason?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§3 Fixes, in order of preference.">
+
+Give four fixes for self-invocation and rank them, with reasoning.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§4 What else the boundary explains — checked exceptions don't roll back by default.">
+
+Your method catches an exception, logs it, and returns normally. What does
+the transaction do, and why?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§4 What else the boundary explains — your test passes and production doesn't; §6 Lab 5.">
+
+`@PreAuthorize` on an internally-called method — describe the security
+consequence and why no test caught it.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§4 What else the boundary explains — your test passes and production doesn't.">
+
+Why does a plain unit test pass while the production behaviour is wrong?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§3 Why self-invocation is the way it is.">
+
+What would AspectJ weaving change, and what does it cost?
+
+</SelfCheckItem>
+
+</SelfCheck>
