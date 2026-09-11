@@ -265,6 +265,18 @@ nineteen nodes when converted, adding the edges `cas-and-contention → jmm`
 library between two *core* pages. Until they convert, the measurements below
 describe the graph as built.
 
+**A second six core drafts joined them the same day**, adding
+`backpressure → thread-pools`, `coupling-and-cohesion → dependency-inversion`,
+`escape-analysis → jit` and `→ generational-gc`, `aggregates →
+bounded-contexts` and `→ isolation-levels`, `locking-and-deadlock →
+isolation-levels`, and `partitioning → hashmap` and `→ cas-and-contention`.
+Three of those six edges (`aggregates` and `locking-and-deadlock` →
+`isolation-levels`, `partitioning` → `cas-and-contention`) resolve to a page
+from the *first* batch, not yet converted either — so the eventual node count
+is twenty-five, not nineteen, and converting `isolation-levels` and
+`cas-and-contention` first (as **Sessions 10+** already requires) avoids ever
+leaving those three edges dangling mid-conversion.
+
 **The graph has thirteen real nodes to draw** (2026-09-11). Measured across
 all thirteen converted pages: **no dangling `prerequisites`** — eight are
 legitimate roots (`prerequisites: []`) and the five resolving edges are
@@ -424,16 +436,21 @@ runtime, then data, then distributed and design:
 The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
-**Core** — **six of twenty-one drafted** in `_source/` as of 2026-09-11, none
-converted yet. Eight are named by a foundational page's `unlocks`, so the graph
-reaches them: `query-planning`, `partitioning`, `escape-analysis`,
-`isolation-levels`, `virtual-threads`, `backpressure`, `cas`, `deadlock`. Three
-were added on 2026-09-11 from the coverage audit below — `broker-semantics`,
-`stream-pipelines`, and `kafka-internals` promoted from Specialist.
+**Core** — **twelve of twenty-one drafted** in `_source/` as of 2026-09-11, none
+converted yet. Six were the first batch (`virtual-threads`,
+`cas-and-contention`, `isolation-levels`, `cache-invalidation`, `spring-proxy`,
+`persistence-context`); six more followed the same day (`aggregates`,
+`backpressure`, `coupling-and-cohesion`, `escape-analysis`,
+`locking-and-deadlock`, `partitioning`). `query-planning`, `class-loading` and
+`consistency-models` remain undrafted. Three were added on 2026-09-11 from the
+coverage audit below — `broker-semantics`, `stream-pipelines`, and
+`kafka-internals` promoted from Specialist.
 
 Titles below are the drafts' own where a draft exists, and the placeholder
 otherwise; as with the foundational tier, **where a draft and this table
-disagreed, the draft won**.
+disagreed, the draft won** — which is why two rows below no longer match the
+slugs this table originally fixed. See **Two more slug collisions** underneath
+the table, and **the `cas` slug** further down for the first one of these.
 
 | `concept:` | Page | Draft |
 |---|---|---|
@@ -443,44 +460,64 @@ disagreed, the draft won**.
 | `cache-invalidation` | Cache Invalidation and the Races in Each Ordering | drafted |
 | `spring-proxy` | The Proxy Boundary in Spring | drafted |
 | `persistence-context` | The Persistence Context and Dirty Checking | drafted |
+| `aggregates` | Aggregates as Consistency Boundaries | drafted |
+| `backpressure` | Backpressure and the Unbounded Queue | drafted |
+| `coupling-and-cohesion` | Coupling, Cohesion, and What Makes a Change Expensive | drafted |
+| `escape-analysis` | Escape Analysis and When Allocation Disappears | drafted |
+| `locking-and-deadlock` | Locking and Deadlock | drafted |
+| `partitioning` | Partitioning — One Idea in Five Systems | drafted |
 | `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | |
 | `kafka-internals` | Partitions, consumer groups, ISR and the high watermark | |
 | `stream-pipelines` | Stream pipelines — laziness, fusion and parallel decomposition | |
-| `escape-analysis` | Escape analysis and when allocation disappears | |
 | `class-loading` | Class loading and classloader leaks | |
 | `query-planning` | Query planning and cardinality estimation | |
-| `deadlock` | Locking, deadlock and lock ordering | |
-| `partitioning` | Partitioning as one idea across four systems | |
-| `backpressure` | Backpressure and the unbounded-queue failure mode | |
 | `consistency-models` | Consistency models and choosing per operation | |
-| `aggregates` | Aggregates as consistency boundaries | |
-| `coupling-cohesion` | Coupling, cohesion and what makes a change expensive | |
 | `expression-problem` | The expression problem: polymorphism vs pattern matching | |
 | `conways-law` | Conway's law and the inverse manoeuvre | |
 | `microservices-org` | Why microservices are an organisational answer | |
 
-**The `cas` slug changed to `cas-and-contention`, and one edge is now
-mis-spelled.** `content/docs/concepts/jmm.mdx` declares
-`unlocks: [cas, deadlock, virtual-threads]`, written before the draft existed.
-`cas` will now never resolve, while the real page declares
-`prerequisites: [jmm]` — so the graph gets the jmm→CAS edge from one direction
-and a permanent dangling promise from the other. Nothing breaks (a dangling
-`unlocks` is legal by design), but it is the "second spelling" this table exists
-to prevent. **Resolve it before converting `cas-and-contention`**: either edit
-`jmm`'s `unlocks` to `cas-and-contention`, which diverges the page from
-`_source/java-memory-model-concept-page.md` and so needs the same deliberate
-recording as the `hashmap` link repair, or rename the draft's slug to `cas`.
-The user's call; do not pick one silently.
+### Two more slug collisions
 
-**Audit of the six drafts** (2026-09-11, measured, the same pass the foundational
-drafts got before conversion): no stray H1s, **zero MDX hazards**, every internal
-link carrying its `/docs` prefix and resolving, all 30 `questions:` anchors
-valid, and **no dangling `prerequisites`** — `the-log`, `jmm`, `mvcc`,
-`dependency-inversion`, `thread-pools`, `jvm-memory` are all written, and
-`persistence-context` depends on `spring-proxy`, which is in the same batch.
-Each is 9–11 sections, 2,000–2,700 words, 8 self-check items, and **none carries
-a diagram**. Every `unlocks` target is a specialist page that does not exist,
-which is normal.
+Same shape as the `cas` collision below, found the same way — this table fixed
+a slug before the draft existed, and the draft's author picked a different one:
+
+- **`coupling-cohesion` → `coupling-and-cohesion`.** No page's `unlocks`
+  reference the old spelling yet, so nothing dangles — this is a table-only
+  fix, already applied above.
+- **`deadlock` → `locking-and-deadlock`.** `content/docs/concepts/jmm.mdx`
+  declares `unlocks: [cas, deadlock, virtual-threads]`, so `deadlock` has the
+  same problem `cas` does — see **the `cas` slug** below, which now covers
+  both. Resolve both together when `jmm` is next touched: either edit its
+  `unlocks` to `[cas-and-contention, locking-and-deadlock, virtual-threads]`
+  (diverges `jmm` from its `_source` draft, so record it the way the
+  `hashmap` line repair was recorded) or rename both drafts' slugs to match
+  `jmm`'s original spelling. The user's call; do not pick one silently.
+
+**The `cas` slug changed to `cas-and-contention`, and one edge is now
+mis-spelled — and as of the second batch, so is `deadlock` (see **Two more
+slug collisions** above).** `content/docs/concepts/jmm.mdx` declares
+`unlocks: [cas, deadlock, virtual-threads]`, written before either draft
+existed. Neither `cas` nor `deadlock` will ever resolve, while the real pages
+declare `prerequisites: [jmm]` — so the graph gets both jmm→X edges from one
+direction and two permanent dangling promises from the other. Nothing breaks
+(a dangling `unlocks` is legal by design), but it is the "second spelling"
+this table exists to prevent, now twice over. **Resolve both before
+converting `cas-and-contention` or `locking-and-deadlock`**: either edit
+`jmm`'s `unlocks` to `[cas-and-contention, locking-and-deadlock,
+virtual-threads]`, which diverges the page from
+`_source/java-memory-model-concept-page.md` and so needs the same deliberate
+recording as the `hashmap` link repair, or rename both drafts' slugs to match
+`jmm`'s original spelling. The user's call; do not pick one silently.
+
+**Audit of the first six drafts** (2026-09-11, measured, the same pass the
+foundational drafts got before conversion): no stray H1s, **zero MDX
+hazards**, every internal link carrying its `/docs` prefix and resolving, all
+30 `questions:` anchors valid, and **no dangling `prerequisites`** —
+`the-log`, `jmm`, `mvcc`, `dependency-inversion`, `thread-pools`,
+`jvm-memory` are all written, and `persistence-context` depends on
+`spring-proxy`, which is in the same batch. Each is 9–11 sections, 2,000–2,700
+words, 8 self-check items, and **none carries a diagram**. Every `unlocks`
+target is a specialist page that does not exist, which is normal.
 
 Two currency items carried into these drafts, both the same as the ones fixed
 across the corpus on 2026-09-11 — flagged, deliberately **not** edited, because
@@ -493,6 +530,29 @@ they are the user's fresh prose:
   the pinning timeline correctly and names JEP 491 explicitly.
 - `cache-invalidation.mdx` and `isolation-levels.mdx` pin `postgres:17` in their
   labs; the other four Postgres labs were moved to `postgres:18`.
+
+**Audit of the second six drafts** (`aggregates`, `backpressure`,
+`coupling-and-cohesion`, `escape-analysis`, `locking-and-deadlock`,
+`partitioning`; 2026-09-11, same method): no stray H1s, zero MDX hazards,
+every internal link carrying its `/docs` prefix, and all `questions:` anchors
+valid across the six. 10–12 sections, 2,200–2,600 words, 8 self-check items
+each, none carries a diagram — one section longer on average than the first
+batch, still inside the 9–11-section pattern's tolerance.
+
+**`prerequisites` resolution is mixed, unlike the first batch.** Three resolve
+to *built* pages: `backpressure` → `thread-pools`,
+`coupling-and-cohesion` → `dependency-inversion`, `escape-analysis` →
+`jit` + `generational-gc`. Three resolve only to *drafted, unconverted* pages
+from the first batch: `aggregates` → `isolation-levels` (and → `bounded-contexts`,
+built), `locking-and-deadlock` → `isolation-levels`, `partitioning` →
+`cas-and-contention` (and → `hashmap`, built). This is the `persistence-context`
+→ `spring-proxy` situation from the first batch, generalised: not a dangling
+edge by the library's definition (`prerequisites` names a written page, and a
+draft in `_source/` is written prose, just not yet converted), but it does fix
+a **conversion order**. Convert `isolation-levels` before `aggregates` or
+`locking-and-deadlock`, and `cas-and-contention` before `partitioning` — same
+rule as `spring-proxy` before `persistence-context`, now with three more pages
+depending on it.
 
 **Specialist** — 40 slugs, every one promised by a foundational page's
 `unlocks` and none of them written or planned. (`kafka-internals` was here until
@@ -518,8 +578,14 @@ gotchas**.
 
 ### Coverage audit — which banks still have no concept page
 
-Measured 2026-09-11 across all 419 questions and all 19 concept pages (13 built
-plus the 6 core drafts). **93 questions are claimed — 22%.**
+Measured 2026-09-11 across all 419 questions and all 25 concept pages (13 built
+plus 12 core drafts). **108 questions are claimed — 26%**, up from 93 (22%)
+before the second batch of six drafts. The counts below in **Everything else
+large is already planned** are the ones that move — `coupling-and-cohesion`
+takes one question each off `oop-fundamentals`, `solid-principles`,
+`architecture-styles` and `microservices-boundaries`; `partitioning` takes one
+off `collections`, two off `scaling-operations`, and one each off `kafka` and
+`redis-caching`.
 
 **That number is supposed to be low.** The tiering is the point: a small number
 of deeply understood mechanisms generate correct answers to a large number of
@@ -566,11 +632,13 @@ will find them and should not "fix" them:
 itself a delta summary, added the same day.
 
 Everything else large is already planned and needs no new slug:
-`microservices-boundaries` (16 unclaimed → `service-decomposition`,
-`modular-monolith`), `oop-fundamentals` (13 → `coupling-cohesion`),
-`scaling-operations` (14 → `replication`, `partitioning`), `redis-caching`
-(20 → `caching`, plus `hot-keys` from `cache-invalidation`'s `unlocks`), and
-`query-performance` (13 → `query-planning`).
+`microservices-boundaries` (15 unclaimed, one now taken by
+`coupling-and-cohesion` → `service-decomposition`, `modular-monolith`),
+`oop-fundamentals` (12, one now taken by `coupling-and-cohesion`),
+`scaling-operations` (12, two now taken by `partitioning` → `replication`),
+`redis-caching` (19, one now taken by `partitioning` → `caching`, plus
+`hot-keys` from `cache-invalidation`'s `unlocks`), and `query-performance`
+(13, unaffected by this batch → `query-planning`).
 
 Re-run the audit by intersecting every `[#qNN]` anchor under `content/docs/`
 with every concept page's `questions:` list — including drafts in `_source/`,

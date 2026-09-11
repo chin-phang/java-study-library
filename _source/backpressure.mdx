@@ -1,0 +1,367 @@
+---
+title: Backpressure and the Unbounded Queue
+concept: backpressure
+tier: core
+prerequisites: [thread-pools]
+unlocks: [load-shedding, circuit-breakers, reactive-streams, capacity-planning]
+questions: [java/collections#q30, java/concurrency#q53, data/rabbitmq#q92, data/rabbitmq#q102, data/cross-cutting#q139]
+estimatedStudyTime: 2h
+---
+
+> **Recall layer.** The interview answers are
+> [Q30](/docs/java/collections#q30) and
+> [Q139](/docs/data/cross-cutting#q139). This page builds the model.
+
+## 1. The problem it exists to solve
+
+Traffic rises 30% above normal. Not a spike — a Tuesday.
+
+For four minutes everything looks fine. p50 latency is unchanged. Then p99
+starts climbing. Then p50. Then every request is taking 45 seconds, clients are
+timing out and retrying, and the retries are making it worse. Eventually the
+JVM is OOM-killed.
+
+Nothing failed. No exception was thrown. No dependency went down. CPU never
+exceeded 60%.
+
+What happened is that somewhere in the request path there was a queue with no
+limit — a `LinkedBlockingQueue` with the default capacity of
+`Integer.MAX_VALUE`, or a message broker with no length bound, or an
+`ArrayList` accumulating results. When arrivals exceeded service rate, that
+queue absorbed the difference silently and kept absorbing it.
+
+**An unbounded queue does not prevent overload. It converts "we are overloaded"
+into "we allocate until we die", and it deletes the signal that would have told
+you.**
+
+The four-minute delay before symptoms is the tell. That's the queue filling.
+
+## 2. Overload is arithmetic
+
+From [Little's Law](/docs/concepts/thread-pools): a stable system needs
+`concurrency = arrival rate × service time`. Rearranged, a system with fixed
+concurrency C and service time W can serve `C / W` requests per second. Exactly
+that, no more.
+
+When arrivals λ exceed service capacity μ, the queue grows at `λ − μ` per
+second. Forever. There is no equilibrium and no recovery while the imbalance
+persists.
+
+So there are only three things a system can do with excess load:
+
+1. **Queue it** — works until memory or patience runs out.
+2. **Reject it** — the load is gone, you survive, some requests fail fast.
+3. **Slow the producer down** — backpressure.
+
+**Backpressure is option 3**: propagating the constraint *upstream*, so the
+sender stops sending faster than you can serve. It's the only option that
+preserves the work and keeps the system stable.
+
+Option 1 is not a strategy, though it is the default in most systems because
+unbounded is what you get when you don't specify.
+
+### Why queueing beyond a point is negative value
+
+Here's the part that makes unbounded queues actively harmful rather than merely
+wasteful.
+
+Client timeout is 5 seconds. Your queue holds 200,000 items and you drain
+10,000/second. An item at the back waits 20 seconds.
+
+By the time you process it, **nobody is listening**. The client gave up 15
+seconds ago and has already retried — adding another item to the queue. You are
+now spending 100% of your capacity on work whose results will be discarded,
+while new work queues behind it.
+
+That's the death spiral, and it's why systems don't recover on their own once
+they enter it. The queue must be *dropped*, not drained.
+
+The rule that follows: **the maximum useful queue depth is
+`throughput × client_timeout`.** Anything beyond is guaranteed waste. If you
+serve 1,000/s and clients time out at 2s, a queue deeper than 2,000 is
+producing garbage.
+
+## 3. Every layer has a queue
+
+Most engineers can name one or two. There are usually seven, and overload finds
+whichever is unbounded.
+
+| Layer | The queue | Bounded by |
+|---|---|---|
+| Kernel | TCP accept backlog | `somaxconn`, listen backlog |
+| HTTP server | connection / request queue | `server.tomcat.max-connections`, `accept-count` |
+| Thread pool | `BlockingQueue` | queue capacity + `maximumPoolSize` |
+| DB pool | waiters on `getConnection()` | pool size + `connectionTimeout` |
+| Broker consumer | prefetch / `max.poll.records` | prefetch, fetch config |
+| Broker itself | the queue or topic | `x-max-length`, retention |
+| Application | any collection you accumulate into | nothing, unless you say so |
+
+Two observations.
+
+**The last row is the one that bites**, because it's invisible. An
+`ArrayList` collecting results from a paginated API, a `Map` accumulating
+per-key state in a stream consumer, a batch builder that flushes "when it's
+big enough" — none of these look like queues, and all of them are.
+
+**The narrowest bound wins.** A 200-thread pool in front of a 20-connection
+database pool means the real concurrency is 20 and you've built a 180-deep
+queue at `getConnection()`. You didn't remove the queue, you moved it somewhere
+with worse observability.
+
+## 4. Propagating the signal
+
+Bounding a queue creates a decision: what happens when it's full? That decision
+is where backpressure actually lives.
+
+**Block the producer.** `BlockingQueue.put()` blocks when full. Elegant
+in-process — the producer literally cannot outrun the consumer. Dangerous when
+the producer is your HTTP acceptor thread, because now you've stopped accepting
+connections.
+
+**`CallerRunsPolicy`.** The submitting thread executes the task. Self-limiting
+and requires no coordination: the producer slows because it's busy doing the
+work. My default for ingestion pipelines, with the same caveat about who the
+caller is.
+
+**Reject and shed.** Return 429 or 503 with `Retry-After`. The load leaves the
+system. This is load shedding, and it's the correct answer at the edge — a
+fast, honest failure beats a slow one, and it keeps the system alive for the
+requests it *can* serve.
+
+**Pull instead of push.** The consumer asks for what it can handle. Kafka
+consumers poll; reactive streams' `request(n)` flows demand upstream; RabbitMQ
+prefetch caps unacknowledged messages. Pull-based protocols have backpressure
+built into the protocol rather than bolted on, which is the strongest form.
+
+### The propagation chain
+
+Backpressure only works if it reaches the origin. A chain where every hop
+blocks but the edge accepts unconditionally just relocates the queue to the
+edge.
+
+```
+client ← 429 ← gateway ← reject ← service ← block ← pool ← DB
+```
+
+Each layer must have a bound *and* a way to signal upstream. In practice the
+place this breaks is the edge: the gateway happily accepts 10,000 concurrent
+connections because nobody bounded it.
+
+### Timeouts are backpressure's partner
+
+A bounded queue plus no timeout still fails: requests sit in the queue past the
+point of usefulness (section 2). A **deadline** — propagated down the call
+chain, checked before starting work — lets you discard work that is already
+too late.
+
+"Check whether this request has already timed out before processing it" is a
+cheap, high-value addition to any queue consumer, and almost nobody implements
+it.
+
+## 5. Where the broker sits
+
+Brokers are queues by design, so the question is what bounds them.
+
+**RabbitMQ** is a *queue*: messages pass through, not accumulate. A deep
+backlog drives memory up until the broker hits `vm_memory_high_watermark` and
+**blocks all publishing connections** — publishers just hang, often with no
+error ([Q102](/docs/data/rabbitmq#q102)). The failure chain is: slow consumer →
+backlog → memory alarm → publishers blocked → the producing service's threads
+fill → outage in a service that never talked to the consumer.
+
+That's backpressure working as designed, and it is brutal if you weren't
+expecting it. Bound queues with `x-max-length` and a dead-letter policy so
+overflow is explicit rather than an alarm.
+
+**Kafka** is a *log*: accumulation is the design, bounded by retention and
+disk. Consumers pull, so a slow consumer creates lag rather than pressure on
+producers. Lag is the backpressure signal — and it's a much gentler one, which
+is a real argument for Kafka when producers must not be blocked.
+
+The distinction generalises: **a queue pushes pressure back to the producer; a
+log defers it to disk and surfaces it as lag.** Choosing between them is partly
+choosing which failure you prefer ([Q92](/docs/data/rabbitmq#q92)).
+
+## 6. What this does *not* cover
+
+- **Circuit breakers and bulkheads.** Complementary — they contain *failure*,
+  backpressure contains *load*. Both needed
+  ([Q81](/docs/design/microservices-communication#q81)).
+- **Retry amplification.** Retries are load, and they arrive exactly when the
+  system is least able to take them. Jitter and retry budgets belong next to
+  everything here.
+- **Autoscaling.** Adds capacity on a timescale of minutes; backpressure acts
+  in milliseconds. It doesn't replace bounds.
+- **Reactive streams in detail.** The `request(n)` protocol is the most
+  complete expression of this idea; virtual threads give scalability without
+  it ([virtual threads](/docs/concepts/virtual-threads)).
+
+## 7. Lab: overload something on purpose
+
+### Lab 1 — the silent absorber
+
+```java
+var q = new LinkedBlockingQueue<byte[]>();     // unbounded
+var consumer = Thread.ofPlatform().start(() -> {
+    while (true) { q.take(); Thread.sleep(2); }   // ~500/s
+});
+long produced = 0;
+while (true) {
+    q.put(new byte[10_000]);                    // ~5000/s
+    if (++produced % 10_000 == 0)
+        System.out.printf("produced=%d queued=%d heap=%dMB%n", produced, q.size(),
+            (Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory())/1048576);
+}
+```
+
+Run with `-Xmx256m`. Watch the queue grow and heap climb until `OutOfMemoryError`.
+**Note there is no error until the very end** — that's section 1.
+
+Now change to `new LinkedBlockingQueue<>(1000)`. The producer blocks, the queue
+stays at 1,000, heap is flat, and the system runs indefinitely at the
+consumer's rate. One constructor argument is the difference between stable and
+dead.
+
+### Lab 2 — queue depth beyond usefulness
+
+Add a timestamp to each item and a deadline check in the consumer:
+
+```java
+record Item(long deadlineNanos, byte[] payload) {}
+
+Item item = q.take();
+if (System.nanoTime() > item.deadlineNanos()) { expired++; continue; }
+process(item);
+```
+
+Run overloaded with a 2-second deadline and report the ratio of expired to
+processed. **At steady overload this approaches 100%** — every unit of capacity
+spent on work nobody wants. Then compute `throughput × timeout` and confirm it
+matches the queue depth at which expiry begins.
+
+### Lab 3 — the queue you didn't know about
+
+```java
+var pool = new ThreadPoolExecutor(10, 200, 60, SECONDS, new ArrayBlockingQueue<>(50));
+// each task does: dbPool.getConnection() -> sleep(100ms) -> close
+```
+
+with a HikariCP pool of size 5. Instrument both: executor queue size, and
+`hikaricp_connections_pending`.
+
+The executor queue stays near empty. The *connection* pool has 195 waiters.
+**You bounded one queue and created a bigger one behind it.** This is the most
+common shape of the problem in a real service.
+
+### Lab 4 — rejection policies under sustained overload
+
+Take Lab 3 and cycle through `AbortPolicy`, `CallerRunsPolicy`, `DiscardPolicy`,
+`DiscardOldestPolicy` while driving overload from a single producer thread.
+Record: producer rate, completion rate, rejection count, and p99 latency.
+
+`CallerRunsPolicy` is the interesting one — watch the producer's own rate drop
+to match the consumer without any explicit coordination.
+
+### Lab 5 — block a RabbitMQ publisher
+
+```bash
+docker run --rm -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:3-management
+docker exec rabbit rabbitmqctl set_vm_memory_high_watermark 0.01   # trip it easily
+```
+
+Publish hard with no consumer. Watch the management UI show the connection
+state go to `blocked`, and watch your publisher **hang with no exception**.
+
+That hang is what a production incident looks like from the application's
+side, and recognising it is worth the ten minutes. Then set `x-max-length` on
+the queue and observe overflow being dead-lettered instead.
+
+### Lab 6 — end-to-end shedding
+
+Put a concurrency limiter at the edge:
+
+```java
+private final Semaphore inFlight = new Semaphore(100);
+
+if (!inFlight.tryAcquire()) {
+    return ResponseEntity.status(503).header("Retry-After", "1").build();
+}
+try { return handle(request); } finally { inFlight.release(); }
+```
+
+Load-test at 3× capacity with and without it. Without: latency climbs
+unboundedly and everything fails. With: 100 requests succeed at normal latency
+and the rest fail in microseconds.
+
+**Total successful throughput is higher with shedding on.** That result is
+counter-intuitive until you've seen it, and it's the argument for load
+shedding in one number.
+
+## 8. Leading on this
+
+**Make "every queue is bounded" a non-negotiable standard.** Thread pool
+queues, broker queues, HTTP accept queues, and any collection that accumulates.
+Grep for `new LinkedBlockingQueue<>()` with no argument — the default capacity
+is `Integer.MAX_VALUE` and almost nobody intends it. This is one rule that
+prevents a whole category of outage.
+
+**Require a rejection policy decision, in writing.** Bounding creates a
+question — block, shed, drop, or caller-runs — and the answer differs per
+queue. An unstated default is a decision nobody made.
+
+**Instrument depth *and* age.** Depth is ambiguous: 10,000 items might be four
+seconds or four hours of work. Age is directly meaningful and directly
+alertable. Most teams graph depth and none graph age, which is why they learn
+about backlogs from customers.
+
+**Push for deadline propagation.** A deadline in the request context, checked
+before work starts at each hop, lets the system discard doomed work
+automatically. It's a platform capability — an interceptor plus a context
+value — not something each service should reinvent, and it turns Lab 2 from a
+measurement into a defence.
+
+**Teach that shedding increases throughput.** It is counter-intuitive and
+Lab 6 proves it in ten minutes. Teams resist load shedding because rejecting
+requests feels like failure; showing them that total successful throughput goes
+*up* changes the conversation from "how do we avoid rejecting" to "where do we
+reject".
+
+**Find the narrowest resource and bound everything to it.** If the database
+pool is 20, a 200-thread executor is a lie. Sizing each layer to the real
+constraint means queues stay shallow and the signal propagates. Little's Law,
+applied to each stage, finds it in five minutes.
+
+## 9. Where to go deeper
+
+- Marc Brooker's blog on queueing, timeouts and retries — the clearest
+  operational writing on this, especially on why unbounded queues are worse
+  than rejection.
+- "Little's Law" and basic queueing theory — the arithmetic is simple and the
+  conclusions are not intuitive.
+- Netflix's concurrency-limits library and the adaptive limiting approach
+  (TCP Vegas-style) — bounds that tune themselves from observed latency.
+- The Reactive Streams specification, specifically the `request(n)` protocol —
+  the most rigorous expression of backpressure in a Java API.
+- Google SRE Book, chapter 22 ("Addressing Cascading Failures") — load
+  shedding, graceful degradation, and why systems don't self-recover.
+- RabbitMQ's flow control documentation and Kafka's producer `buffer.memory`
+  behaviour, for how two brokers make opposite choices.
+
+## 10. Self-check
+
+1. Why does an unbounded queue make overload worse rather than absorbing it?
+   Name two distinct harms.
+2. Derive the maximum useful queue depth from throughput and client timeout,
+   and explain what happens beyond it.
+3. Name five queues in a typical Spring Boot service handling HTTP and
+   consuming from a broker.
+4. Your executor queue is empty and `hikaricp_connections_pending` is 195.
+   What has happened?
+5. Compare blocking the producer, `CallerRunsPolicy`, and returning 503. When
+   is each right, and what is the sharp edge of the first two?
+6. Why does a RabbitMQ publisher hang with no exception, and what is the full
+   failure chain from slow consumer to unrelated service outage?
+7. How does Kafka's backpressure model differ from RabbitMQ's, and which
+   failure would you rather have?
+8. Why can total successful throughput increase when you start rejecting
+   requests?

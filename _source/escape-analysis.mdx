@@ -1,0 +1,343 @@
+---
+title: Escape Analysis and When Allocation Disappears
+concept: escape-analysis
+tier: core
+prerequisites: [jit, generational-gc]
+unlocks: [performance-tuning, lock-elision, value-types, valhalla]
+questions: [java/jvm-memory-gc#q80, java/jvm-memory-gc#q79, java/concurrency#q58, java/streams#q47]
+estimatedStudyTime: 2h
+---
+
+> **Recall layer.** The interview answer is
+> [Q80](/docs/java/jvm-memory-gc#q80). This page builds the model.
+
+## 1. The problem it exists to solve
+
+Someone on your team writes:
+
+```java
+double distance(double x1, double y1, double x2, double y2) {
+    Point d = new Point(x1 - x2, y1 - y2);
+    return Math.sqrt(d.x * d.x + d.y * d.y);
+}
+```
+
+A reviewer flags it: "this allocates a `Point` on every call — inline the
+fields and avoid the object." The advice sounds correct and follows every rule
+of thumb about avoiding allocation in a hot path.
+
+Run it through JMH with `-prof gc` and the allocation rate is **zero**.
+
+Not "small" — zero. The compiler proved `d` never leaves this method, never
+gets stored anywhere, never gets passed to anything that isn't itself inlined,
+and deleted the allocation entirely. `d.x` and `d.y` became local variables, no
+different from writing the arithmetic by hand.
+
+The reviewer's advice was based on a model of the JVM that's a decade out of
+date. Knowing when that model is right and when it isn't is what this page is
+for — because the opposite mistake, assuming escape analysis always saves you,
+is just as common and considerably more expensive.
+
+## 2. What "escapes" means
+
+After [inlining](/docs/concepts/jit) flattens a call chain into one
+compilation unit, C2 asks a specific question about every allocation: **can any
+reference to this object be observed outside the code currently being
+compiled?**
+
+Three ways an object can escape:
+
+- **Global escape** — stored in a static field, or in an object already known
+  to escape. Visible to the whole program, forever.
+- **Argument escape** — passed to a method call that isn't inlined. The callee
+  might stash it anywhere.
+- **No escape** — never stored, never passed out. Provably confined to this
+  compilation.
+
+Only the third case is eligible for optimisation, and there are two distinct
+techniques applied to it.
+
+## 3. Scalar replacement: deleting the object
+
+If an object never escapes, its fields don't need to live together in a heap
+object at all. C2 can split them into independent scalars — effectively local
+variables, which typically end up in CPU registers.
+
+```java
+Point d = new Point(x1 - x2, y1 - y2);
+return Math.sqrt(d.x * d.x + d.y * d.y);
+
+// what actually executes, conceptually:
+double dx = x1 - x2, dy = y1 - y2;
+return Math.sqrt(dx*dx + dy*dy);
+```
+
+No allocation. No object header. No GC ever sees it, because it never existed
+in a form the GC operates on. This is **scalar replacement**, and it is the
+mechanism behind the zero-allocation result in section 1.
+
+The consequence worth internalising: your carefully-designed small immutable
+value object — the thing the [dependency inversion
+page](/docs/concepts/dependency-inversion) and the wider design literature both
+push you toward — frequently costs *nothing* at runtime, provided it stays
+local. Wrapping a `double` pair in a `Point` for clarity is not automatically a
+performance tax. Sometimes it's free.
+
+## 4. Lock elision: deleting the synchronisation
+
+The second technique, and less well known. If an object never escapes the
+current thread, **no other thread can ever contend for its monitor** — so any
+`synchronized` block on it is provably redundant, and C2 removes the lock
+acquisition and release entirely.
+
+```java
+public String describe(int x, int y) {
+    StringBuilder sb = new StringBuilder();   // StringBuilder is synchronized... no wait
+    ...
+}
+```
+
+`StringBuilder` isn't synchronized — `StringBuffer` is, which makes it the
+textbook example: a legacy API's internal locking, called on a
+never-escaping local instance, compiles away completely. More generally, any
+`synchronized` block on a local, non-escaping object — a common pattern in code
+that wraps a "just in case" lock around a locally-constructed helper — pays
+nothing once escape analysis fires.
+
+This is a genuine argument against manually "optimising away" synchronisation
+on objects you're confident are thread-confined: the compiler may already have
+done it, correctly, with a formal proof rather than your confidence.
+
+## 5. Why it's fragile — and why that matters more than the mechanism
+
+Both optimisations depend on a chain of preconditions, and each one is a place
+the whole thing silently stops working.
+
+**It depends on inlining succeeding.** Escape analysis operates on the *inlined*
+unit. A method call that's too large to inline (over `FreqInlineSize`), a
+megamorphic call site, or a method excluded by `-XX:CompileCommand=exclude`
+breaks the chain — the object now "escapes" into an opaque call and gets
+allocated normally. Everything from the [JIT page](/docs/concepts/jit) about
+inlining limits applies directly here.
+
+**It depends on the profile staying stable.** C2 compiles based on what has
+happened so far. A call site that later sees a second implementation
+deoptimises, and the recompiled version may no longer inline the same way.
+
+**It gives up on complex control flow.** Deep conditional nesting, exception
+handlers, and loops with unclear bounds can all defeat the analysis.
+
+**It doesn't apply if the object is stored anywhere** — a field, a collection,
+returned to a non-inlined caller. The moment an object might outlive the
+method, none of this applies and it's a real allocation.
+
+**None of this is visible in the source code.** The `Point` in section 1 and an
+identical-looking `Point` three call sites deeper, past a megamorphic
+interface, get completely different treatment — same code, same shape,
+opposite outcome.
+
+That fragility is the actual lesson, more than the optimisation itself:
+
+> **You cannot reliably predict from reading Java source whether an allocation
+> happens. You can only measure it.**
+
+## 6. The design implication
+
+This reframes a very common performance argument.
+
+**"Avoid allocating that object" is frequently advice to hand-optimise
+something the compiler already removed**, at the cost of readability — merging
+a clean value object back into primitive parameters because someone believed
+it was expensive.
+
+The correct sequence is: write the clear version first — small value objects,
+meaningful types, the design this whole library argues for — then **measure**
+`gc.alloc.rate.norm` in JMH on the actual hot path before concluding there's a
+problem. If the allocation already went to zero, you've just avoided trading
+clarity for nothing. If it didn't — because the object escapes for a real
+reason — now you have a specific, evidenced case to address, rather than a
+blanket rule applied everywhere out of caution.
+
+This is also why "avoid allocation" as generic advice is weaker than it sounds,
+covered from the other side on the [generational GC
+page](/docs/concepts/generational-gc): garbage that dies young is nearly free
+to collect, and garbage that's scalar-replaced isn't garbage at all. The
+allocations worth hunting are the ones that *survive*, not the ones that merely
+*occur*.
+
+## 7. What this does *not* cover
+
+- **Objects that must escape.** Anything returned, stored in a field, or put in
+  a collection is a real allocation and belongs to ordinary allocation-rate
+  reasoning, not this page.
+- **Arrays.** Scalar replacement can apply to small, fixed-size arrays whose
+  indices are all compile-time constants, but it's far more restrictive than
+  for simple objects — don't expect it for anything computed at runtime.
+- **Interpreted or C1-only code.** Escape analysis is a C2 optimisation. Code
+  that never gets hot enough to reach tier 4 never benefits, which matters for
+  short-lived processes and for methods just below the compilation threshold.
+- **Project Valhalla.** Value classes aim to make "small immutable data,
+  inlined when possible" a language-level guarantee rather than a speculative
+  JIT optimisation — the direction this page's fragility problem is heading,
+  eventually.
+
+## 8. Lab: watch it happen, then watch it stop
+
+### Lab 1 — confirm zero allocation
+
+```java
+@State(Scope.Thread)
+public class EscapeBench {
+    double x1=1,y1=2,x2=4,y2=6;
+
+    static class Point { double x, y; Point(double x, double y){this.x=x;this.y=y;} }
+
+    @Benchmark
+    public double distance() {
+        Point d = new Point(x1 - x2, y1 - y2);
+        return Math.sqrt(d.x*d.x + d.y*d.y);
+    }
+}
+```
+
+Run with `-prof gc`. Look at `gc.alloc.rate.norm` — expect **0 B/op**. Then
+run with `-XX:-DoEscapeAnalysis` and compare. Watch it jump to the object's
+real size. **That comparison is the whole page in one command.**
+
+### Lab 2 — break it by making the object escape
+
+```java
+@Benchmark
+public double distanceEscaping(Blackhole bh) {
+    Point d = new Point(x1 - x2, y1 - y2);
+    bh.consume(d);                          // now it might be observed
+    return Math.sqrt(d.x*d.x + d.y*d.y);
+}
+```
+
+`gc.alloc.rate.norm` becomes non-zero. Nothing about the object changed — only
+whether it's provably confined.
+
+### Lab 3 — break it by defeating inlining
+
+```java
+static double NOINLINE_dist(Point d) { return Math.sqrt(d.x*d.x + d.y*d.y); }
+
+@Benchmark
+public double distanceThroughCall() {
+    Point d = new Point(x1 - x2, y1 - y2);
+    return NOINLINE_dist(d);
+}
+```
+
+Inflate `NOINLINE_dist` past `FreqInlineSize` with dead arithmetic, or run with
+`-XX:CompileCommand=dontinline,*.NOINLINE_dist`. Confirm allocation returns
+even though the object *still* never truly escapes the call graph — it escapes
+the *compiled unit*, which is what actually matters.
+
+### Lab 4 — lock elision
+
+```java
+@Benchmark
+public String elidedLock() {
+    StringBuffer sb = new StringBuffer();   // internally synchronized
+    sb.append("a").append("b").append("c");
+    return sb.toString();
+}
+```
+
+Compare against a hand-rolled version using an explicit uncontended
+`ReentrantLock` around equivalent work, and against `-prof gc`'s companion
+option for lock-related JFR events if available. The synchronized calls cost
+nothing measurable here — confirm it by comparing against `StringBuilder`
+(unsynchronized) and finding no meaningful difference despite `StringBuffer`
+notionally taking a lock four times.
+
+### Lab 5 — find the boundary on megamorphism
+
+Reuse the megamorphic call-site benchmark from the [JIT
+page](/docs/concepts/jit) (Lab 3), but have each implementation allocate and
+return a small value object rather than an int. Measure `gc.alloc.rate.norm` at
+one, two, and four implementations on the call site.
+
+Watch allocation appear exactly where the [JIT page's](/docs/concepts/jit)
+bimorphic-to-megamorphic cliff appeared. **Same underlying cause, two different
+symptoms** — this is the connective tissue between the two pages.
+
+### Lab 6 — verify with JFR instead of guessing
+
+```bash
+java -XX:StartFlightRecording=filename=rec.jfr,settings=profile -jar bench.jar
+```
+
+Open in JDK Mission Control, find the allocation profile by call site. Compare
+what JFR reports against what the JMH numbers predicted. Real services rarely
+have the luxury of a clean JMH harness, so being able to answer this question
+from production telemetry is the more durable skill.
+
+## 9. Leading on this
+
+**Ban "avoid allocation" as unqualified review feedback.** It's not
+categorically wrong, but stated without a measurement it's a coin flip whether
+it's addressing a real cost or trading clarity for nothing. Require a
+`gc.alloc.rate.norm` number attached to the claim, the same discipline
+[the JIT page](/docs/concepts/jit) argues for benchmarks generally.
+
+**Let people write small value objects without apologising for them.** A
+codebase where engineers avoid clean modelling because "objects are expensive"
+is paying a real design cost for a performance cost that, on the hot paths that
+matter, frequently isn't there. This page is the argument to bring when that
+habit shows up in review.
+
+**Reserve manual inlining-for-performance for measured, escaped
+allocations.** When JFR or JMH shows an allocation that genuinely survives and
+genuinely costs something, that's the moment to consider flattening a
+structure — and even then, prefer restructuring so the object *doesn't
+escape* (keep it local, avoid storing it prematurely) over abandoning the
+abstraction altogether.
+
+**Treat escape analysis as a reason profiling beats intuition, not as a reason
+to stop profiling.** The fragility in section 5 means the optimisation you
+relied on last release may not survive this release's refactor. A
+continuously-running allocation profile (JFR in production, low overhead)
+catches the regression; institutional folklore about "that path doesn't
+allocate" does not.
+
+**Use it to make the trade-off in the JMM concurrency discussion
+symmetrical.** Engineers sometimes remove object-local `synchronized` blocks
+by hand, believing they're helping. Point out that if the object genuinely
+never escapes the thread, C2 likely already removed the cost — and if it
+*does* escape, removing the lock by hand is a correctness bug, not an
+optimisation. This page and the [JMM page](/docs/concepts/jmm) together answer
+that argument precisely.
+
+## 10. Where to go deeper
+
+- Choi, Gupta, Serrano et al., "Escape Analysis for Java" (2003) — the original
+  paper describing the technique C2's implementation descends from.
+- Aleksey Shipilëv, "JVM Anatomy Quarks" entries on escape analysis and scalar
+  replacement — short, precise, with disassembly.
+- `-XX:+PrintEscapeAnalysis` and `-XX:+PrintEliminateLocks` (diagnostic flags)
+  for seeing the compiler's actual decisions on a real method.
+- JEP drafts for Project Valhalla's value classes — the language-level answer
+  to the fragility described in section 5.
+- JMH's own samples on GC profiling (`org.openjdk.jmh.samples`), for building
+  benchmarks that measure this correctly rather than by accident.
+
+## 11. Self-check
+
+1. Define the three escape states and say which are eligible for optimisation.
+2. What is scalar replacement, concretely — what does the compiled code look
+   like for an object that qualifies?
+3. Why can a `synchronized` block on a local object be removed entirely, and
+   what proof does the compiler have that makes it safe?
+4. An allocation shows zero cost in JMH today and non-zero after a refactor
+   that added no new allocation sites. Explain how that's possible.
+5. Why does passing an object to a `Blackhole` change whether it allocates?
+6. A method is just below `FreqInlineSize` and gets inlined; a teammate adds a
+   log statement and it's no longer inlined. What happens to escape analysis
+   for objects inside it?
+7. Someone proposes replacing a small immutable value object with primitive
+   parameters "to reduce allocation." What would you ask for before agreeing?
+8. Why is "I optimised away the lock because I know this object is
+   thread-confined" sometimes a correctness bug rather than a performance win?

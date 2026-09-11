@@ -1,0 +1,401 @@
+---
+title: Aggregates as Consistency Boundaries
+concept: aggregates
+tier: core
+prerequisites: [bounded-contexts, isolation-levels]
+unlocks: [saga-pattern, event-design, service-extraction, optimistic-locking]
+questions: [design/ddd#q48, design/ddd#q49, design/microservices-data#q92, data/transactions-mvcc#q32, java/distributed-systems#q123]
+estimatedStudyTime: 3h
+---
+
+> **Recall layer.** The interview answers are
+> [Q48](/docs/design/ddd#q48) and [Q49](/docs/design/ddd#q49).
+> This page builds the model.
+
+## 1. The problem it exists to solve
+
+An `Order` entity with a `List<OrderLine>`, a `Customer`, a `ShippingAddress`,
+and a `PaymentMethod`. Because JPA makes it easy, every association is mapped
+and navigable. `order.getCustomer().getAccount().getBalance()` works.
+
+Three things happen over the next year.
+
+**Loading an order loads half the database.** Every association is either eager
+(dragging the graph) or lazy (N+1 queries or
+`LazyInitializationException`). You add fetch joins, entity graphs, and DTO
+projections case by case.
+
+**Concurrency collapses.** Updating one order line locks the entire order
+aggregate. A customer with a thousand orders becomes a contention point,
+because the object graph says the customer is part of the order.
+
+**Extracting a service is impossible.** `Order` holds an object reference to
+`Customer`, so there is no seam. Splitting them means rewriting every
+traversal, every query, and every transaction.
+
+Nobody designed this. It accumulated, one reasonable `@ManyToOne` at a time.
+
+The missing idea is that **a transaction needs a scope, and that scope should
+be a deliberate modelling decision rather than a consequence of how the object
+graph happens to be wired.** An aggregate is that decision made explicitly.
+
+## 2. What an aggregate is
+
+A cluster of objects treated as a single unit for data changes, with one
+**aggregate root** as the only entry point. External code holds a reference to
+the root and never to the internals.
+
+```java
+public class Order {                       // root
+    private final OrderId id;
+    private final CustomerId customerId;   // reference to ANOTHER aggregate, by ID
+    private final List<OrderLine> lines;   // inside this aggregate
+    private OrderStatus status;
+    private Money total;
+
+    public void addLine(ProductId p, int qty, Money price) {
+        if (status != DRAFT) throw new OrderNotEditable(status);
+        lines.add(new OrderLine(p, qty, price));
+        total = recalculate();             // invariant maintained here, always
+    }
+}
+```
+
+Three rules, and each earns its place:
+
+**1. The aggregate is the consistency boundary.** Its invariants hold within
+one transaction. `Order` can guarantee "total equals the sum of lines" because
+it owns the lines and nothing else can touch them.
+
+**2. One transaction, one aggregate.** Changes spanning aggregates use eventual
+consistency — domain events, sagas — not a bigger transaction.
+
+**3. Reference other aggregates by identity, not by object reference.**
+`CustomerId`, not `Customer`.
+
+Rule 3 is the one that does most of the work, and it's the one people push back
+on hardest.
+
+## 3. Why reference by ID
+
+It looks like a step backwards. You lose navigability, and you need an extra
+lookup. What you get in return:
+
+**The aggregate becomes loadable and savable as a unit.** No decision about how
+deep to fetch, because there is no deeper. The boundary of the object is the
+boundary of the query.
+
+**Transaction scope becomes obvious from the type signature.** If `Order` holds
+a `Customer`, can a method on `Order` modify the customer? The type says yes.
+With `CustomerId`, the answer is structurally no.
+
+**Contention drops.** Nothing loads or locks the customer to change an order
+line.
+
+**Extraction becomes mechanical.** This is the big one. If aggregates reference
+each other by ID, splitting them into separate services is
+plumbing — replace an in-process lookup with an API call or a local read model.
+If they're a connected object graph, it's a rewrite.
+
+> **Aggregates that reference by ID are already service boundaries. You just
+> haven't deployed them separately yet.**
+
+That connects directly to the [bounded contexts
+page](/docs/concepts/bounded-contexts): contexts are the coarse boundary,
+aggregates are the fine one, and both are modelling decisions that make
+deployment decisions cheap later.
+
+## 4. Sizing: the real tension
+
+The hard question is not what an aggregate is, it's how big to make it. Two
+forces pull opposite ways.
+
+**Pulling larger: invariants.** Anything that must be immediately consistent
+has to be inside one aggregate, because that's the transaction boundary. "Order
+total equals sum of lines" forces lines inside `Order`.
+
+**Pulling smaller: concurrency and load.**
+
+- A large aggregate is a **lock**. Two users editing different lines of the
+  same order conflict, because the version is on the root.
+- A large aggregate is a **load cost**. Every modification loads the whole
+  thing.
+- A large aggregate **grows unboundedly**. `Customer` containing
+  `List<Order>` is fine at ten orders and fatal at fifty thousand.
+
+The guidance, from Vaughn Vernon's "Effective Aggregate Design", and it holds
+up: **prefer small aggregates. Use eventual consistency between them.**
+
+And the question that resolves most arguments:
+
+> **Is immediate consistency a business requirement, or an assumption?**
+
+"Order total must equal the sum of lines" — genuinely immediate; an
+inconsistent order is meaningless.
+
+"Customer's lifetime value must be exact the instant an order is placed" —
+almost certainly not. A few seconds of staleness is fine, so it belongs in a
+projection, not in the transaction.
+
+Most requests for immediate consistency across aggregates dissolve when you ask
+what actually breaks if it's two seconds late. The ones that survive that
+question are the real ones, and they tell you where the boundary is.
+
+### The classic sizing mistake
+
+```java
+class Customer {
+    List<Order> orders;                 // unbounded, and why?
+}
+```
+
+Ask what invariant requires it. Usually: none. "Show a customer's orders" is a
+*query*, not an invariant — `orderRepository.findByCustomerId(id)`. Once that's
+clear, `Order` and `Customer` are separate aggregates and both get smaller.
+
+If there *is* an invariant — "a customer may have at most three open orders" —
+you have a genuine decision: put orders inside `Customer` (contention), or
+accept eventual consistency and compensate (allow a fourth, then cancel it), or
+enforce it with a database constraint outside the object model.
+
+That third option is often best and usually forgotten
+([isolation levels](/docs/concepts/isolation-levels), section 5).
+
+## 5. Across aggregates: events and sagas
+
+If one transaction touches one aggregate, cross-aggregate work needs another
+mechanism.
+
+**Domain events.** The aggregate records what happened; a handler reacts,
+modifying another aggregate in a separate transaction.
+
+```java
+public void confirm() {
+    if (status != DRAFT) throw new IllegalTransition(status);
+    status = CONFIRMED;
+    events.add(new OrderConfirmed(id, customerId, total));
+}
+```
+
+The event is raised inside the aggregate and published after commit —
+`@TransactionalEventListener(AFTER_COMMIT)` in process, or the
+[outbox](/docs/concepts/the-log) across services. Publishing before commit
+means handlers can act on a transaction that rolls back.
+
+**Sagas** sequence multi-aggregate business transactions with compensations for
+failure ([Q123](/docs/java/distributed-systems#q123)). The critical insight in
+a financial domain: compensation is **not rollback**. You do not un-capture a
+payment; you issue a refund. That's a new business fact, visible to the
+customer, with its own failure modes. Designing compensations is a domain
+conversation.
+
+**And keep the event types distinct.** A *domain* event is internal to the
+context with a schema you can change freely. An *integration* event is a public
+contract that lives as long as your retention
+([Q49](/docs/design/ddd#q49)). Publishing internal domain events straight onto
+Kafka makes your model a public API and every refactor a breaking change.
+
+## 6. Aggregates and write skew
+
+This is where the design connects to the database, and it's the part most
+treatments skip.
+
+Recall write skew from [isolation levels](/docs/concepts/isolation-levels):
+two transactions read an overlapping set, each checks an invariant that holds,
+each writes a *different* row, and together they break it. Snapshot isolation
+permits it because nothing conflicts.
+
+**Write skew is what happens when an invariant spans aggregates.**
+
+- Two withdrawals from linked accounts, each checking a combined limit, each
+  debiting a different account.
+- Two bookings for adjacent time slots that must not overlap.
+
+If the invariant were inside one aggregate, the transactions would contend on
+one root and one version — no skew possible. Because it spans two, there is
+nothing to conflict on.
+
+So the fixes line up with the modelling:
+
+**(a) Make it one aggregate.** If the invariant is real and immediate, the
+things it spans belong together. Model an `AccountGroup` with the combined
+limit as the root.
+
+**(b) Materialise the conflict.** Lock a shared parent row
+(`SELECT ... FOR UPDATE` on the group) so the transactions do collide. This is
+the database expression of (a) without restructuring the objects.
+
+**(c) `SERIALIZABLE` with retry.** Correct, and costs aborts under contention.
+
+**(d) A database constraint.** An exclusion constraint for overlapping ranges,
+a unique index, a check. Enforced against every writer regardless of code path.
+
+**(e) Accept eventual consistency and compensate.** Detect the breach after the
+fact and fix it. Correct for many business problems and unacceptable for some.
+
+**Aggregate design and isolation level are the same decision viewed from two
+layers.** An engineer who understands both picks (a) or (d) at design time
+instead of discovering the need for (c) during an incident.
+
+## 7. What this does *not* cover
+
+- **Repositories.** One per aggregate root, not per table. The repository
+  loads and saves the whole aggregate.
+- **Event sourcing.** Aggregates fit it naturally — the stream is per
+  aggregate — but they're independent ideas and most systems want an audit log
+  rather than event sourcing.
+- **CQRS.** Aggregates are a *write* model. Reads want projections, not
+  aggregate traversal. Trying to serve a dashboard by loading aggregates is the
+  main way this design gets a bad reputation.
+- **When none of this applies.** A CRUD app with no invariants gains nothing.
+  Aggregates are for domains with rules.
+
+## 8. Lab: find and fix a boundary
+
+The lab runs against a real codebase — yours, or a sample with a rich JPA model.
+
+### Lab 1 — map what actually loads
+
+Pick your largest entity. Turn on SQL logging
+([persistence context](/docs/concepts/persistence-context)) and load one
+instance in a transaction, touching what a typical use case touches.
+
+Count the queries and the rows. Then draw the object graph reachable from that
+entity by navigation.
+
+**That graph is your current aggregate**, whether you designed it or not. For
+most JPA codebases the answer is "most of the schema", and seeing it drawn is
+the motivating moment.
+
+### Lab 2 — the invariant inventory
+
+List every business rule the entity enforces. For each, write down the smallest
+set of objects it needs.
+
+Then group: the rules cluster, and the clusters are candidate aggregates.
+Anything reachable but not in a cluster should be a reference by ID.
+
+Twenty minutes, and it usually shrinks the aggregate by 80%.
+
+### Lab 3 — break one association
+
+Pick the largest association that no invariant requires. Replace the object
+reference with an ID:
+
+```java
+- @ManyToOne private Customer customer;
++ private CustomerId customerId;
+```
+
+Compile. The errors are every place that relied on navigation. For each, decide:
+a repository lookup, a value copied into the aggregate, or a query in the read
+model.
+
+Then re-run Lab 1 and compare the query count and row count.
+**The delta is what the boundary bought you.**
+
+### Lab 4 — produce write skew, then design it away
+
+Using the two-session setup from the
+[isolation levels page](/docs/concepts/isolation-levels):
+
+```sql
+CREATE TABLE accounts (id int primary key, group_id int, balance int);
+INSERT INTO accounts VALUES (1,100,50),(2,100,50);   -- group limit: total >= 0
+```
+
+Two concurrent transactions, each withdrawing 50 from a different account,
+each checking the group total. At `READ COMMITTED` and `REPEATABLE READ` both
+succeed and the group goes negative.
+
+Now apply fix (b): `SELECT ... FOR UPDATE` on a `groups` row first. Re-run —
+one blocks, the invariant holds.
+
+**You have just modelled an aggregate using only SQL.** The `groups` row is the
+aggregate root; the lock is the consistency boundary. That equivalence is the
+most valuable thing on this page.
+
+### Lab 5 — measure contention from aggregate size
+
+Add `@Version` to your root. Run N concurrent threads modifying *different*
+children of the *same* aggregate and count `OptimisticLockException`s.
+
+Then split the child into its own aggregate and repeat. Conflicts drop to zero,
+because they're no longer sharing a version.
+
+That's the concurrency cost of a large aggregate, measured on your own schema.
+
+### Lab 6 — domain event after commit
+
+```java
+@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+public void on(OrderConfirmed e) { customerService.recordOrder(e.customerId(), e.total()); }
+```
+
+Make the order transaction roll back after raising the event. Confirm the
+handler doesn't run. Then switch to `BEFORE_COMMIT` and watch it act on a
+transaction that never committed.
+
+## 9. Leading on this
+
+**Ask "what invariant requires this?" of every association in review.** It's
+one question, it takes ten seconds, and it's the highest-leverage design
+question available in a JPA codebase. Most associations exist because the ORM
+made them easy, not because a rule needs them.
+
+**Challenge immediate consistency as a requirement.** "What happens if this is
+two seconds stale?" resolves most cross-aggregate consistency demands. The ones
+that survive are real and tell you where the boundary is. Asking the question
+is a product conversation, not a technical one, and a lead is the person who
+starts it.
+
+**Connect aggregate design to isolation level explicitly.** These are usually
+discussed by different people — domain modellers and DBAs — and they are the
+same decision. A team that sees write skew as "our aggregate boundary is wrong"
+fixes it at design time; a team that sees it as "we need SERIALIZABLE" fixes it
+with retries and contention forever.
+
+**Use reference-by-ID as the extraction insurance policy.** You may never split
+the service. But the discipline costs almost nothing, makes every aggregate
+smaller and faster today, and converts a hypothetical future rewrite into a
+mechanical change. It's one of the few architectural hedges that pays for
+itself immediately.
+
+**Watch for aggregates used as a read model.** When someone loads an aggregate
+to render a list, the answer is a projection, not a fetch strategy. This is the
+main way rich domain models get blamed for performance problems that are
+actually a missing read path.
+
+**Keep domain events and integration events separate, by name and by type.**
+The moment an internal event is published externally, your model is a public
+contract. Make the translation an explicit step someone has to write
+([the outbox](/docs/concepts/the-log)).
+
+## 10. Where to go deeper
+
+- Vaughn Vernon, "Effective Aggregate Design" (three-part paper, free online) —
+  the best thing written on sizing. Short, concrete, and it changed how the
+  industry does this.
+- Eric Evans, *Domain-Driven Design*, chapter 6 — the original definition.
+- Vernon, *Implementing Domain-Driven Design*, chapter 10, for worked examples
+  in code.
+- Kleppmann on write skew (*DDIA* chapter 7), read alongside section 6 here —
+  the two texts describe one phenomenon from opposite ends.
+- Chris Richardson's microservices.io on aggregates, sagas and the outbox — the
+  distributed-systems consequences of these boundaries.
+
+## 11. Self-check
+
+1. State the three aggregate rules. Which does most of the work, and why?
+2. What specifically does referencing by ID buy you, beyond tidiness? Name four
+   things.
+3. Two forces determine aggregate size. Name them and the question that
+   resolves the tension.
+4. `Customer` holds `List<Order>`. Give the question you'd ask, and three
+   possible outcomes depending on the answer.
+5. Explain the relationship between write skew and aggregate boundaries. Why
+   does an invariant *inside* one aggregate make skew impossible?
+6. Give five ways to enforce an invariant spanning two aggregates, ranked.
+7. Why must domain events be published after commit, and what's the mechanism
+   in-process versus across services?
+8. Why are "aggregates that reference by ID" already service boundaries?

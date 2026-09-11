@@ -1,0 +1,385 @@
+---
+title: Partitioning — One Idea in Five Systems
+concept: partitioning
+tier: core
+prerequisites: [hashmap, cas-and-contention]
+unlocks: [sharding, kafka-internals, hot-keys, consistent-hashing, scaling-strategy]
+questions: [java/collections#q22, data/scaling-operations#q48, data/scaling-operations#q49, data/kafka#q112, data/redis-caching#q67]
+estimatedStudyTime: 3h
+---
+
+> **Recall layer.** The interview answers are
+> [Q49](/docs/data/scaling-operations#q49) and
+> [Q112](/docs/data/kafka#q112). This page builds the model that connects them.
+
+## 1. The problem it exists to solve
+
+Five things you learned separately:
+
+- A `HashMap` puts keys in buckets by `hash & (n-1)`.
+- Kafka assigns records to partitions by `hash(key) % partitions`.
+- Redis Cluster maps keys to 16,384 hash slots by `CRC16(key) mod 16384`.
+- A sharded database routes rows by hashing the shard key.
+- `LongAdder` gives each thread its own cell instead of one shared counter.
+
+They are the same idea. Not similar — the same. A function from key to
+partition, independent units, and everything else follows.
+
+That matters because the **failure modes transfer**. If you understand why a
+bad `hashCode` collapses a `HashMap` into a linked list, you already understand
+why one merchant can melt a Kafka partition, why a celebrity user saturates one
+Redis node, and why a poorly chosen shard key leaves you with nineteen idle
+database servers and one on fire.
+
+And the *fixes* transfer too. Learn partitioning once and five bodies of
+operational folklore become one thing you can reason about.
+
+## 2. The shape
+
+Every partitioned system has four parts:
+
+1. **A key.** What you partition by.
+2. **A partition function.** Key → partition identifier.
+3. **N independent units.** Buckets, partitions, slots, shards, cells.
+4. **A routing layer.** Something that applies the function and dispatches.
+
+| System | Key | Function | Unit |
+|---|---|---|---|
+| `HashMap` | object key | `spread(hashCode) & (n-1)` | bucket |
+| `LongAdder` | thread | `probe & (cells-1)` | padded cell |
+| Kafka | record key | `murmur2(key) % partitions` | partition |
+| Redis Cluster | key (or hash tag) | `CRC16(key) mod 16384` | slot → node |
+| Sharded DB | shard key | hash or range | shard |
+
+And every one of them buys you the same three properties, at the same three
+costs.
+
+**Buys:**
+
+- **Parallelism.** N units can be worked on simultaneously. This is the point.
+- **Bounded unit size.** Each unit holds 1/N of the data, so per-unit
+  operations stay cheap.
+- **Isolation.** A problem in one unit is, mostly, confined to it.
+
+**Costs:**
+
+- **Ordering and atomicity are per-unit only.** A `HashMap` bucket, a Kafka
+  partition, a database shard — you get guarantees inside, and nothing across.
+- **Skew.** The function distributes keys, not *load*. Real keys are never
+  uniform.
+- **Rebalancing is expensive**, and usually breaks the guarantees while it
+  happens.
+
+If you can recite those six lines, you can reason about a partitioned system
+you have never seen.
+
+## 3. Cost one: guarantees stop at the boundary
+
+The single most consequential property.
+
+**Kafka.** Ordering is per-partition. There is no global order. So the key
+choice *is* the ordering decision: key by `account_id` and every event for one
+account is ordered while different accounts process in parallel. Key by
+`payment_id` and you get no useful ordering at all. Demand global ordering and
+you get one partition, which means one consumer, which means your throughput
+ceiling is one consumer forever.
+
+**Sharded databases.** Transactions are per-shard. A transaction spanning two
+shards needs two-phase commit (which you don't want) or a saga (which is
+eventual consistency). Joins across shards become scatter-gather, with latency
+equal to the slowest shard.
+
+**Redis Cluster.** Multi-key operations — `MGET`, `MULTI`, a Lua script — only
+work when all keys hash to the same slot. Hence **hash tags**: only the part
+inside `{}` is hashed, so `user:{1234}:profile` and `user:{1234}:orders` land
+together deliberately.
+
+**`HashMap`.** Operations are per-bucket. This is precisely why
+`ConcurrentHashMap` can lock a single bin head rather than the whole map, and
+why `size()` is an estimate — there is no cross-bucket atomic view.
+
+The design rule that follows: **choose the key so that things needing
+consistency land together.** Aggregate boundaries, ordering requirements, and
+transaction scope should all agree with the partition key. When they don't,
+you spend the rest of the system's life working around it.
+
+## 4. Cost two: skew, and why the function isn't the problem
+
+The partition function distributes *keys* uniformly. It cannot distribute
+*load*, because load depends on the data, and real data is Zipfian.
+
+- One merchant is 40% of your transaction volume.
+- One celebrity account gets 10,000× the reads.
+- One tenant has 50 million rows and the rest have 500.
+- Partitioning payments by `status` when 95% are `SETTLED`.
+
+The symptom is identical everywhere: one unit saturated, the rest idle, and
+adding capacity doesn't help because the hot unit can't be split.
+
+**Mitigations, in the order I'd try them:**
+
+**(a) Pick a better key.** Higher cardinality, more even distribution. Usually
+the real fix and usually available — keying by `payment_id` instead of
+`merchant_id` distributes beautifully, at the cost of per-merchant ordering.
+That's the trade from section 3, stated as a choice.
+
+**(b) Composite key.** `merchant_id:bucket` where bucket is `hash(payment_id) %
+16`. The hot merchant now spreads across 16 partitions, and you retain ordering
+within each bucket. Partial ordering is often enough — a compromise worth
+knowing.
+
+**(c) Isolate the outlier.** Give the whale its own shard or its own consumer.
+Common and pragmatic in multi-tenant systems: a tiered architecture where large
+customers get dedicated resources.
+
+**(d) Replicate the hot key.** For read-heavy skew: store `hotkey:0..N`, read a
+random copy, write all. Multiplies read capacity, complicates writes.
+
+**(e) Absorb it upstream.** A one-second local cache in front of a hot Redis
+key removes 99% of the traffic
+([cache invalidation](/docs/concepts/cache-invalidation)). Often the cheapest
+fix by a wide margin.
+
+Note (a) and (b) are *modelling* changes, (c)–(e) are *operational* ones. If
+you're reaching for (c) onwards repeatedly, the key is wrong.
+
+## 5. Cost three: N is hard to change
+
+Here's the trap that catches everyone, and it's visible in the arithmetic.
+
+With `hash(key) % N`, changing N changes the partition for **almost every key**.
+Going from 4 to 5 partitions remaps roughly 80% of them.
+
+The consequences differ by system, and the differences are instructive:
+
+**`HashMap`** solves it by making N a power of two and doubling. An entry's new
+index is either `i` or `i + oldCap`, decided by a single bit — so resize is a
+split with no rehashing ([the HashMap page](/docs/concepts/hashmap)). Cheap,
+because the map is in one process and nobody is reading concurrently.
+
+**Kafka** does *not* solve it. Adding partitions rehashes existing keys, so
+records for one account start landing on a different partition while older
+records for that account are still on the old one. **Per-key ordering breaks
+for the transition, and there is no fix.** The safe path is a new topic with
+the new partition count and a controlled migration
+([Q112](/docs/data/kafka#q112)). This is why partition count deserves real
+thought up front — it is close to a one-way door.
+
+**Redis Cluster** solves it with a layer of indirection: 16,384 fixed slots,
+and a *mapping* from slots to nodes. Keys never move; slots do. Adding a node
+means reassigning some slots, which migrates a fraction of the data and can
+happen online.
+
+**Sharded databases** should do what Redis does. **Consistent hashing** or —
+simpler and better — **virtual buckets**: hash to one of 1,024 logical shards,
+and maintain a bucket→server map. Growing capacity is a mapping change plus a
+data move for a fraction of the buckets. Using `% server_count` directly is a
+mistake you pay for forever.
+
+**The generalisable lesson:** never hash directly to physical units. Hash to a
+large fixed number of logical units, and map those to physical ones. The extra
+indirection costs nothing and turns "rebuild everything" into "move 1/N of the
+data".
+
+## 6. Rebalancing is a state transition, not an event
+
+While partitions move, the system is in a third state that is neither
+before nor after, and its guarantees are weaker than both.
+
+**Kafka.** Eager rebalancing is stop-the-world — every consumer revokes all
+partitions, the assignment is recomputed, everyone resumes. On a large group
+that's seconds of no consumption every time a pod restarts. Cooperative
+incremental rebalancing only moves what must move
+([Q110](/docs/data/kafka#q110)). Static membership (`group.instance.id`) avoids
+the rebalance entirely for a restarting consumer.
+
+**Redis Cluster** migrates slots key by key, with `ASK` redirects for keys in
+flight. Clients must handle the redirect.
+
+**Sharded databases** need dual-write, backfill, verify, cut over — the
+migration from [the extraction pattern](/docs/concepts/bounded-contexts),
+applied to data.
+
+**`HashMap`** resizes while nothing else runs, which is exactly why the Java 7
+concurrent resize could produce an infinite loop: the transition state was
+never designed to be observed.
+
+**The lesson:** design the transition, not just the end state. The question to
+ask of any partitioned system is "what are the guarantees *during* a
+rebalance?" — and in most incidents, that's where things actually went wrong.
+
+## 7. What this does *not* cover
+
+- **Replication.** Orthogonal. Partitioning splits data across units;
+  replication copies each unit for durability and read scaling. Kafka does
+  both — partitions × replication factor — and conflating them causes confused
+  capacity planning.
+- **Range vs hash partitioning.** Range keeps ordering and enables range scans,
+  at the cost of hotspots at the boundary (time-series always writing to the
+  newest partition). Hash distributes evenly and destroys range queries.
+  PostgreSQL declarative partitioning offers both
+  ([Q48](/docs/data/scaling-operations#q48)).
+- **Placement and rack awareness.** Which physical machine holds which
+  partition matters for failure domains.
+- **Query routing.** Getting a query to the right shard, and scatter-gather
+  when you can't.
+
+## 8. Lab: the same failure, five times
+
+### Lab 1 — skew in a HashMap
+
+```java
+record BadKey(String s) { public int hashCode() { return s.length(); } }
+```
+
+Insert 100,000 keys of similar length. Time lookups. Then use the default
+`record` hashCode and repeat. Same data, same structure, orders of magnitude
+apart — because every key landed in a handful of buckets.
+
+**Then hold that image**, because the next four labs are the same picture at
+different scales.
+
+### Lab 2 — skew in Kafka
+
+```bash
+docker run --rm -d --name kafka -p 9092:9092 apache/kafka:latest
+docker exec -it kafka /opt/kafka/bin/kafka-topics.sh --create \
+  --topic skewed --partitions 6 --bootstrap-server localhost:9092
+```
+
+Produce 100,000 records where 80% share one key (`merchant-1`) and 20% are
+spread across a thousand keys. Then:
+
+```bash
+docker exec -it kafka /opt/kafka/bin/kafka-run-class.sh \
+  kafka.tools.GetOffsetShell --bootstrap-server localhost:9092 --topic skewed
+```
+
+One partition holds ~80,000 records; the others hold a few thousand each. Add
+consumers and watch total throughput refuse to improve, because one consumer is
+doing 80% of the work.
+
+Now re-key using the composite trick — `merchant-1:{0..15}` — and re-run.
+Distribution evens out, and you've traded strict per-merchant ordering for
+per-bucket ordering.
+
+### Lab 3 — the modulo trap, arithmetically
+
+```python
+for n_old, n_new in [(4,5), (4,8), (1024,1025)]:
+    moved = sum(1 for k in range(100_000)
+                if hash(str(k)) % n_old != hash(str(k)) % n_new)
+    print(f"{n_old}->{n_new}: {moved/1000:.1f}% of keys move")
+```
+
+Roughly 80% for 4→5. Then implement virtual buckets — hash to 1,024 buckets,
+map buckets to servers — and recompute how many *keys* move when you add a
+server. A few percent. **Three lines of arithmetic that justify an entire
+architectural decision.**
+
+### Lab 4 — Redis Cluster slots and hash tags
+
+```bash
+docker run --rm -d --name redis -p 6379:6379 redis:7 redis-server --cluster-enabled yes
+redis-cli -p 6379 cluster keyslot "user:1234:profile"
+redis-cli -p 6379 cluster keyslot "user:1234:orders"
+redis-cli -p 6379 cluster keyslot "user:{1234}:profile"
+redis-cli -p 6379 cluster keyslot "user:{1234}:orders"
+```
+
+The first two differ; the last two are identical. Then try `MGET` across two
+different slots on a real cluster and watch `CROSSSLOT` come back. That error
+message is section 3 in one line.
+
+### Lab 5 — striping a counter
+
+Re-run Lab 1 from the
+[CAS page](/docs/concepts/cas-and-contention): `AtomicLong` versus `LongAdder`
+at 32 threads. `LongAdder` *is* partitioning — one cell per contending thread —
+and the read cost (`sum()` is not atomic) is exactly the cross-partition
+guarantee loss from section 3.
+
+Seeing the same trade at the CPU-cache level and at the Kafka level in the same
+afternoon is the point of this page.
+
+### Lab 6 — find the hot partition in your own system
+
+Pick a real Kafka topic. Measure records per partition:
+
+```bash
+kafka-run-class.sh kafka.tools.GetOffsetShell --bootstrap-server $B --topic $T
+```
+
+Compute max/median. Anything above ~3× is worth investigating. Do the same for
+your database: rows per shard, or for a partitioned table,
+`SELECT relname, n_live_tup FROM pg_stat_user_tables WHERE relname LIKE 'payments_%'`.
+
+Most teams have never looked at this number, and it is frequently worse than
+expected.
+
+## 9. Leading on this
+
+**Treat the partition key as a one-way door.** It determines ordering scope,
+transaction scope, skew, and how painful growth will be. It deserves an ADR
+with the alternatives written down — and for Kafka specifically, the partition
+count deserves the same treatment, because increasing it breaks key ordering
+permanently.
+
+**Never hash directly to physical units.** Logical buckets plus a mapping,
+always, whether that's Redis's 16,384 slots or your own 1,024 virtual shards.
+The indirection is free at design time and saves a migration project later.
+This is the single most transferable rule on the page.
+
+**Monitor distribution, not just aggregate load.** Records per partition,
+rows per shard, requests per node, ops per Redis slot — with a max/median ratio
+on a dashboard. Aggregate metrics hide skew completely, and skew is the most
+common scaling failure. Alert when the ratio crosses a threshold.
+
+**Make people align the keys.** Kafka partition key, database shard key, and
+aggregate boundary should be the same identifier. When they agree, a consumer
+handling one partition talks to one shard and does local transactions. When
+they don't, every message fans out. This is worth catching at design review,
+because retrofitting it is a rewrite.
+
+**Use the transfer explicitly when teaching.** An engineer who understands
+`HashMap` collisions already understands Kafka hot partitions — they just don't
+know it yet. Drawing that line costs five minutes and upgrades their intuition
+across four systems at once. It's one of the highest-leverage explanations
+available, and it's why this page exists rather than four separate ones.
+
+**Ask "what happens during rebalancing?" in every design review** of a
+partitioned system. The steady states are usually fine. The transition is where
+the incidents are.
+
+## 10. Where to go deeper
+
+- Kleppmann, *Designing Data-Intensive Applications*, chapter 6 — the best
+  general treatment, including the range-vs-hash trade and rebalancing
+  strategies. Read it once even if you know the material.
+- Karger et al., "Consistent Hashing and Random Trees" (1997) — the original,
+  and short.
+- Amazon's Dynamo paper (2007) for consistent hashing with virtual nodes in
+  practice.
+- Kafka's documentation on the default partitioner and on cooperative
+  rebalancing (KIP-429).
+- Redis Cluster specification — the slot model and the `ASK`/`MOVED` protocol
+  are unusually clearly specified.
+- Vitess and Citus documentation, for how mature systems handle resharding.
+
+## 11. Self-check
+
+1. Name the four components every partitioned system has, and identify each in
+   Kafka and in `HashMap`.
+2. Why does partitioning give you ordering *within* a unit and nothing across?
+   Give the consequence in Kafka and in a sharded database.
+3. Your Kafka topic has six partitions and one holds 80% of records. Give two
+   modelling fixes and two operational ones, and say what each costs.
+4. Why does `hash(key) % N` make growth expensive, and what is the standard
+   indirection that fixes it?
+5. `HashMap` resizes cheaply and Kafka cannot. What is the structural
+   difference?
+6. What breaks during a Kafka rebalance, and what two mechanisms reduce it?
+7. Explain Redis hash tags. What problem do they solve and what problem can
+   they create?
+8. Why should the Kafka partition key, the database shard key and the aggregate
+   boundary be the same identifier?
