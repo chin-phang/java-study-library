@@ -297,6 +297,14 @@ thirteen foundational pages; `broker-semantics` was a thirteenth Core page
 outside that count, drafted and converted the same day rather than queued
 behind it.
 
+**Fifteen, as of the same day.** `kafka-internals` drafted and converted
+immediately after, adding the seventh resolving edge: `kafka-internals →
+the-log`. Its own `unlocks` (`multi-region-replication`, `schema-evolution`
+— two new Specialist slugs, recorded below) both dangle by design. The full
+eventual count is now **twenty-seven**, not twenty-six: `kafka-internals`
+was the fourteenth Core page, a fourteenth slug outside the original
+twelve-draft estimate, same as `broker-semantics` was the thirteenth.
+
 ### The dependency graph — settled conventions
 
 Decided 2026-09-10, at the frontmatter review gate. Both are cheap now and
@@ -454,8 +462,8 @@ runtime, then data, then distributed and design:
 The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
-**Core** — **thirteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**one of those thirteen also converted** into `content/docs/concepts/` the
+**Core** — **fourteen of twenty-one drafted** in `_source/` as of 2026-09-11,
+**two of those fourteen also converted** into `content/docs/concepts/` the
 same day. Six were the first batch (`virtual-threads`,
 `cas-and-contention`, `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`); six more followed the same day (`aggregates`,
@@ -463,9 +471,9 @@ same day. Six were the first batch (`virtual-threads`,
 `locking-and-deadlock`, `partitioning`). Three more were added the same day
 from the coverage audit below — `broker-semantics`, `stream-pipelines`, and
 `kafka-internals` promoted from Specialist — and of those three,
-**`broker-semantics` was drafted and converted immediately**, the only Core
-page built so far; `stream-pipelines` and `kafka-internals` remain
-unplanned beyond the slug. `query-planning`, `class-loading` and
+**`broker-semantics` and `kafka-internals` were each drafted and converted
+immediately**, the only two Core pages built so far; `stream-pipelines`
+remains unplanned beyond the slug. `query-planning`, `class-loading` and
 `consistency-models` also remain undrafted.
 
 Titles below are the drafts' own where a draft exists, and the placeholder
@@ -489,7 +497,7 @@ the table, and **the `cas` slug** further down for the first one of these.
 | `locking-and-deadlock` | Locking and Deadlock | drafted |
 | `partitioning` | Partitioning — One Idea in Five Systems | drafted |
 | `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | drafted, converted |
-| `kafka-internals` | Partitions, Consumer Groups, ISR and the High Watermark | drafted |
+| `kafka-internals` | Partitions, Consumer Groups, ISR and the High Watermark | drafted, converted |
 | `stream-pipelines` | Stream pipelines — laziness, fusion and parallel decomposition | |
 | `class-loading` | Class loading and classloader leaks | |
 | `query-planning` | Query planning and cardinality estimation | |
@@ -599,6 +607,33 @@ plain numbered list, matching every other draft in this table — the `where`
 pointers and `<SelfCheck>` JSX exist only in the converted page, per **The
 Question component** below.
 
+**`kafka-internals`: drafted and converted the same day** (2026-09-11),
+immediately after `broker-semantics`. `prerequisites: [the-log]` resolves
+to a built page — the-log explicitly lists `kafka-internals` as one of its
+own `unlocks` targets, and this is that edge fulfilled. `unlocks:
+[multi-region-replication, schema-evolution]` are two brand-new Specialist
+slugs, neither previously promised by any other page, recorded in the
+Specialist list below. All five `questions:` anchors
+(`data/kafka#q108`, `#q110`, `#q114`, `#q116`, `#q131`) were checked
+against `content/docs/data/kafka.mdx` before writing, and chosen
+specifically to avoid `#q106`/`#q113` (already claimed by `the-log`),
+`#q109` (already claimed by `idempotency`), and `#q112` (already claimed by
+`partitioning`) — overlap is allowed by the library's rules but wasn't
+needed here, since 27 of the bank's 30 questions were still unclaimed
+going in. 10 sections, ~3,100 words — in the same longer range as
+`broker-semantics`, again because the page argues from a contrast (with
+`the-log`'s single-log model) rather than explaining one self-contained
+mechanism. 7 self-check items, with `where` pointers written at conversion
+time, same discipline as `broker-semantics`. **Carries two diagrams** — an
+ISR/high-watermark failure trace, and an eager-vs-cooperative rebalance
+comparison — neither duplicating the reference bank's existing Q110
+(partition-to-consumer-group assignment) or Q116 (ISR/high-watermark
+steady state) pictures; both verified in the browser at 375px (viewBox
+505×1110 rendered ≈68%, and 586×820 rendered ≈58%, no horizontal overflow,
+no "Syntax error" text). Both `pnpm types:check` and `pnpm build` pass with
+the page in the sidebar. The self-check in `_source/kafka-internals.mdx` is
+a plain numbered list, matching the rest of this table.
+
 **Specialist** — 40 slugs, every one promised by a foundational page's
 `unlocks` and none of them written or planned. (`kafka-internals` was here until
 2026-09-11 and is now Core — see the coverage audit below.) They are listed so the names are
@@ -626,10 +661,11 @@ gotchas**.
 
 ### Coverage audit — which banks still have no concept page
 
-Measured 2026-09-11 across all 419 questions and all 26 concept pages (13
-foundational, built; plus 13 core drafts, one of which — `broker-semantics` —
-is also converted). **114 questions are claimed — 27%**, up from 108 (26%)
-before `broker-semantics` and up from 93 (22%) before the second batch of six
+Measured 2026-09-11 across all 419 questions and all 27 concept pages (13
+foundational, built; plus 14 core drafts, two of which — `broker-semantics`
+and `kafka-internals` — are also converted). **119 questions are claimed —
+28%**, up from 114 (27%) before `kafka-internals`, up from 108 (26%) before
+`broker-semantics`, and up from 93 (22%) before the second batch of six
 drafts. The counts below in **Everything else large is already planned** are
 the ones that move — `coupling-and-cohesion` takes one question each off
 `oop-fundamentals`, `solid-principles`, `architecture-styles` and
@@ -637,7 +673,10 @@ the ones that move — `coupling-and-cohesion` takes one question each off
 off `scaling-operations`, and one each off `kafka` and `redis-caching`;
 `broker-semantics` takes six off `rabbitmq` (Q86, Q88, Q89, Q91, Q93, Q98),
 on top of the two `backpressure` already had (Q92, Q102) — eight of
-`rabbitmq`'s twenty now claimed, twelve still open.
+`rabbitmq`'s twenty now claimed, twelve still open; `kafka-internals` takes
+five off `kafka` (Q108, Q110, Q114, Q116, Q131), on top of the four `the-log`
+(Q106, Q113), `idempotency` (Q109) and `partitioning` (Q112) already had —
+nine of `kafka`'s thirty now claimed, twenty-one still open.
 
 **That number is supposed to be low.** The tiering is the point: a small number
 of deeply understood mechanisms generate correct answers to a large number of
@@ -658,10 +697,14 @@ real and are now in the Core table:
   Q102. Twelve of `rabbitmq`'s twenty questions remain unclaimed —
   `design-patterns`-style recall (client mistakes, monitoring, zero-downtime
   config changes) that doesn't reduce to one mechanism.
-- **`kafka-internals`, promoted Specialist → Core** — `data/kafka` is the
-  largest section in the library at 30 questions, with 3 claimed. Partitions and
-  consumer groups, ISR and `acks`, rebalancing and retention are core
-  mechanisms, not specialist ones. The slug already existed; the tier was wrong.
+- **`kafka-internals`, promoted Specialist → Core** — `data/kafka` was the
+  largest section in the library at 30 questions, with 4 claimed at the time
+  of this audit (this corrects an earlier count of 3 in this bullet, which
+  missed `partitioning`'s Q112). Partitions and consumer groups, ISR and
+  `acks`, rebalancing and retention are core mechanisms, not specialist
+  ones. The slug already existed; the tier was wrong. **Drafted and
+  converted the same day**, claiming Q108, Q110, Q114, Q116 and Q131 — see
+  the Core table above.
 - **`stream-pipelines`** — `java/streams` is 11 questions with 1 claimed, and no
   planned slug contained "stream", so this was an omission rather than a
   deferral. The mechanism is the lazy, fused, single-pass traversal driven by
@@ -1196,7 +1239,7 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
-**Concept pages add 11 more, so the library holds 30.** Of the thirteen
+**Concept pages add 13 more, so the library holds 32.** Of the thirteen
 foundational pages, **ten carry their own diagram** and **three link to a
 reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
 `java/jvm-memory-gc#q71`, `dependency-inversion` →
@@ -1206,7 +1249,10 @@ which is the only verification a borrowed diagram gets. **`broker-semantics`
 adds the eleventh** — the first Core-tier page with a diagram of its own — a
 queue-vs-stream fork, adjacent to rather than a copy of the AMQP routing
 diagram already on `data/rabbitmq#q86` and the DLX retry diagram on
-`data/rabbitmq#q90`.
+`data/rabbitmq#q90`. **`kafka-internals` adds the twelfth and thirteenth** —
+an ISR/high-watermark failure trace and an eager-vs-cooperative rebalance
+comparison, neither a copy of the reference bank's own Q110 (assignment
+flow) or Q116 (ISR/high-watermark steady state) pictures.
 
 **Phone-readability, measured on all ten at 375px.** None overflows; the page
 body never scrolls horizontally. Rendered scale, worst first:
@@ -1217,9 +1263,10 @@ body never scrolls horizontally. Rendered scale, worst first:
 | 52% | `btrees-selectivity` | three-sibling fan-out, landscape |
 | 53% | `hashmap`, `idempotency` | three-way fan-out |
 | 55% | `mvcc` | |
-| 58% | `broker-semantics` | two-branch fork, one loop-back decision diamond |
+| 58% | `broker-semantics`, `kafka-internals` (rebalance diagram) | two-branch fork, one loop-back decision diamond |
 | 59% | `the-log` | |
 | 61% | `jit` | |
+| 68% | `kafka-internals` (ISR/high-watermark diagram) | linear chain with one decision diamond |
 | 99% | `thread-pools`, `bounded-contexts` | stacked subgraphs via `~~~` |
 | 100% | `generics-erasure` | plain top-to-bottom chain |
 
@@ -1232,6 +1279,12 @@ changing a diagram is beyond a structural conversion.
 `broker-semantics` (Core tier, measured 2026-09-11) sits in the same range as
 the foundational middle of the pack — verified with `viewBox="0 0 586
 943.59375"` against a 343px rendered width at 375px viewport.
+
+`kafka-internals` (Core tier, measured 2026-09-11) carries two diagrams,
+both checked the same way: the ISR/high-watermark trace at `viewBox="0 0
+505.375 1110"` against a 343px rendered width (≈68%), and the
+eager-vs-cooperative rebalance comparison at `viewBox="0 0 586
+820.015625"` (≈58%) — both legible, neither the tightest in the library.
 
 ### A concept page links to a reference diagram, it does not copy it
 
@@ -1268,20 +1321,21 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **44 pages** (30 reference + 14
-concept — 13 foundational plus `broker-semantics`, the first converted Core
-page), 419 questions, **30 diagrams**, 107 self-check items.
+Content first — and the content now exists: **45 pages** (30 reference + 15
+concept — 13 foundational plus `broker-semantics` and `kafka-internals`, the
+two converted Core pages so far), 419 questions, **32 diagrams**, 114
+self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has thirteen real nodes.**
+- Concept dependency graph as a study path — **now has fifteen real nodes.**
   Read **The dependency graph — settled conventions** before starting: eight
-  roots, five resolving `prerequisites` edges, and a large majority of `unlocks`
-  targets pointing at unwritten specialist pages. Tolerating dangling `unlocks`
-  is a day-one requirement, not an edge case.
+  roots, seven resolving `prerequisites` edges, and a large majority of
+  `unlocks` targets pointing at unwritten specialist pages. Tolerating
+  dangling `unlocks` is a day-one requirement, not an edge case.
 - ~~Self-check questions collapsed by default~~ — built, see **The Question component**
 
 Out of scope: accounts, sync, spaced-repetition scheduling, a backend.
