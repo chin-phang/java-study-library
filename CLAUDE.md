@@ -515,8 +515,43 @@ model behind this answer: Aggregates as Consistency Boundaries"), alongside
 the Q48 mermaid diagram rendering with no "Syntax error" text. It's in the
 sidebar after `persistence-context`.
 
+**`backpressure`: converted 2026-09-12**, the eleventh Core page taken to
+`content/docs/concepts/`, immediately after `aggregates`. One currency fix,
+the same shape as `isolation-levels`'s and `cache-invalidation`'s stale
+Postgres pins: Lab 5's `docker run` pinned `rabbitmq:3-management`, while
+`broker-semantics` (converted the day before) already pins
+`rabbitmq:4.3-management` — updated to match, in both
+`_source/backpressure.mdx` and the converted page, so they no longer
+diverge on that line. Nothing else in the draft is version-pinned — Little's
+Law, the RabbitMQ `vm_memory_high_watermark` mechanism, `CallerRunsPolicy`,
+the Reactive Streams `request(n)` protocol, the Netflix concurrency-limits
+library and the Google SRE Book chapter reference are all stable citations
+with no JEP or release-cadence exposure, so no other correction was needed.
+`prerequisites: [thread-pools]` resolves to a built foundational page, no
+conversion-order issue. All five `questions:` anchors (`java/collections#q30`,
+`java/concurrency#q53`, `data/rabbitmq#q92`, `data/rabbitmq#q102`,
+`data/cross-cutting#q139`) were checked against the built reference pages
+before writing, along with the prose cross-references to
+`design/microservices-communication#q81` in §6 and to the `virtual-threads`
+and `thread-pools` concept pages. **Carries no diagram** — `java/concurrency#q53`
+already has its own `ThreadPoolExecutor` core→queue→max→rejection-flow
+diagram (on the reference-bank target-19 list) but §3's table only
+*names* the thread pool as one queue among seven rather than explaining that
+mechanism in depth, so there was nothing of this page's own to draw; none of
+`#q30`, `#q92`, `#q102` or `#q139` carries a diagram either. This matches the
+draft's own second-six-drafts audit finding (**"none carries a diagram"**)
+rather than a link-don't-copy judgement like `aggregates`'s. 8 self-check
+items, with `where` pointers written at conversion time, same discipline as
+the other converted Core pages. Both `pnpm types:check` and `pnpm build`
+pass, and the reverse link on `java/collections#q30` was verified in the
+browser ("The model behind this answer: Backpressure and the Unbounded
+Queue" alongside `thread-pools`) — the third verified case of a question
+claimed by two concept pages, after `java/jvm-memory-gc#q80`/`java/streams#q47`
+and `java/concurrency#q62`. It's in the sidebar between `thread-pools` and
+`virtual-threads`.
+
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**ten of those fifteen also converted** into `content/docs/concepts/` —
+**twelve of those fifteen also converted** into `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
 immediately after `cas-and-contention`, `cache-invalidation`
@@ -527,7 +562,12 @@ first batch (`virtual-threads`, `cas-and-contention`, `isolation-levels`,
 `cache-invalidation`, `spring-proxy`, `persistence-context`) — **all six now
 converted**, closing that batch out; six more
 followed the same day (`aggregates`, `backpressure`, `coupling-and-cohesion`,
-`escape-analysis`, `locking-and-deadlock`, `partitioning`). Three more were
+`escape-analysis`, `locking-and-deadlock`, `partitioning`). Of that second
+six, `aggregates` converted 2026-09-12 immediately after `persistence-context`,
+and `backpressure` converted immediately after `aggregates` — two of the six
+taken to `content/docs/concepts/` so far; `coupling-and-cohesion`,
+`escape-analysis`, `locking-and-deadlock` and `partitioning` remain drafted
+only. Three more were
 added the same day from the coverage audit below — `broker-semantics`,
 `stream-pipelines`, and `kafka-internals` promoted from Specialist — and all
 three were drafted and converted the same day. `stream-pipelines` claims five
@@ -716,7 +756,7 @@ underneath the table for the closed record.
 | `spring-proxy` | The Proxy Boundary in Spring | drafted, converted |
 | `persistence-context` | The Persistence Context and Dirty Checking | drafted, converted |
 | `aggregates` | Aggregates as Consistency Boundaries | drafted, converted |
-| `backpressure` | Backpressure and the Unbounded Queue | drafted |
+| `backpressure` | Backpressure and the Unbounded Queue | drafted, converted |
 | `coupling-and-cohesion` | Coupling, Cohesion, and What Makes a Change Expensive | drafted |
 | `escape-analysis` | Escape Analysis and When Allocation Disappears | drafted |
 | `locking-and-deadlock` | Locking and Deadlock | drafted |
@@ -1575,7 +1615,14 @@ explains is already drawn on `design/ddd#q48` (it's on the diagrams target
 list, "aggregate boundary and transactional scope (Q48)"), so §2 adds one
 linking sentence to Q48's diagram instead of drawing a new one, the same
 judgement `jmm`, `virtual-threads`, `isolation-levels` and `spring-proxy`
-made for their own borrowed pictures.
+made for their own borrowed pictures. **`backpressure` carries no diagram
+either** — converted immediately after `aggregates` — and it's a clean case
+like `cas-and-contention`'s and `cache-invalidation`'s rather than a
+link-don't-copy judgement: `java/concurrency#q53` already has its own
+`ThreadPoolExecutor` diagram, but §3's table only names the thread pool as
+one queue among seven, with nothing of this page's own to draw, and none of
+its other four `questions:` anchors carries a diagram to link to either.
+Adds nothing to the count.
 
 **Phone-readability, measured on all ten at 375px.** None overflows; the page
 body never scrolls horizontally. Rendered scale, worst first:
@@ -1665,17 +1712,17 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **53 pages** (30 reference + 23
+Content first — and the content now exists: **54 pages** (30 reference + 24
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
-`persistence-context` and `aggregates`, the ten converted Core pages so
-far), 419 questions,
+`persistence-context`, `aggregates` and `backpressure`, the eleven converted
+Core pages so far), 419 questions,
 **35 diagrams**
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
-`spring-proxy` and `aggregates` carry none — `spring-proxy` links to
-`java/spring#q101` and `aggregates` links to `design/ddd#q48` instead), 177
-self-check items.
+`spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
+links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
+instead), 185 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 

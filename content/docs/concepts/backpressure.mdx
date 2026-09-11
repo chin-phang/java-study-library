@@ -349,19 +349,62 @@ applied to each stage, finds it in five minutes.
 
 ## 10. Self-check
 
-1. Why does an unbounded queue make overload worse rather than absorbing it?
-   Name two distinct harms.
-2. Derive the maximum useful queue depth from throughput and client timeout,
-   and explain what happens beyond it.
-3. Name five queues in a typical Spring Boot service handling HTTP and
-   consuming from a broker.
-4. Your executor queue is empty and `hikaricp_connections_pending` is 195.
-   What has happened?
-5. Compare blocking the producer, `CallerRunsPolicy`, and returning 503. When
-   is each right, and what is the sharp edge of the first two?
-6. Why does a RabbitMQ publisher hang with no exception, and what is the full
-   failure chain from slow consumer to unrelated service outage?
-7. How does Kafka's backpressure model differ from RabbitMQ's, and which
-   failure would you rather have?
-8. Why can total successful throughput increase when you start rejecting
-   requests?
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 Why queueing beyond a point is negative value.">
+
+Why does an unbounded queue make overload worse rather than absorbing it?
+Name two distinct harms.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§2 The maximum useful queue depth rule.">
+
+Derive the maximum useful queue depth from throughput and client timeout,
+and explain what happens beyond it.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§3 Every layer has a queue.">
+
+Name five queues in a typical Spring Boot service handling HTTP and
+consuming from a broker.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§3 The narrowest bound wins.">
+
+Your executor queue is empty and `hikaricp_connections_pending` is 195.
+What has happened?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§4 Propagating the signal.">
+
+Compare blocking the producer, `CallerRunsPolicy`, and returning 503. When
+is each right, and what is the sharp edge of the first two?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§5 Where the broker sits, the RabbitMQ paragraph.">
+
+Why does a RabbitMQ publisher hang with no exception, and what is the full
+failure chain from slow consumer to unrelated service outage?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§5 Where the broker sits, the distinction generalises paragraph.">
+
+How does Kafka's backpressure model differ from RabbitMQ's, and which
+failure would you rather have?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§8 Teach that shedding increases throughput.">
+
+Why can total successful throughput increase when you start rejecting
+requests?
+
+</SelfCheckItem>
+
+</SelfCheck>
