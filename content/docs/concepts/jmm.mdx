@@ -3,7 +3,7 @@ title: The Java Memory Model
 concept: jmm
 tier: foundational
 prerequisites: []
-unlocks: [cas, deadlock, virtual-threads]
+unlocks: [cas-and-contention, locking-and-deadlock, virtual-threads]
 questions: [java/concurrency#q48, java/concurrency#q49, java/concurrency#q57, java/concurrency#q58, java/concurrency#q69]
 estimatedStudyTime: 3h
 ---

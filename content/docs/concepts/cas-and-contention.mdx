@@ -1,0 +1,445 @@
+---
+title: CAS, Contention, and Lock-Free Structures
+concept: cas-and-contention
+tier: core
+prerequisites: [jmm]
+unlocks: [concurrent-collections, false-sharing, atomics, non-blocking-algorithms]
+questions: [java/concurrency#q51, java/concurrency#q49, java/concurrency#q50, java/concurrency#q59, java/concurrency#q67]
+estimatedStudyTime: 3h
+---
+
+> **Recall layer.** The interview answers are
+> [Q51](/docs/java/concurrency#q51) and [Q67](/docs/java/concurrency#q67).
+> This page builds the model.
+
+## 1. The problem it exists to solve
+
+You replace a `synchronized` counter with an `AtomicLong` because lock-free is
+faster. At 4 threads it is. At 32 threads it's **slower than the lock you
+removed**, and the CPU is saturated doing nothing.
+
+Separately: you have two independent counters, updated by two different
+threads, touching no shared state whatsoever. You split them into separate
+fields specifically to avoid contention. Throughput is a third of what it
+should be.
+
+Both are the same physical phenomenon, and neither is visible in the source
+code. You cannot find either by reading the program, because the contention
+isn't between your *variables* — it's between **cache lines**, and cache lines
+are invisible at the language level.
+
+## 2. CAS: the primitive underneath everything
+
+Compare-and-swap is a single atomic CPU instruction — `lock cmpxchg` on x86,
+`LDREX`/`STREX` or `CAS` on ARM. Semantically:
+
+```
+CAS(address, expected, new):
+    atomically:
+      if (*address == expected) { *address = new; return true; }
+      else return false;
+```
+
+The whole read-compare-write happens as one indivisible operation. Nothing can
+interleave.
+
+Every atomic operation in Java is a retry loop around this:
+
+```java
+public final long incrementAndGet() {
+    long prev, next;
+    do {
+        prev = get();          // volatile read
+        next = prev + 1;
+        } while (!compareAndSet(prev, next));   // retry if someone else won
+    return next;
+}
+```
+
+That loop is the definition of **non-blocking**: no thread is ever suspended,
+so no deadlock, no priority inversion, and a thread that gets descheduled
+mid-operation never blocks anyone else. That's a genuinely strong property and
+it's why `java.util.concurrent` is built on CAS rather than locks.
+
+CAS also carries volatile memory semantics — a successful CAS is both a
+volatile read and a volatile write, so it establishes happens-before edges just
+like a lock release/acquire does (see the [JMM page](/docs/concepts/jmm)).
+
+### The catch: optimism is only cheap when it's justified
+
+The loop retries on failure. Under low contention, failure is rare and the
+operation is one instruction. Under high contention, most attempts fail and
+threads **spin, burning CPU**, each retry re-reading a cache line that another
+core just invalidated.
+
+So the trade is precisely:
+
+| | Lock | CAS |
+|---|---|---|
+| Low contention | cheap (thin lock, no syscall) | cheapest |
+| High contention | thread parks, CPU freed | threads spin, CPU burned |
+| Progress guarantee | blocking | lock-free |
+| Deadlock possible | yes | no |
+
+That's the answer to the first puzzle in section 1. At 32 threads, `AtomicLong`
+had 31 threads spinning on a cache line that was being invalidated constantly,
+while `synchronized` would have parked them and let one make progress.
+
+**Lock-free does not mean faster.** It means *no thread can be blocked by
+another's suspension*. Those are different claims and conflating them is the
+most common mistake here.
+
+## 3. Cache coherence is the real cost model
+
+To understand why contention costs what it does, you have to drop below the
+JMM to the hardware.
+
+Each core has its own L1 and L2 cache. A coherence protocol (MESI and its
+variants) keeps them consistent, with each **cache line** — 64 bytes on every
+mainstream CPU — in one of several states per core:
+
+- **Modified** — this core has the only, dirty copy
+- **Exclusive** — only copy, clean
+- **Shared** — several cores have read-only copies
+- **Invalid** — stale
+
+When a core writes to a line, it must first gain exclusive ownership, which
+**invalidates every other core's copy**. Those cores must then re-fetch it —
+from the owning core's cache or from L3 — on their next access.
+
+Rough costs:
+
+| Access | Cycles |
+|---|---|
+| L1 hit | ~4 |
+| L2 hit | ~12 |
+| L3 hit | ~40 |
+| Contended line (cross-core transfer) | ~100–300 |
+| Main memory | ~200–300 |
+
+A hot contended counter is therefore not "an atomic instruction" — it's a
+cache line ping-ponging between cores at a hundred-plus cycles per transfer,
+serialised by the coherence protocol. **The hardware has a lock whether you
+used one or not.**
+
+This is the actual cost model for all contended concurrency, and it's why the
+answer is almost always to *reduce sharing* rather than to pick a cleverer
+synchronisation primitive.
+
+## 4. False sharing
+
+Now the second puzzle. Two independent variables that happen to sit within the
+same 64-byte line:
+
+```java
+class Counters {
+    volatile long a;   // thread 1 writes
+    volatile long b;   // thread 2 writes — adjacent in memory
+}
+```
+
+There is no logical sharing. There is no race. The program is correct. But
+every write to `a` invalidates the line containing `b`, so thread 2 must
+re-fetch on its next access, and vice versa. The line ping-pongs exactly as if
+the threads were fighting over one variable.
+
+Slowdowns of 3–10× are routine, and **nothing in the source suggests it**.
+
+The fix is padding — force each hot field onto its own line:
+
+```java
+class Padded {
+    volatile long a;
+    long p1, p2, p3, p4, p5, p6, p7;   // 56 bytes
+    volatile long b;
+}
+```
+
+Crude, and the JIT may reorder fields. The supported mechanism is
+`@jdk.internal.vm.annotation.Contended` (with `-XX:-RestrictContended`), which
+is how the JDK's own hot classes are written.
+
+Where you'll see it in the JDK: `LongAdder`'s cells, `ForkJoinPool`'s work
+queues, `ConcurrentHashMap`'s counter cells. All padded, deliberately.
+
+## 5. Striping: the actual answer to contention
+
+`LongAdder` is the pattern worth internalising, because it generalises far
+beyond counters.
+
+`AtomicLong` has every thread CAS the same variable, so throughput collapses
+with core count. `LongAdder` keeps an array of cells, each on its own cache
+line; a thread hashes to a cell and updates that one. Different threads hit
+different lines, so there is no coherence traffic between them. `sum()` adds
+the cells.
+
+The trade:
+
+- **Writes scale almost linearly** with cores.
+- **Reads are no longer atomic** — `sum()` is a snapshot that may not correspond
+  to any instant if updates are concurrent.
+- **More memory** — one padded cell per contending thread.
+
+So: `LongAdder` for metrics and counters, where you write constantly and read
+rarely. `AtomicLong` when you need an exact, immediately-consistent value — a
+sequence generator, an ID allocator, anything whose result is consumed.
+
+The general principle:
+
+> **When contention is the problem, partition the state so threads stop
+> sharing.** Striping is that idea applied to a counter; it's the same idea as
+> sharding a hot database row, partitioning a Kafka topic by key, or giving
+> each thread its own TLAB.
+
+## 6. ABA, and why version stamps exist
+
+CAS compares *values*, not histories. So:
+
+1. Thread 1 reads A.
+2. Threads 2 and 3 change it to B and back to A.
+3. Thread 1's CAS sees A, succeeds — but the world changed underneath it.
+
+For a counter this is harmless. For **pointer-based lock-free structures** it is
+not: a node popped off a stack, freed, and reallocated at the same address
+makes a CAS succeed on a node that is no longer the one you read, corrupting
+the structure.
+
+Java's garbage collector removes the classic reallocation form of this — a node
+you still reference cannot be reused. But the logical form remains whenever the
+value's *history* matters, not just its current state.
+
+The fix is a version stamp: `AtomicStampedReference` pairs a reference with an
+int that you increment on every change, so a return trip to A is detectable.
+`AtomicMarkableReference` is the one-bit variant used for logical deletion in
+lock-free lists.
+
+## 7. What this does *not* cover
+
+- **AQS.** `ReentrantLock`, `Semaphore` and `CountDownLatch` are built on a
+  volatile `state` int plus a CLH queue, using CAS to acquire and
+  `LockSupport.park` to block ([Q59](/docs/java/concurrency#q59)). That's the
+  blocking counterpart to this page.
+- **Wait-freedom.** Lock-free guarantees *some* thread progresses; wait-free
+  guarantees *every* thread progresses in bounded steps. Much harder, rarely
+  needed.
+- **Memory reclamation.** In languages without GC, lock-free structures need
+  hazard pointers or epoch-based reclamation. Java gets this free, which is why
+  lock-free Java is much easier than lock-free C++.
+- **`VarHandle` access modes.** Plain, opaque, acquire/release and volatile give
+  you weaker-than-volatile ordering deliberately. The next layer down, once this
+  page is comfortable.
+
+## 8. Lab: measure the cost of sharing
+
+Use JMH throughout. Hand-rolled timing will not survive this material — see the
+[JIT page](/docs/concepts/jit).
+
+### Lab 1 — the contention curve
+
+```java
+@State(Scope.Benchmark)
+public class CounterBench {
+    AtomicLong atomic = new AtomicLong();
+    LongAdder adder = new LongAdder();
+    final Object lock = new Object();
+    long plain;
+
+    @Benchmark public long atomicInc()  { return atomic.incrementAndGet(); }
+    @Benchmark public void adderInc()   { adder.increment(); }
+    @Benchmark public void syncInc()    { synchronized (lock) { plain++; } }
+}
+```
+
+Run with `-t 1`, `-t 4`, `-t 16`, `-t 32` (`@Threads`). Plot throughput against
+thread count.
+
+Expect: `AtomicLong` best at 1 thread, degrading badly; `synchronized`
+degrading more gracefully than people predict; `LongAdder` scaling nearly
+linearly. **The crossover point is the whole lesson** — and it's on your
+hardware, not a blog's.
+
+### Lab 2 — false sharing, and 56 bytes of padding
+
+```java
+@State(Scope.Benchmark)
+public class SharingBench {
+    static class Shared { volatile long a, b; }
+    static class Padded { volatile long a; long p1,p2,p3,p4,p5,p6,p7; volatile long b; }
+
+    Shared s = new Shared();
+    Padded p = new Padded();
+
+    @Benchmark @Group("shared") @GroupThreads(1) public void sharedA() { s.a++; }
+    @Benchmark @Group("shared") @GroupThreads(1) public void sharedB() { s.b++; }
+    @Benchmark @Group("padded") @GroupThreads(1) public void paddedA() { p.a++; }
+    @Benchmark @Group("padded") @GroupThreads(1) public void paddedB() { p.b++; }
+}
+```
+
+Same logic, same thread count, no shared variable. Expect several times the
+throughput from the padded version. **Seven unused `long` fields make the
+program faster.** Run this one — reading about false sharing and measuring it
+are different experiences.
+
+### Lab 3 — confirm the layout
+
+```java
+System.out.println(ClassLayout.parseClass(Shared.class).toPrintable());
+System.out.println(ClassLayout.parseClass(Padded.class).toPrintable());
+```
+
+JOL shows exact field offsets. Verify `a` and `b` are within 64 bytes in the
+first and separated in the second. This closes the loop between the
+measurement and the cause.
+
+### Lab 4 — see the retries
+
+```java
+AtomicLong v = new AtomicLong();
+AtomicLong attempts = new AtomicLong();
+
+void increment() {
+    long prev, next;
+    do { attempts.incrementAndGet(); prev = v.get(); next = prev + 1; }
+    while (!v.compareAndSet(prev, next));
+}
+```
+
+(Instrument with a thread-local counter rather than a second atomic for real
+measurement — the counter itself contends.) Run at 1, 8 and 32 threads and
+report attempts per successful increment. At high thread counts you'll see
+many wasted attempts per success. That ratio *is* the cost.
+
+### Lab 5 — reproduce ABA
+
+```java
+AtomicReference<String> ref = new AtomicReference<>("A");
+AtomicStampedReference<String> stamped = new AtomicStampedReference<>("A", 0);
+
+// thread 1 reads "A", sleeps
+// thread 2: ref.set("B"); ref.set("A");
+// thread 1 wakes: ref.compareAndSet("A", "C")  -> true  (missed the change)
+
+int[] stampHolder = new int[1];
+String val = stamped.get(stampHolder);
+// thread 2 does two stamped updates, incrementing the stamp each time
+stamped.compareAndSet(val, "C", stampHolder[0], stampHolder[0]+1);  // false ✓
+```
+
+### Lab 6 — find it with hardware counters
+
+On Linux:
+
+```bash
+perf c2c record -- java -jar bench.jar
+perf c2c report
+```
+
+`perf c2c` ("cache to cache") reports exactly which cache lines are being
+transferred between cores and which source lines touch them. This is the only
+tool that finds false sharing in a real application, and knowing it exists is
+worth more than memorising the padding trick.
+
+## 9. Leading on this
+
+**Push back on "lock-free is faster" as a justification.** Ask for the
+benchmark at production thread counts. Lock-free is a *progress* guarantee, not
+a performance one, and the substitution frequently makes contended code worse.
+A three-line JMH benchmark settles it in ten minutes.
+
+**Reach for partitioning before cleverer synchronisation.** When contention is
+the problem, the durable answer is to stop sharing — striped counters,
+per-thread accumulation, sharding the hot row, partitioning by key. Teams reach
+for `StampedLock` when they should be reaching for `LongAdder`, and the
+striping idea transfers to the database and the broker too.
+
+**Treat contended shared state as a design smell, not a tuning problem.** A
+single hot counter, a single hot row, a single hot Kafka partition, a single
+hot Redis key — the same shape at four layers, with the same fix. Being the
+person who recognises the shape across layers is a genuinely useful thing to
+be.
+
+**Don't hand-write lock-free data structures.** `java.util.concurrent` is
+written by people who spend their careers on this and verified with jcstress
+and formal reasoning. A hand-rolled lock-free queue will have a bug you cannot
+reproduce. The legitimate uses of raw CAS in application code are narrow:
+simple state machines, `compareAndSet` on a status field, an occasional
+accumulator.
+
+**Know that `perf c2c` exists, and say so during performance work.** False
+sharing is invisible in source, invisible in a sampling profiler, and obvious
+in a cache-line report. Most teams have never run one.
+
+## 10. Where to go deeper
+
+- Herlihy & Shavit, *The Art of Multiprocessor Programming* — the reference for
+  CAS, ABA, and progress conditions. Chapters 5 and 10 are the relevant ones.
+- Ulrich Drepper, "What Every Programmer Should Know About Memory" — long, and
+  the cache-coherence sections are the clearest explanation of section 3
+  anywhere.
+- Doug Lea's `LongAdder` and `Striped64` source, with the comments. `Striped64`
+  in particular is a masterclass in contention management.
+- Martin Thompson's "Mechanical Sympathy" writing on false sharing and the
+  Disruptor — where padding entered mainstream Java practice.
+- Aleksey Shipilëv, "JVM Anatomy Quarks" on `@Contended` and on atomics, plus
+  jcstress for verifying anything you write yourself.
+
+## 11. Self-check
+
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 CAS: the primitive underneath everything.">
+
+Write the CAS retry loop from memory and explain what makes it non-blocking.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§3 Cache coherence is the real cost model.">
+
+`AtomicLong` is slower than `synchronized` at 32 threads. Explain, in terms
+of what the hardware is doing.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§4 False sharing.">
+
+Two threads, two separate variables, no shared state, 3× slowdown. Name the
+phenomenon and its cause in cycles.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§4 False sharing, the padding fix.">
+
+Why does adding seven unused `long` fields make a class faster?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§5 Striping: the actual answer to contention.">
+
+What does `LongAdder` trade away for its write scalability, and when is that
+trade wrong?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§6 ABA, and why version stamps exist.">
+
+Describe ABA. Why is it less dangerous in Java than in C++, and where does
+it still bite?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§2 The catch: optimism is only cheap when it's justified.">
+
+Distinguish "lock-free" from "faster". Give a case where lock-free is slower
+but still the right choice.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§8 Lab 6, and §9 Leading on this — know that perf c2c exists.">
+
+What tool finds false sharing in a running application, and why won't a
+normal profiler?
+
+</SelfCheckItem>
+
+</SelfCheck>
