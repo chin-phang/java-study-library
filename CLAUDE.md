@@ -301,9 +301,33 @@ behind it.
 immediately after, adding the seventh resolving edge: `kafka-internals →
 the-log`. Its own `unlocks` (`multi-region-replication`, `schema-evolution`
 — two new Specialist slugs, recorded below) both dangle by design. The full
-eventual count is now **twenty-seven**, not twenty-six: `kafka-internals`
-was the fourteenth Core page, a fourteenth slug outside the original
-twelve-draft estimate, same as `broker-semantics` was the thirteenth.
+eventual count is now **twenty-eight**, not twenty-seven — corrected here,
+since the version of this file at the time under-counted by one: `stream-pipelines`,
+drafted the same day as the third coverage-audit page, was already the
+**fifteenth** Core page at that point (matching the Core table's "fifteen of
+twenty-one drafted"), not folded into the running total. `kafka-internals`
+was the fourteenth Core page and `stream-pipelines` the fifteenth, both
+outside the original twelve-draft estimate, same as `broker-semantics` was
+the thirteenth.
+
+**Sixteen, 2026-09-11.** `stream-pipelines` converted the same day, adding no
+new resolving edge — `prerequisites: []` is a deliberate root, per **The
+dependency graph — settled conventions** below. Its own `unlocks`
+(`custom-collectors`, `reactive-streams`, `spliterator-design`) all dangle by
+design.
+
+**Seventeen, 2026-09-12.** `virtual-threads` converted, adding the eighth and
+ninth resolving edges: `virtual-threads → thread-pools` and `virtual-threads
+→ jvm-memory`, both to already-built foundational pages — no
+conversion-order issue, unlike `spring-proxy`/`persistence-context` or
+`isolation-levels`/`aggregates`. Its own `unlocks`
+(`structured-concurrency`, `scoped-values`, `reactive-comparison`,
+`thread-per-request`) all dangle by design. This also fulfils one direction
+of `jmm`'s own `unlocks: [cas, deadlock, virtual-threads]` — the
+`virtual-threads` entry there now names a real page, though `jmm` does not
+declare `virtual-threads` as a `prerequisites` in return, since `unlocks`
+and `prerequisites` are deliberately not required to be mirror images of
+each other.
 
 ### The dependency graph — settled conventions
 
@@ -463,21 +487,48 @@ The list is explicit, so a page left out of it builds fine and is silently
 missing from the sidebar. Add new concept pages to it deliberately.
 
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**three of those fifteen also converted** into `content/docs/concepts/` the
-same day. Six were the first batch (`virtual-threads`,
-`cas-and-contention`, `isolation-levels`, `cache-invalidation`, `spring-proxy`,
-`persistence-context`); six more followed the same day (`aggregates`,
-`backpressure`, `coupling-and-cohesion`, `escape-analysis`,
-`locking-and-deadlock`, `partitioning`). Three more were added the same day
-from the coverage audit below — `broker-semantics`, `stream-pipelines`, and
-`kafka-internals` promoted from Specialist — and **all three of those were
-drafted and converted the same day**, now the three Core pages built so far.
-`stream-pipelines` claims five of `java/streams`' eleven questions (Q37, Q38,
-Q40, Q41, Q44 — deliberately not Q47, already claimed three times over) and
-`prerequisites: []`, a deliberate root: nothing in the built graph is a
-genuine dependency, and `thread-pools` is an adjacent cross-reference in §5,
-not a prerequisite. `query-planning`, `class-loading` and
-`consistency-models` remain undrafted.
+**four of those fifteen also converted** into `content/docs/concepts/` — three
+the same day the drafts landed, `virtual-threads` on 2026-09-12. Six were the
+first batch (`virtual-threads`, `cas-and-contention`, `isolation-levels`,
+`cache-invalidation`, `spring-proxy`, `persistence-context`); six more
+followed the same day (`aggregates`, `backpressure`, `coupling-and-cohesion`,
+`escape-analysis`, `locking-and-deadlock`, `partitioning`). Three more were
+added the same day from the coverage audit below — `broker-semantics`,
+`stream-pipelines`, and `kafka-internals` promoted from Specialist — and all
+three were drafted and converted the same day. `stream-pipelines` claims five
+of `java/streams`' eleven questions (Q37, Q38, Q40, Q41, Q44 — deliberately
+not Q47, already claimed three times over) and `prerequisites: []`, a
+deliberate root: nothing in the built graph is a genuine dependency, and
+`thread-pools` is an adjacent cross-reference in §5, not a prerequisite.
+`query-planning`, `class-loading` and `consistency-models` remain undrafted.
+
+**`virtual-threads`: converted 2026-09-12**, the fourth Core page taken to
+`content/docs/concepts/` and the first conversion session to also refresh
+stale content rather than convert as-is. Its "Where to go deeper" cited JEP
+453 for structured concurrency and JEP 446 for scoped values — both first
+previews at draft time. By 2026-09-12, scoped values had finalized as **JEP
+506 in Java 25**, and structured concurrency had moved to its **sixth**
+preview, **JEP 525** (JDK 26), with the API reshaped around
+`StructuredTaskScope.open(Joiner)` in place of the `ShutdownOnFailure`/
+`ShutdownOnSuccess` subclasses the JDK 21 example still shows. Updated the
+JEP references in §4, §5, Lab 5 and "Where to go deeper" to state the current
+status and flag the exact syntax as unverified rather than guessing at the
+reshaped API — the pinning timeline in §3 (JEP 491, Java 24) needed no
+correction, it was already accurate. `prerequisites: [thread-pools,
+jvm-memory]` resolves to two built foundational pages — no conversion-order
+issue. **Carries one diagram**, added at conversion time rather than present
+in the draft: structured concurrency's cancellation propagation (one subtask
+fails, its sibling is cancelled, the scope throws), which no reference answer
+draws — `java/concurrency#q63` (structured concurrency) has no diagram of its
+own. The pre-existing mount/unmount/pinning mechanism in §2–3 links to
+`java/concurrency#q62`'s diagram instead of redrawing it, per **A concept page
+links to a reference diagram, it does not copy it**. Verified phone-readable
+at 375px (`viewBox="0 0 594.640625 478"`, ≈58% rendered scale, no overflow, no
+"Syntax error" text). Both `pnpm types:check` and `pnpm build` pass, and it's
+in the sidebar next to `thread-pools`. `java/concurrency#q62`'s reverse link
+now lists two claiming pages (`thread-pools`, `virtual-threads`) — the second
+verified case of a question claimed by two concept pages, after
+`java/jvm-memory-gc#q80` and `java/streams#q47`.
 
 Titles below are the drafts' own where a draft exists, and the placeholder
 otherwise; as with the foundational tier, **where a draft and this table
@@ -487,7 +538,7 @@ the table, and **the `cas` slug** further down for the first one of these.
 
 | `concept:` | Page | Draft |
 |---|---|---|
-| `virtual-threads` | Virtual Threads — Continuations, Mounting, and Pinning | drafted |
+| `virtual-threads` | Virtual Threads — Continuations, Mounting, and Pinning | drafted, converted |
 | `cas-and-contention` | CAS, Contention, and Lock-Free Structures | drafted |
 | `isolation-levels` | Isolation Levels and the Anomalies They Permit | drafted |
 | `cache-invalidation` | Cache Invalidation and the Races in Each Ordering | drafted |
@@ -556,11 +607,15 @@ Two currency items carried into these drafts, both the same as the ones fixed
 across the corpus on 2026-09-11 — flagged, deliberately **not** edited, because
 they are the user's fresh prose:
 
-- `virtual-threads.mdx` "Where to go deeper" cites **JEP 453** for structured
-  concurrency and **JEP 446** for scoped values. Both are first previews:
-  scoped values finalised as JEP 506 in JDK 25, and structured concurrency is at
-  JEP 525 (sixth preview, JDK 26) with a reshaped API. The page's *body* handles
-  the pinning timeline correctly and names JEP 491 explicitly.
+- `virtual-threads.mdx` — **fixed on 2026-09-12, at conversion.** "Where to go
+  deeper" cited JEP 453 for structured concurrency and JEP 446 for scoped
+  values, both first previews at draft time. Corrected to state scoped values
+  finalised as JEP 506 in JDK 25, and structured concurrency is at JEP 525
+  (sixth preview, JDK 26) with a reshaped API — see the Core table entry above
+  for the full record. Unlike the `hashmap` line repair, this was a currency
+  fix requested directly rather than found and left for the user, so it is not
+  a byte-identity exception in the same sense: draft and page match, both
+  post-fix.
 - `cache-invalidation.mdx` and `isolation-levels.mdx` pin `postgres:17` in their
   labs; the other four Postgres labs were moved to `postgres:18`.
 
@@ -673,11 +728,15 @@ gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
 ### Coverage audit — which banks still have no concept page
 
 Measured 2026-09-11 across all 419 questions and all 28 concept pages (13
-foundational, built; plus 15 core drafts, two of which — `broker-semantics`
-and `kafka-internals` — are also converted). **124 questions are claimed —
-30%**, up from 119 (28%) before `stream-pipelines`, up from 114 (27%) before
+foundational, built; plus 15 core drafts — four now converted,
+`broker-semantics`, `kafka-internals`, `stream-pipelines` and, as of
+2026-09-12, `virtual-threads`). **124 questions are claimed — 30%**, up from
+119 (28%) before `stream-pipelines`, up from 114 (27%) before
 `kafka-internals`, up from 108 (26%) before `broker-semantics`, and up from
-93 (22%) before the second batch of six drafts. The counts below in
+93 (22%) before the second batch of six drafts. `virtual-threads`'s
+conversion does not move this number — its `questions:` were already counted
+as a draft; converting a drafted page changes where a claim lives, not
+whether it's counted. The counts below in
 **Everything else large is already planned** are the ones that move —
 `coupling-and-cohesion` takes one question each off `oop-fundamentals`,
 `solid-principles`, `architecture-styles` and `microservices-boundaries`;
@@ -1271,7 +1330,7 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
-**Concept pages add 14 more, so the library holds 33.** Of the thirteen
+**Concept pages add 15 more, so the library holds 34.** Of the thirteen
 foundational pages, **ten carry their own diagram** and **three link to a
 reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
 `java/jvm-memory-gc#q71`, `dependency-inversion` →
@@ -1288,6 +1347,13 @@ flow) or Q116 (ISR/high-watermark steady state) pictures. **`stream-pipelines`
 adds the fourteenth** — a spliterator split-compute-combine tree, not a copy
 of anything on `java/streams` (none of Q37–Q47 carries a diagram) or in the
 reference-bank target-19 list, which doesn't include `java/streams` at all.
+**`virtual-threads` adds the fifteenth** — structured concurrency's
+cancellation propagation (one subtask fails, its sibling is cancelled
+immediately, the scope throws), added at conversion time rather than present
+in the draft, since `java/concurrency#q63` has no diagram to link to instead.
+It is also the second foundational-tier-style "link, don't copy" case in the
+Core tier: §2–3's mount/unmount/pinning mechanism links to
+`java/concurrency#q62`'s existing diagram rather than redrawing it.
 
 **Phone-readability, measured on all ten at 375px.** None overflows; the page
 body never scrolls horizontally. Rendered scale, worst first:
@@ -1328,6 +1394,13 @@ horizontal overflow on the page body, no "Syntax error" text — in the same
 legible middle of the range as `the-log` and `jit`, not the tightest in the
 library.
 
+`virtual-threads` (Core tier, measured 2026-09-12) carries one diagram, the
+structured-concurrency cancellation-propagation flow, checked the same way:
+`viewBox="0 0 594.640625 478"` against a 343px rendered width at 375px
+viewport (≈58%), no horizontal overflow, no "Syntax error" text — in the same
+range as `broker-semantics` and `kafka-internals`'s rebalance diagram, not the
+tightest in the library.
+
 ### A concept page links to a reference diagram, it does not copy it
 
 Decided on the JMM page when the concept pattern was finished. The
@@ -1363,20 +1436,21 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **46 pages** (30 reference + 16
-concept — 13 foundational plus `broker-semantics`, `kafka-internals` and
-`stream-pipelines`, the three converted Core pages so far), 419 questions,
-**33 diagrams**, 121 self-check items.
+Content first — and the content now exists: **47 pages** (30 reference + 17
+concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
+`stream-pipelines` and `virtual-threads`, the four converted Core pages so
+far), 419 questions, **34 diagrams**, 129 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has fifteen real nodes.**
-  Read **The dependency graph — settled conventions** before starting: eight
-  roots, seven resolving `prerequisites` edges, and a large majority of
-  `unlocks` targets pointing at unwritten specialist pages. Tolerating
+- Concept dependency graph as a study path — **now has seventeen real
+  nodes.** Read **The dependency graph — settled conventions** before
+  starting: nine roots (eight foundational plus `stream-pipelines`), nine
+  resolving `prerequisites` edges, and a large majority of `unlocks` targets
+  pointing at unwritten specialist pages. Tolerating
   dangling `unlocks` is a day-one requirement, not an edge case.
 - ~~Self-check questions collapsed by default~~ — built, see **The Question component**
 
