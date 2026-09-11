@@ -330,22 +330,65 @@ cheaper place to catch them.
 
 ## 12. Self-check
 
-1. Give an example each of content, control, and stamp coupling, and explain
-   why message coupling is preferable to all three.
-2. Why does splitting a low-cohesion class often *reduce* coupling as a side
-   effect, even though you didn't touch any dependency?
-3. Compute instability for a package with 20 dependents and 2 dependencies.
-   What does that number recommend about whether the package should be
-   abstract or concrete?
-4. What is a "stable but concrete" package, and why is it specifically
-   dangerous rather than merely inconvenient?
-5. Two files are in different top-level packages but appear together in 80% of
-   commits touching either. What does that suggest, and what would you check
-   next?
-6. Why does coupling predict the cost of *change* while cohesion predicts the
-   cost of *comprehension* — and why does that distinction matter for which
-   one to prioritise fixing first?
-7. Give the Acyclic Dependencies Principle and explain, in terms of
-   independent build/test/reason-about, why a cycle violates it.
-8. A method takes a `boolean skipValidation` parameter. Name the coupling
-   category and describe the refactor that removes it.
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§3 Coupling has degrees.">
+
+Give an example each of content, control, and stamp coupling, and explain
+why message coupling is preferable to all three.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§2 Two properties, one relationship.">
+
+Why does splitting a low-cohesion class often *reduce* coupling as a side
+effect, even though you didn't touch any dependency?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§4 Measuring it: instability.">
+
+Compute instability for a package with 20 dependents and 2 dependencies.
+What does that number recommend about whether the package should be
+abstract or concrete?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§4 The Stable Abstractions Principle and the quadrant diagram.">
+
+What is a "stable but concrete" package, and why is it specifically
+dangerous rather than merely inconvenient?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§5 Measuring cohesion the same way you measure coupling.">
+
+Two files are in different top-level packages but appear together in 80% of
+commits touching either. What does that suggest, and what would you check
+next?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§6 Why coupling is the thing that actually costs money.">
+
+Why does coupling predict the cost of *change* while cohesion predicts the
+cost of *comprehension* — and why does that distinction matter for which
+one to prioritise fixing first?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§7 Where this connects outward, the Acyclic Dependencies Principle.">
+
+Give the Acyclic Dependencies Principle and explain, in terms of
+independent build/test/reason-about, why a cycle violates it.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§3 Coupling has degrees, the coupling-degree table.">
+
+A method takes a `boolean skipValidation` parameter. Name the coupling
+category and describe the refactor that removes it.
+
+</SelfCheckItem>
+
+</SelfCheck>

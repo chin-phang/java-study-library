@@ -550,8 +550,63 @@ claimed by two concept pages, after `java/jvm-memory-gc#q80`/`java/streams#q47`
 and `java/concurrency#q62`. It's in the sidebar between `thread-pools` and
 `virtual-threads`.
 
+**`coupling-and-cohesion`: converted 2026-09-12**, the twelfth Core page
+taken to `content/docs/concepts/`, immediately after `backpressure` — the
+third of the second six drafts converted. Checked for staleness before
+converting, and two things needed fixing, neither found by the earlier
+drafts' currency audit because that audit measured MDX hazards and anchor
+validity, not tool currency:
+
+- **A broken cross-reference.** §3's stamp-coupling paragraph linked the Law
+  of Demeter to `/docs/java/core-language#q5` — that anchor exists, but it's
+  "How do you design a properly immutable class?", not the Law of Demeter.
+  The real Law of Demeter question is `design/oop-fundamentals#q5`. Fixed in
+  both `_source/coupling-and-cohesion.mdx` and the converted page.
+- **A stale tool recommendation.** §4 named "JDepend and ArchUnit for Java,
+  Structure101 for a visual dependency graph" as the way to compute Ca/Ce/I.
+  Structure101 was acquired by SonarSource in 2024 and no longer exists as a
+  standalone product — it was folded into Sonar's Clean Code offering.
+  JDepend, which originated the Ca/Ce/I metrics the page teaches, is itself
+  unmaintained. Rewrote the paragraph (and Lab 2) to recommend ArchUnit as
+  the tool actually run today, cite IntelliJ IDEA's Dependency Matrix or
+  CodeScene's X-ray view as current options for a visual graph, and keep
+  JDepend only as the citation for the original metric definitions — not as
+  a tool to install. Robert Martin's Ca/Ce/I formulas, the coupling-degree
+  taxonomy, the git co-change technique, and the ArchUnit `slices()`/
+  `beFreeOfCycles()` API in Lab 4 needed no correction; all four are either
+  timeless definitions or still-current API, checked against the ArchUnit
+  user guide.
+
+`prerequisites: [dependency-inversion]` resolves to a built foundational
+page, no conversion-order issue. All four `questions:` anchors
+(`design/oop-fundamentals#q4`, `design/solid-principles#q24`,
+`design/architecture-styles#q54`, `design/microservices-boundaries#q65`)
+were checked against the built reference pages before writing — each is the
+section heading the draft's prose cross-reference names, not a paraphrase.
+**Carries one diagram**, added at conversion time rather than present in the
+draft: a `quadrantChart` plotting instability against abstractness (the
+"zone of pain" / "sweet spot" quadrants the Stable Abstractions Principle in
+§4 argues for), the library's first use of Mermaid's quadrant-chart type
+rather than a flowchart or sequence diagram. Checked against the reference
+bank first — neither `design/oop-fundamentals#q4` nor
+`design/solid-principles#q24` carries a diagram of its own, so this shows a
+mechanism the reference bank doesn't, per **Add a diagram only if it shows
+something the reference bank doesn't already**. The first draft of the
+diagram used a colon inside quadrant labels (`quadrant-1 Sweet spot: stable,
+abstract`), which is invalid mermaid quadrant-label syntax and threw a parse
+error at render — fixed by moving the descriptive text out of the quadrant
+labels and onto the four data points instead. 8 self-check items, with
+`where` pointers written at conversion time, same discipline as the other
+converted Core pages. Both `pnpm types:check` and `pnpm build` pass; the
+diagram was verified in the browser at 375px (`viewBox="0 0 500 500"`,
+≈69% rendered scale, no horizontal overflow, no "Syntax error" text, no
+overlapping quadrant labels — the failure mode the first draft's colons
+caused), and the reverse link on `design/oop-fundamentals#q4` was verified
+in the browser ("The model behind this answer: Coupling, Cohesion, and What
+Makes a Change Expensive"). It's in the sidebar after `aggregates`.
+
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**twelve of those fifteen also converted** into `content/docs/concepts/` —
+**thirteen of those fifteen also converted** into `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
 immediately after `cas-and-contention`, `cache-invalidation`
@@ -564,9 +619,10 @@ converted**, closing that batch out; six more
 followed the same day (`aggregates`, `backpressure`, `coupling-and-cohesion`,
 `escape-analysis`, `locking-and-deadlock`, `partitioning`). Of that second
 six, `aggregates` converted 2026-09-12 immediately after `persistence-context`,
-and `backpressure` converted immediately after `aggregates` — two of the six
-taken to `content/docs/concepts/` so far; `coupling-and-cohesion`,
-`escape-analysis`, `locking-and-deadlock` and `partitioning` remain drafted
+`backpressure` converted immediately after `aggregates`, and
+`coupling-and-cohesion` converted immediately after `backpressure` — three of
+the six taken to `content/docs/concepts/` so far; `escape-analysis`,
+`locking-and-deadlock` and `partitioning` remain drafted
 only. Three more were
 added the same day from the coverage audit below — `broker-semantics`,
 `stream-pipelines`, and `kafka-internals` promoted from Specialist — and all
@@ -757,7 +813,7 @@ underneath the table for the closed record.
 | `persistence-context` | The Persistence Context and Dirty Checking | drafted, converted |
 | `aggregates` | Aggregates as Consistency Boundaries | drafted, converted |
 | `backpressure` | Backpressure and the Unbounded Queue | drafted, converted |
-| `coupling-and-cohesion` | Coupling, Cohesion, and What Makes a Change Expensive | drafted |
+| `coupling-and-cohesion` | Coupling, Cohesion, and What Makes a Change Expensive | drafted, converted |
 | `escape-analysis` | Escape Analysis and When Allocation Disappears | drafted |
 | `locking-and-deadlock` | Locking and Deadlock | drafted |
 | `partitioning` | Partitioning — One Idea in Five Systems | drafted |
@@ -957,14 +1013,16 @@ Measured 2026-09-11 across all 419 questions and all 28 concept pages (13
 foundational, built; plus 15 core drafts — six now converted,
 `broker-semantics`, `kafka-internals`, `stream-pipelines` and, as of
 2026-09-12, `virtual-threads`, `cas-and-contention` and `isolation-levels` —
-plus `cache-invalidation`, `spring-proxy` and `persistence-context`,
-converted the same day, for nine in total).
+plus `cache-invalidation`, `spring-proxy`, `persistence-context`,
+`aggregates`, `backpressure` and `coupling-and-cohesion`, all six converted
+the same day or the day after, for twelve in total).
 **124 questions are claimed — 30%**, up from 119 (28%) before
 `stream-pipelines`, up from 114 (27%) before `kafka-internals`, up from 108
 (26%) before `broker-semantics`, and up from 93 (22%) before the second batch
 of six drafts. None of `virtual-threads`'s, `cas-and-contention`'s,
-`isolation-levels`'s, `cache-invalidation`'s, `spring-proxy`'s, nor
-`persistence-context`'s conversion moves this
+`isolation-levels`'s, `cache-invalidation`'s, `spring-proxy`'s,
+`persistence-context`'s, `aggregates`'s, `backpressure`'s, nor
+`coupling-and-cohesion`'s conversion moves this
 number — their `questions:` were already counted as drafts; converting a
 drafted page changes where a claim lives, not whether it's counted. The
 counts below in
@@ -1561,7 +1619,7 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
-**Concept pages add 16 more, so the library holds 35.** Of the thirteen
+**Concept pages add 17 more, so the library holds 36.** Of the thirteen
 foundational pages, **ten carry their own diagram** and **three link to a
 reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
 `java/jvm-memory-gc#q71`, `dependency-inversion` →
@@ -1622,10 +1680,17 @@ link-don't-copy judgement: `java/concurrency#q53` already has its own
 `ThreadPoolExecutor` diagram, but §3's table only names the thread pool as
 one queue among seven, with nothing of this page's own to draw, and none of
 its other four `questions:` anchors carries a diagram to link to either.
-Adds nothing to the count.
+Adds nothing to the count. **`coupling-and-cohesion` adds the seventeenth** —
+converted immediately after `backpressure` — a `quadrantChart` plotting
+instability against abstractness, the library's first use of Mermaid's
+quadrant-chart type. Neither of the page's claimed reference anchors
+(`design/oop-fundamentals#q4`, `design/solid-principles#q24`) carries a
+diagram of its own, so nothing existed to link to; this is a clean **Add a
+diagram only if it shows something the reference bank doesn't already** case
+like `persistence-context`'s, not a link-don't-copy judgement.
 
-**Phone-readability, measured on all ten at 375px.** None overflows; the page
-body never scrolls horizontally. Rendered scale, worst first:
+**Phone-readability, measured on all eleven at 375px.** None overflows; the
+page body never scrolls horizontally. Rendered scale, worst first:
 
 | Scale | Page | Shape |
 |---|---|---|
@@ -1638,6 +1703,7 @@ body never scrolls horizontally. Rendered scale, worst first:
 | 59% | `the-log` | |
 | 61% | `jit` | |
 | 68% | `kafka-internals` (ISR/high-watermark diagram) | linear chain with one decision diamond |
+| 69% | `coupling-and-cohesion` | 2x2 quadrant plane |
 | 99% | `thread-pools`, `bounded-contexts` | stacked subgraphs via `~~~` |
 | 100% | `generics-erasure` | plain top-to-bottom chain |
 
@@ -1712,17 +1778,18 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **54 pages** (30 reference + 24
+Content first — and the content now exists: **55 pages** (30 reference + 25
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
-`persistence-context`, `aggregates` and `backpressure`, the eleven converted
+`persistence-context`, `aggregates`, `backpressure` and
+`coupling-and-cohesion`, the twelve converted
 Core pages so far), 419 questions,
-**35 diagrams**
+**36 diagrams**
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
-instead), 185 self-check items.
+instead), 193 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
