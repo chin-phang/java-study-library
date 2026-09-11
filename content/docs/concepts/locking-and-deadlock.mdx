@@ -57,6 +57,24 @@ Break any single one and deadlock becomes structurally impossible for that
 resource type. In practice, condition 4 is the cheapest to attack, which is why
 lock ordering is the standard fix.
 
+The transfer example above is exactly this cycle, drawn as a wait-for graph —
+the same shape `jcmd`'s "Found one Java-level deadlock" report describes in
+text:
+
+```mermaid
+flowchart LR
+    T1((Thread 1)) -->|holds| A[[Lock A]]
+    T2((Thread 2)) -.->|wants| A
+    T2((Thread 2)) -->|holds| B[[Lock B]]
+    T1((Thread 1)) -.->|wants| B
+```
+
+Two nodes, two solid "holds" edges, two dashed "wants" edges — and the dashed
+edges close the cycle. Any deadlock, no matter how many locks or threads, is
+this same shape with more nodes: a cycle in the wait-for graph is necessary
+and sufficient for deadlock, which is precisely what both `jstack` and a
+database's lock-manager check for.
+
 ## 3. Lock ordering: the fix that costs nothing
 
 If every thread that needs two locks always acquires them in the same
@@ -350,20 +368,63 @@ instead of a rule to memorise.
 
 ## 11. Self-check
 
-1. State the four Coffman conditions. Which one does lock ordering break, and
-   why is that usually the cheapest to attack?
-2. Write the account-transfer deadlock, then fix it with consistent ordering.
-   What happens if two accounts can have the same ID?
-3. Why does an unindexed `UPDATE ... WHERE merchant_id = ?` risk a deadlock that
-   an indexed version of the identical statement doesn't?
-4. Explain precisely why the JVM can hang forever on a `synchronized` deadlock
-   while a database transaction cannot.
-5. A `DELETE` matches zero rows. Under what circumstances can it still block a
-   later `INSERT`, and why?
-6. Your application logs `deadlock detected` as an ERROR and returns a 500 to
-   the caller. What has gone wrong with the response, given that the database
-   already did its job correctly?
-7. Name two disciplines that prevent Java-level lock deadlocks beyond ordering
-   alone.
-8. Distinguish deadlock from livelock from starvation, and give the
-   characteristic fix for each.
+<SelfCheck>
+
+<SelfCheckItem n={1} where="§2 The four conditions, and why breaking one is enough.">
+
+State the four Coffman conditions. Which one does lock ordering break, and
+why is that usually the cheapest to attack?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={2} where="§3 Lock ordering: the fix that costs nothing.">
+
+Write the account-transfer deadlock, then fix it with consistent ordering.
+What happens if two accounts can have the same ID?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={3} where="§4 Why an unindexed WHERE clause turns into a deadlock.">
+
+Why does an unindexed `UPDATE ... WHERE merchant_id = ?` risk a deadlock that
+an indexed version of the identical statement doesn't?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={4} where="§5 Detection: the JVM tells you nothing, the database tells you everything.">
+
+Explain precisely why the JVM can hang forever on a `synchronized` deadlock
+while a database transaction cannot.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={5} where="§4 Why an unindexed WHERE clause turns into a deadlock — the gap-lock paragraph.">
+
+A `DELETE` matches zero rows. Under what circumstances can it still block a
+later `INSERT`, and why?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={6} where="§5 Detection — the practical-consequence paragraph.">
+
+Your application logs `deadlock detected` as an ERROR and returns a 500 to
+the caller. What has gone wrong with the response, given that the database
+already did its job correctly?
+
+</SelfCheckItem>
+
+<SelfCheckItem n={7} where="§6 The rules that prevent most database deadlocks.">
+
+Name two disciplines that prevent Java-level lock deadlocks beyond ordering
+alone.
+
+</SelfCheckItem>
+
+<SelfCheckItem n={8} where="§7 What this does not cover.">
+
+Distinguish deadlock from livelock from starvation, and give the
+characteristic fix for each.
+
+</SelfCheckItem>
+
+</SelfCheck>

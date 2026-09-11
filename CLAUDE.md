@@ -661,6 +661,50 @@ error" text), and the reverse link was verified on both `java/jvm-memory-gc#q80`
 `escape-analysis` and `jmm`). It's in the sidebar after `jit`, ahead of
 `btrees-selectivity`.
 
+**`locking-and-deadlock`: converted 2026-09-12**, the fourteenth Core page
+taken to `content/docs/concepts/`, immediately after `escape-analysis` — the
+fifth of the second six drafts converted. Checked for staleness before
+converting: Coffman's four conditions, lock ordering, InnoDB gap locks,
+`jstack`/`jcmd Thread.print`, SQLSTATE 40P01/MySQL error 1213, and Spring
+Retry's `@Retryable` are all either historical formalisation or stable,
+current mechanics with no version-pinned API or JEP — unlike
+`virtual-threads` or `escape-analysis`, nothing here needed a currency fix,
+and unlike `isolation-levels` and `cache-invalidation`, the draft pins no
+`docker run` image tag to go stale against. **One `questions:` claim did not
+survive the check**, though: the draft claimed `java/concurrency#q59`
+(`AbstractQueuedSynchronizer`), but nothing in the draft explains AQS's
+mechanism — `ReentrantLock` and `tryLock(timeout)` are mentioned only as a
+JVM-detection footnote in §5 and §7. Q59 was already properly claimed by
+`cas-and-contention`, which does build that model. Dropped `#q59` from
+`questions:` in both `_source/locking-and-deadlock.mdx` and the converted
+page, the same "claim only what the page actually teaches" discipline as
+`coupling-and-cohesion`'s broken cross-reference fix — a wrong claim caught
+before writing, not after. `prerequisites: [isolation-levels]` resolves to a
+built Core page, no conversion-order issue; `isolation-levels`'s own
+`unlocks` already named `locking-and-deadlock`, so this is that edge
+resolving. The remaining two `questions:` anchors (`data/transactions-mvcc#q35`,
+`#q36`) and `java/concurrency#q55` were checked against the built reference
+pages before writing — `#q35` and `#q36` are also claimed by
+`isolation-levels`, the fourth verified case of a question claimed by two
+concept pages, after `java/jvm-memory-gc#q80`/`java/streams#q47`,
+`java/concurrency#q62`, and `java/concurrency#q49`. **Carries one diagram** —
+a two-node wait-for graph (holds/wants edges closing the cycle) illustrating
+the circular-wait condition from §2, added at conversion time rather than
+present in the draft. Checked against the reference bank first: none of
+`data/transactions-mvcc#q35`, `#q36`, or `java/concurrency#q55` carries a
+diagram of its own, so nothing existed to link to — a clean **Add a diagram
+only if it shows something the reference bank doesn't already** case, not a
+link-don't-copy judgement. 8 self-check items, with `where` pointers written
+at conversion time, same discipline as the other converted Core pages. Both
+`pnpm types:check` and `pnpm build` pass; the diagram was verified in the
+browser at 375px (`viewBox="0 0 277.25 230.453125"`, ≈74% rendered scale, no
+horizontal overflow, no "Syntax error" text — the widest margin of any
+diagram in the library so far, since two nodes is the smallest graph the
+"phone-readable" rules have had to render), and the reverse link on
+`java/concurrency#q55` was verified in the browser ("The model behind this
+answer: Locking and Deadlock"). It's in the sidebar between `isolation-levels`
+and `the-log`.
+
 **Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
 **fourteen of those fifteen also converted** into `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
@@ -677,10 +721,10 @@ followed the same day (`aggregates`, `backpressure`, `coupling-and-cohesion`,
 six, `aggregates` converted 2026-09-12 immediately after `persistence-context`,
 `backpressure` converted immediately after `aggregates`,
 `coupling-and-cohesion` converted immediately after `backpressure`, and
-`escape-analysis` converted immediately after `coupling-and-cohesion` — four
-of the six taken to `content/docs/concepts/` so far; `locking-and-deadlock`
-and `partitioning` remain drafted
-only. Three more were
+`escape-analysis` converted immediately after `coupling-and-cohesion`, and
+`locking-and-deadlock` converted immediately after `escape-analysis` — five
+of the six taken to `content/docs/concepts/` so far; `partitioning` remains
+drafted only. Three more were
 added the same day from the coverage audit below — `broker-semantics`,
 `stream-pipelines`, and `kafka-internals` promoted from Specialist — and all
 three were drafted and converted the same day. `stream-pipelines` claims five
@@ -872,7 +916,7 @@ underneath the table for the closed record.
 | `backpressure` | Backpressure and the Unbounded Queue | drafted, converted |
 | `coupling-and-cohesion` | Coupling, Cohesion, and What Makes a Change Expensive | drafted, converted |
 | `escape-analysis` | Escape Analysis and When Allocation Disappears | drafted, converted |
-| `locking-and-deadlock` | Locking and Deadlock | drafted |
+| `locking-and-deadlock` | Locking and Deadlock | drafted, converted |
 | `partitioning` | Partitioning — One Idea in Five Systems | drafted |
 | `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | drafted, converted |
 | `kafka-internals` | Partitions, Consumer Groups, ISR and the High Watermark | drafted, converted |
@@ -1020,7 +1064,7 @@ no "Syntax error" text). Both `pnpm types:check` and `pnpm build` pass with
 the page in the sidebar. The self-check in `_source/kafka-internals.mdx` is
 a plain numbered list, matching the rest of this table.
 
-**Specialist** — 44 slugs, every one promised by a foundational page's
+**Specialist** — 47 slugs, every one promised by a foundational page's
 `unlocks` and none of them written or planned. (`kafka-internals` was here until
 2026-09-11 and is now Core — see the coverage audit below.) They are listed so the names are
 fixed and a later page cannot invent a second spelling; titles get decided when
@@ -1060,6 +1104,18 @@ someone writes the page. Grouped by what promises them:
   `cqrs` covers separating the read and write model properly, which §4
   names as "the on-ramp to" but explicitly declines to develop. None was
   previously promised by any other page.
+- **`locking-and-deadlock`** (drafted and converted 2026-09-12, Core tier)
+  unlocks `distributed-locks`, `saga-pattern`, `connection-pooling`,
+  `retry-design`. `distributed-locks` covers the harder problem §7 explicitly
+  scopes out — no shared lock manager across services, so cycle detection
+  doesn't exist the way it does within one JVM or one database;
+  `connection-pooling` covers the pool-exhaustion failure mode adjacent to
+  §6's "keep transactions short" rule but not developed there;
+  `retry-design` covers backoff/jitter strategy beyond the one worked example
+  in Lab 5. `saga-pattern` is not new — it reuses the slug `idempotency`
+  already promises, the same "multiple promises to one unwritten page is
+  normal" pattern `broker-semantics` used for `retries-and-backoff` and
+  `outbox-pattern`.
 
 Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
 gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
@@ -1676,7 +1732,7 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
-**Concept pages add 18 more, so the library holds 37.** Of the thirteen
+**Concept pages add 19 more, so the library holds 38.** Of the thirteen
 foundational pages, **ten carry their own diagram** and **three link to a
 reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
 `java/jvm-memory-gc#q71`, `dependency-inversion` →
@@ -1751,7 +1807,13 @@ lock elision. Neither of its two escape-analysis-specific reference anchors
 (`java/jvm-memory-gc#q79`, `#q80`) carries a diagram of its own — both stop
 at prose — so nothing existed to link to; another clean **Add a diagram only
 if it shows something the reference bank doesn't already** case, not a
-link-don't-copy judgement.
+link-don't-copy judgement. **`locking-and-deadlock` adds the nineteenth** —
+converted immediately after `escape-analysis` — a two-node wait-for graph
+showing the circular-wait condition from §2 (holds/wants edges closing the
+cycle). None of its three reference anchors (`data/transactions-mvcc#q35`,
+`#q36`, `java/concurrency#q55`) carries a diagram of its own, so nothing
+existed to link to; another clean **Add a diagram only if it shows something
+the reference bank doesn't already** case, not a link-don't-copy judgement.
 
 **Phone-readability, measured on all twelve at 375px.** None overflows; the
 page body never scrolls horizontally. Rendered scale, worst first:
@@ -1807,6 +1869,13 @@ the entity-lifecycle flowchart, checked the same way: `viewBox="0 0
 no horizontal overflow, no "Syntax error" text — tied with `generational-gc`
 for the tightest in the library, still legible at that scale on screen.
 
+`locking-and-deadlock` (Core tier, measured 2026-09-12) carries one diagram,
+the two-node wait-for graph, checked the same way: `viewBox="0 0 277.25
+230.453125"` against a 277px rendered width at 375px viewport (≈74%), no
+horizontal overflow, no "Syntax error" text — the widest margin of any
+diagram measured so far, since a two-node cycle is the smallest graph shape
+in the library.
+
 ### A concept page links to a reference diagram, it does not copy it
 
 Decided on the JMM page when the concept pattern was finished. The
@@ -1842,18 +1911,18 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **56 pages** (30 reference + 26
+Content first — and the content now exists: **57 pages** (30 reference + 27
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`, `aggregates`, `backpressure`,
-`coupling-and-cohesion` and `escape-analysis`, the thirteen converted
-Core pages so far), 419 questions,
-**37 diagrams**
+`coupling-and-cohesion`, `escape-analysis` and `locking-and-deadlock`, the
+fourteen converted Core pages so far), 419 questions,
+**38 diagrams**
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
-instead), 201 self-check items.
+instead), 209 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
