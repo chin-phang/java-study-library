@@ -7,7 +7,7 @@ It contains two kinds of material:
 
 - **Reference questions** (419) — question, model answer, why it matters, and
   follow-ups. Optimised for recall and self-testing.
-- **Concept pages** (17 so far) — deep-study material on the load-bearing ideas,
+- **Concept pages** (34) — deep-study material on the load-bearing ideas,
   each explaining 5–15 of the reference questions. These open with a failure you
   can reproduce, explain why the mechanism was designed that way, and end with a
   lab you run and self-check questions you can't answer from memory alone.
@@ -18,6 +18,20 @@ volatile, safe publication, double-checked locking and final field semantics.
 MVCC explains vacuum, bloat, long transactions and index-only scans. Those get
 concept pages; the rest stay as reference.
 
+## Three ways in
+
+The sidebar orders the concept pages by subject, which assumes you already know
+which subject you are in. Two other indexes do not.
+
+- **The study path** (`/docs/concepts`) — all 34 concept pages arranged by
+  dependency rather than by subject: ten roots with no prerequisites, and the
+  run-up each other page needs. Derived from frontmatter, so it cannot drift
+  from the pages it describes.
+- **By symptom** (`/docs/concepts/symptoms`) — 31 failures written as you
+  actually observe them, in five groups from *In an incident* to *In the
+  organisation*, each pointing at the pages that explain it. The way in when
+  you are holding a p99 graph and do not yet know what you are looking at.
+
 ## Coverage
 
 | Area | Questions |
@@ -26,7 +40,7 @@ concept pages; the rest stay as reference.
 | Data & messaging — PostgreSQL, Redis, RabbitMQ, Kafka | 145 |
 | Design & architecture — OOP, SOLID, patterns, DDD, microservices | 120 |
 
-419 questions across 30 reference pages, plus 17 concept pages deep-diving the
+419 questions across 30 reference pages, plus 34 concept pages deep-diving the
 mechanisms behind them.
 
 ## Running it
@@ -49,8 +63,8 @@ _source/            raw markdown source for the question banks (not built)
 content/docs/       MDX — reference Q&A and concept pages
 src/
   app/              routes; app/docs is the library, app/api/search the index
-  components/       Question, FollowUp, Mermaid
-  lib/              source.ts (content source adapter), layout.shared.tsx
+  components/       Question, FollowUp, Mermaid, SelfCheck, StudyPath, SymptomIndex
+  lib/              source.ts (content source adapter), graph.ts, symptoms.ts
 CLAUDE.md           project conventions — read this before contributing
 ```
 
@@ -59,11 +73,11 @@ Built with [Fumadocs](https://fumadocs.dev) on Next.js.
 ## Status
 
 The reference conversion is complete — all 419 questions across 30 pages.
-Concept pages are ongoing: 13 foundational pages are done, plus 4 of the
-next tier (Core) so far, with 11 more Core drafts queued. The `leading/`
-track (essays on technical leadership) is scaffolded but intentionally
-empty — those pages have to come from real experience rather than be
-generated.
+Both concept tiers are closed: 34 pages, 13 foundational and 21 core,
+claiming 154 of the 419 questions. That coverage is deliberately partial — a
+page exists for a mechanism, not to cover a section. The `leading/` track
+(essays on technical leadership) is scaffolded but intentionally empty —
+those pages have to come from real experience rather than be generated.
 
 ## Licence
 
