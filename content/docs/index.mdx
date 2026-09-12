@@ -15,9 +15,13 @@ cold.
 
 ## Start here
 
+Three ways in. The sidebar orders the concept pages by subject; these do not.
+
 <Cards>
   <Card title="The study path" href="/docs/concepts"
         description="All 34 concept pages arranged by dependency rather than by subject — ten roots with no prerequisites, and the run-up each other page needs. Built from frontmatter, so it cannot drift." />
+  <Card title="By symptom" href="/docs/concepts/symptoms"
+        description="31 failures as you actually observe them — a p99 that climbed for no reason, a customer charged twice, an index the planner will not use — each pointing at the pages that explain it. The way in when you do not yet know the subject." />
   <Card title="The Java Memory Model" href="/docs/concepts/jmm"
         description="Foundational, and a root. Explains volatile, safe publication, double-checked locking and final field semantics — and the five reference questions that depend on it." />
 </Cards>
@@ -62,12 +66,14 @@ follow-ups, converted from `_source/` without rewriting a word of the answers.
 
 The concept pages are the point of the library, and both planned tiers are
 **complete**: all 13 foundational pages and all 21 Core pages, 34 in total, each
-explaining 4–6 reference questions in depth rather than restating them. 154 of
-the 419 reference questions are claimed by a concept page, and that number is
-supposed to be low — a small number of deeply understood mechanisms generates
-correct answers to a large number of questions.
+explaining three to six reference questions in depth — most often five — rather
+than restating them. 154 of the 419 reference questions are claimed by a concept
+page, and that number is supposed to be low: a small number of deeply understood
+mechanisms generates correct answers to a large number of questions.
 
-What is left is deliberate. The `leading/` track is empty because those pages
-have to come from real experience rather than be generated. The Specialist tier
-is recorded in `CLAUDE.md` as a list of names rather than in page frontmatter —
-none of it is a commitment, and the study path links only to pages that exist.
+What is left is deliberate. The `leading/` track is scaffolding only — ten
+topics, each with six questions and no prose. Those essays have to come from
+real experience rather than be generated, so the questions are the page until
+they are answered. The Specialist tier is recorded in `CLAUDE.md` as a list of
+names rather than in page frontmatter — none of it is a commitment, and the
+study path links only to pages that exist.

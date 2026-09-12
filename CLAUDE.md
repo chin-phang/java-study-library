@@ -870,10 +870,9 @@ wrong — that is where the non-generic material is. "How do you approach a code
 review?" invites exactly the prose this track exists to avoid; "describe a
 comment you left that you later regretted" does not.
 
-> `content/docs/index.mdx` still says the `leading/` track "is empty because
-> those pages have to come from real experience rather than be generated". Half
-> true now — the scaffolding exists, the essays do not. Left as written
-> deliberately; fix it when the first essay lands.
+`content/docs/index.mdx` describes the track as **scaffolding only — ten topics,
+six questions each, no prose**, and says the questions are the page until they
+are answered. Update that sentence when the first essay lands.
 
 ## The Specialist roadmap
 
