@@ -909,9 +909,10 @@ page's "Reference questions this page explains" lists all five with no
 this answer" at exactly seven anchors, the five new ones plus the two
 pre-existing. It's in the sidebar after `btrees-selectivity`, ahead of `mvcc`.
 
-**Core** — **eighteen of twenty-one drafted**, fifteen as of 2026-09-11 and
-`class-loading`, `query-planning` then `consistency-models` on 2026-09-12,
-**all eighteen of those now converted** into
+**Core** — **nineteen of twenty-one drafted**, fifteen as of 2026-09-11 and
+`class-loading`, `query-planning`, `consistency-models` then
+`expression-problem` on 2026-09-12,
+**all nineteen of those now converted** into
 `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
@@ -942,9 +943,10 @@ deliberate root: nothing in the built graph is a genuine dependency, and
 the last Core gap in the JVM group — see its entry below. `query-planning` was
 the seventeenth, converted 2026-09-12 from a draft already sitting untracked in
 `_source/` — see its entry below. `consistency-models` was the eighteenth,
-drafted and converted 2026-09-12 — see its entry below. The three Core slugs
-still undrafted are `expression-problem`, `conways-law` and `microservices-org`;
-none is a mechanism page, which is why they have waited.
+drafted and converted 2026-09-12 — see its entry below. `expression-problem`
+was the nineteenth, drafted and converted 2026-09-12 — see its entry below.
+The two Core slugs still undrafted are `conways-law` and `microservices-org`;
+neither is a mechanism page, which is why they have waited.
 
 **`consistency-models`: drafted and converted 2026-09-12**, the eighteenth
 Core page taken to `content/docs/concepts/`, immediately after
@@ -1034,6 +1036,93 @@ concept page lists all six with no `broken reference`, and each of the four
 reference pages renders "The model behind this answer: Consistency Models and
 Choosing Per Operation" at exactly the claimed anchors. It's in the sidebar
 between `the-log` and `cache-invalidation`.
+
+**`expression-problem`: drafted and converted 2026-09-12**, the nineteenth
+Core page taken to `content/docs/concepts/`, immediately after
+`consistency-models`. Written fresh rather than converted from a waiting
+draft, so — like `class-loading` and `consistency-models` — currency was
+checked at authoring time against primary sources. The theory is timeless
+(Wadler 1998; Torgersen 2004; Zenger and Odersky 2005) but the Java half moves
+every six months, and three items were verified rather than recalled:
+
+- **Primitive patterns are at their *fifth* preview, in a JDK that is not out
+  yet.** JEP 455 (23), 488 (24), 507 (25), 530 (26, with changes), and **JEP
+  532 in JDK 27, re-previewed without change** — and JDK 27 is in the
+  **release candidate** phase as of 2026-09-12, with GA on **15 September
+  2026**, three days away. The page states that status rather than calling it
+  shipped, the same discipline `virtual-threads` used for JEP 525 and
+  `query-planning` for `pg_plan_advice`. Five previews is itself the fact
+  worth teaching: the feature is not settled.
+- **The records cliff has an answer, and it is exploration, not a roadmap.**
+  Non-record classes still cannot be destructured. Brian Goetz's **"Data-Oriented
+  Programming for Java: Beyond Records"** design note (January 2026) proposes
+  **carrier classes** — a class declaring a state description like a record
+  without a record's restrictions, acquiring derived accessors and
+  deconstruction patterns. There is **no JEP, no syntax and no timeline**, and
+  the page says so explicitly. This is the single most datable claim on the
+  page; anyone revisiting it should re-check whether a JEP now exists.
+- **There is no lint for the escape hatch.** `javac` has no warning for a
+  `default` case in a switch over a sealed type — verified by compiling one
+  under `-Xlint:all` — and Error Prone ships `UnnecessaryDefaultInEnumSwitch`
+  for enums with **no sealed-type equivalent**, checked against its bug-pattern
+  list rather than assumed. **Leading on this** therefore recommends a review
+  rule with a CI grep, not a tool. Naming a tool that does not do this job
+  would have been the `Structure101` mistake `coupling-and-cohesion` records.
+
+**Four load-bearing claims were verified by running them on JDK 25**, not
+reasoned about, and all four became labs: `MatchException` from separate
+compilation (compile a switch against a two-subtype sealed hierarchy, widen
+`permits`, do not recompile the switch — Lab 3); `MatchException` from
+`new R(null)` against nested patterns the compiler accepted as exhaustive
+(§6); the `default`-case escape hatch compiling clean under `-Xlint:all` while
+silently swallowing a new subtype, and erroring the moment it is removed
+(Lab 2); and `javap` showing a `typeSwitch` `invokedynamic` call site **per
+level of nesting** rather than a virtual call (Lab 4).
+
+`prerequisites: []` is a deliberate root — the **tenth**, after the eight
+foundational roots and `stream-pipelines`. Nothing in the built graph genuinely
+precedes it: `coupling-and-cohesion` and `bounded-contexts` are adjacent
+cross-references in §1 and §8, not dependencies, the same judgement
+`stream-pipelines` made about `thread-pools`. **Six `questions:` anchors**,
+matching `consistency-models`, and **all six are first claims**, which moves
+the coverage count by a full six for the second conversion running:
+`design/solid-principles#q16`, `design/design-patterns#q33`, `#q39`, `#q44`,
+`java/modern-java#q87`, `#q88`. Two of them already name this page's subject in
+their own text — Q16's follow-up ("that's the expression problem, and Java 21
+now supports both sides") and Q88's ("that's the expression problem") — so the
+recall layer was pointing at a page that did not exist until now.
+
+**Carries one diagram** — the two designs side by side, each with its cheap
+direction as a thick edge and its costly direction as a dotted chain ending in
+the escape hatch, so the picture carries §4's duality rather than the grid from
+§2 (which is a markdown table, because a table is what a grid is). Checked
+against the reference bank first: `design/design-patterns`,
+`design/solid-principles`, `java/modern-java` and `java/core-language` carry
+**zero diagrams between them**, so nothing existed to link to — a clean **Add a
+diagram only if it shows something the reference bank doesn't already** case,
+not a link-don't-copy judgement. 12 sections, ~3,900 words measured the same
+way as `query-planning` (3,666) and `consistency-models` (3,617) — marginally
+the longest page in the library, because it argues a two-sided contrast *and*
+carries a currency-heavy §5 and a four-part §6. 8 self-check items with `where`
+pointers written at conversion time; items 1, 4, 6 and 8 point at two sections
+each, and item 8 is the `jit`-item-7 pattern (mechanism in §7, remedy in
+**Leading on this**). Both `pnpm types:check` and `pnpm build` pass; the diagram
+was verified in the browser at 375px (`viewBox="0 0 602.6145629882812 984"`,
+≈57% rendered scale, no horizontal overflow, no "Syntax error" text), and
+**both link directions** were verified — the concept page lists all six with no
+`broken reference`, and `design/design-patterns`, `design/solid-principles` and
+`java/modern-java` render "The model behind this answer: The expression
+problem: polymorphism vs pattern matching" at exactly the six claimed anchors
+and nowhere else. It's in the sidebar between `coupling-and-cohesion` and
+`partitioning`.
+
+> **Measuring reverse links: use `textContent`, not `innerText`.** A reverse
+> link lives inside a `<Question>`, which is collapsed by default, so
+> `document.body.innerText` reports **zero** on a page that is rendering them
+> correctly. This looked like six broken links before the measurement was
+> fixed. Scope the scan to each `h2[id^=q]` up to the next one, and read
+> `textContent` — anything looser matches a neighbouring question's block and
+> reports the wrong claiming page.
 
 **`virtual-threads`: converted 2026-09-12**, the fourth Core page taken to
 `content/docs/concepts/` and the first conversion session to also refresh
@@ -1225,7 +1314,7 @@ underneath the table for the closed record.
 | `class-loading` | Class Loading and Classloader Leaks | drafted, converted |
 | `query-planning` | Query Planning and Cardinality Estimation | drafted, converted |
 | `consistency-models` | Consistency Models and Choosing Per Operation | drafted, converted |
-| `expression-problem` | The expression problem: polymorphism vs pattern matching | |
+| `expression-problem` | The expression problem: polymorphism vs pattern matching | drafted, converted |
 | `conways-law` | Conway's law and the inverse manoeuvre | |
 | `microservices-org` | Why microservices are an organisational answer | |
 
@@ -1476,6 +1565,21 @@ someone writes the page. Grouped by what promises them:
   page's own prerequisite, already promises, the same "multiple promises to one
   unwritten page is normal" pattern as `locking-and-deadlock`'s `saga-pattern`.
 
+- **`expression-problem`** (drafted and converted 2026-09-12, Core tier)
+  unlocks `data-oriented-programming`, `api-evolution`, `schema-evolution`. Two
+  are new slugs, fixed here before either page exists:
+  `data-oriented-programming` covers the style built on sealed interfaces,
+  records and pattern matching as a whole — Goetz's 2022 paper and the "Beyond
+  Records" direction — which §5 and §6 only touch at the language-feature
+  level; `api-evolution` covers adding to a published interface without
+  breaking implementors, the subject §4's `default`-method escape hatch and
+  §7's third heuristic both point at without developing, and the natural home
+  for `MatchException`-under-version-skew as an operational concern rather than
+  a lab. `schema-evolution` is not new — it reuses the slug `kafka-internals`
+  already promises, which is the right target for §8's "serialisation and
+  schemas want the type axis closed", the same "multiple promises to one
+  unwritten page is normal" pattern as `locking-and-deadlock`'s `saga-pattern`.
+
 - **`consistency-models`** (drafted and converted 2026-09-12, Core tier)
   unlocks `replication-lag`, `multi-region-replication`, `consensus-algorithms`.
   Only one is new: `consensus-algorithms` covers Raft and Paxos as mechanisms —
@@ -1505,13 +1609,17 @@ seven more converted the same day or the day after, plus
 `locking-and-deadlock` and `partitioning` closing out the batch, plus
 `class-loading` drafted and converted the same day outside both batches, for
 sixteen in total — all sixteen drafted Core pages now converted). *Re-measured
-2026-09-12 after `query-planning` and `consistency-models`: 31 concept pages,
-18 of them Core, all built.*
-**138 questions are claimed — 32.9%** (re-measured 2026-09-12 after
-`consistency-models`, which adds **six** first claims — the largest single-page
-move in the library, because no concept page previously touched replication
-lag, read replicas, XA, distributed locking, cross-service ordering or
-cross-service query), up from 132 after `query-planning`, which added five
+2026-09-12 after `query-planning`, `consistency-models` and
+`expression-problem`: 32 concept pages, 19 of them Core, all built.*
+**144 questions are claimed — 34.4%** (re-measured 2026-09-12 after
+`expression-problem`, which adds **six** first claims — the second
+full-six move in a row, and the first coverage this library has had on
+`design/design-patterns`, whose zero was previously recorded as deliberate),
+up from 138 after `consistency-models`, which also added **six** first claims —
+tied with `expression-problem` for the largest single-page move in the library,
+because no concept page previously touched replication lag, read replicas, XA,
+distributed locking, cross-service ordering or cross-service query;
+up from 132 after `query-planning`, which added five
 first claims on `data/query-performance` and was, with `class-loading`, one of
 only two conversions in that batch to move this
 number at all, up from 127 after `class-loading`, up from 124, up from 119 (28%) before
@@ -1598,13 +1706,18 @@ real and are now in the Core table:
 **Two zero-coverage sections are deliberate, not oversights.** A later session
 will find them and should not "fix" them:
 
-- **`design/design-patterns`** (19 questions, zero). Mostly recall by nature —
-  "Adapter vs Facade vs Proxy" is a distinction to memorise, with no mechanism
-  underneath. The part that does have one is already `expression-problem`
-  (Q33, Q39, Q44 — Strategy today, Visitor superseded by pattern matching,
-  functional features changing which patterns apply). The remainder, on what
-  patterns are for and when to remove one, is judgement and belongs in
-  `leading/`.
+- **`design/design-patterns`** (19 questions, zero **until 2026-09-12**).
+  Mostly recall by nature — "Adapter vs Facade vs Proxy" is a distinction to
+  memorise, with no mechanism underneath. The part that does have one was
+  assigned to `expression-problem` (Q33, Q39, Q44 — Strategy today, Visitor
+  superseded by pattern matching, functional features changing which patterns
+  apply), and **that page was drafted and converted on 2026-09-12 and claims
+  exactly those three**, so this section is no longer zero-coverage: sixteen of
+  nineteen remain unclaimed, which is the deliberate part. The remainder, on
+  what patterns are for and when to remove one, is judgement and belongs in
+  `leading/`. Note the prediction held exactly — the three questions the audit
+  named are the three the page took, with no drift — so the reasoning in this
+  bullet is worth trusting for `java/testing-practice` below.
 - **`java/testing-practice`** (9 questions, zero). Five of the nine — Q138–Q142,
   incident walkthrough, code review, decisions that survive two years,
   mentoring, what to ask an interviewer — are verbatim the leadership-track
@@ -2245,6 +2358,18 @@ None of its six claimed anchors carries a diagram, and no diagram anywhere in
 the corpus draws a consistency hierarchy, so it is another clean **Add a diagram
 only if it shows something the reference bank doesn't already** case. That takes
 the concept-page total to **23** and the library to **42**.
+**`expression-problem` adds the twenty-fourth** — drafted and converted
+2026-09-12 — the two designs side by side, each with its cheap direction as a
+thick edge and its costly direction as a dotted chain ending in the escape
+hatch, so the picture carries §4's duality (both axes are compiler-checked, and
+`default` turns either check off) rather than §2's grid, which stays a markdown
+table because a table is what a grid is. This is the clearest **Add a diagram
+only if it shows something the reference bank doesn't already** case in the
+library so far: all four reference pages it touches —
+`design/design-patterns`, `design/solid-principles`, `java/modern-java` and
+`java/core-language` — carry **zero diagrams between them**, so there was
+nothing to link to even in principle. That takes the concept-page total to
+**24** and the library to **43**.
 
 **Phone-readability, measured on all twelve at 375px.** None overflows; the
 page body never scrolls horizontally. Rendered scale, worst first:
@@ -2256,6 +2381,7 @@ page body never scrolls horizontally. Rendered scale, worst first:
 | 52% | `btrees-selectivity` | three-sibling fan-out, landscape |
 | 53% | `hashmap`, `idempotency` | three-way fan-out |
 | 55% | `mvcc`, `escape-analysis` | |
+| 57% | `expression-problem` | two stacked subgraphs, each two parallel chains |
 | 58% | `broker-semantics`, `kafka-internals` (rebalance diagram) | two-branch fork, one loop-back decision diamond |
 | 59% | `the-log` | |
 | 61% | `jit` | |
@@ -2368,35 +2494,38 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **61 pages** (30 reference + 31
+Content first — and the content now exists: **62 pages** (30 reference + 32
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`, `aggregates`, `backpressure`,
 `coupling-and-cohesion`, `escape-analysis`, `locking-and-deadlock`,
-`partitioning`, `class-loading`, `query-planning` and `consistency-models`,
-the eighteen converted Core pages — all eighteen drafted so far), 419
+`partitioning`, `class-loading`, `query-planning`, `consistency-models` and
+`expression-problem`, the nineteen converted Core pages — all nineteen drafted
+so far), 419
 questions,
-**42 diagrams**
+**43 diagrams**
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
-instead), 241 self-check items.
+instead), 249 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has thirty-one real
-  nodes**, all thirteen foundational plus all eighteen converted Core pages.
-  Read **The dependency graph — settled conventions** before starting: nine
-  roots (eight foundational plus `stream-pipelines`), **twenty-eight**
+- Concept dependency graph as a study path — **now has thirty-two real
+  nodes**, all thirteen foundational plus all nineteen converted Core pages.
+  Read **The dependency graph — settled conventions** before starting: **ten**
+  roots (eight foundational plus `stream-pipelines` and `expression-problem`),
+  **twenty-eight**
   resolving `prerequisites` edges (`consistency-models → the-log` and
-  `→ isolation-levels` are the newest), **zero dangling `prerequisites`**, and a
+  `→ isolation-levels` are the newest; `expression-problem` adds a node but no
+  edge, being a root), **zero dangling `prerequisites`**, and a
   large majority of
   `unlocks` targets pointing at unwritten specialist pages. *The edge count
-  was measured 2026-09-12 across all thirty-one converted pages; it
+  was measured 2026-09-12 across all converted pages; it
   previously read "thirteen", which described the foundational-only graph and
   was never updated as the Core pages converted — thirteen is the count of
   foundational-tier edges, not of the whole graph.* Tolerating dangling
