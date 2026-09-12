@@ -14,6 +14,20 @@ prerequisite, so stage 2 means *this page has a two-page run-up*, not *read all
 of stage 1 first*. Pick a page you want, read its "Read first" chain, and stop.
 Each concept page carries that chain at its foot.
 
+Both chains below are real, and they share nothing. `locking-and-deadlock` sits
+at stage 3 and costs three pages; `backpressure` sits at stage 2 and costs two —
+and neither reader touches a single page on the other's path, though both pass
+through stage 1. The stage number measures the depth of *one* run-up, never the
+width of a tier.
+
+```mermaid
+flowchart TB
+  bt["btrees-selectivity<br/>stage 0 — a root"] --> mv["mvcc<br/>stage 1"]
+  mv --> il["isolation-levels<br/>stage 2"] --> ld["locking-and-deadlock<br/>stage 3"]
+  jv["jvm-memory<br/>stage 0 — a root"] --> tp["thread-pools<br/>stage 1"]
+  tp --> bp["backpressure<br/>stage 2"]
+```
+
 **Ten pages have no prerequisites at all.** Some concepts are genuine roots —
 type erasure, B-trees and selectivity, the memory model — so there is no single
 entry point and none is needed. Start wherever the problem you are actually

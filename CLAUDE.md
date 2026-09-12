@@ -2871,6 +2871,37 @@ five claimed anchors carries a diagram of its own. Another clean **Add a
 diagram only if it shows something the reference bank doesn't already** case.
 That takes the concept-page total to **26** and the library to **45**.
 
+**The study path index adds a forty-sixth** (2026-09-12), and it is the first
+diagram in the library that is not on a concept or reference page:
+`content/docs/concepts/index.mdx` draws two *disjoint* prerequisite chains side
+by side — `btrees-selectivity → mvcc → isolation-levels → locking-and-deadlock`
+(stages 0–3) against `jvm-memory → thread-pools → backpressure` (stages 0–2) —
+to carry the one thing readers get wrong about the stage number: **it measures
+the depth of one run-up, not the width of a tier.** Both chains were picked
+because every node in them has exactly one prerequisite, so the picture hides no
+edge; there are only four such chains reaching stage 3, and all the others share
+`btrees-selectivity → mvcc`, which would have destroyed the "share nothing"
+point. Verified at 375px: `viewBox="0 0 460.55731201171875 478"`, ≈74% rendered
+scale — joint-second-widest margin in the library, behind `generics-erasure` and
+`conways-law` at 100% and level with `locking-and-deadlock`.
+
+> **Stage bands as subgraphs do not work, and the reason generalises.** The
+> first draft put each stage in its own `subgraph` box, which laid out correctly
+> (four bands stacking top to bottom, 68% scale) but **collided the "Stage 3"
+> subgraph title with the arrowhead entering the single node beneath it** —
+> mermaid centres a subgraph title at the top edge, and an incoming edge to a
+> lone child enters from directly above, through the text. There is no way to
+> offset either. A band holding two or more nodes is fine; a band holding one is
+> not. Dropping the boxes and moving the stage into the node label
+> (`isolation-levels<br/>stage 2`) fixed it and *improved* the scale from 68% to
+> 74%, because the boxes were the widest thing in the picture.
+>
+> **Check this the way the `microservices-org` quadrant chart taught** — per
+> `<text>` `getBoundingClientRect()` against the SVG's own rect, plus a pairwise
+> overlap test between label boxes. That is what caught it, and it is worth more
+> than a screenshot here: the collision is a few pixels of overlap that a
+> 375px-wide capture renders almost invisibly.
+
 **Phone-readability, measured on all twelve at 375px.** None overflows; the
 page body never scrolls horizontally. Rendered scale, worst first:
 
@@ -2889,6 +2920,7 @@ page body never scrolls horizontally. Rendered scale, worst first:
 | 68% | `kafka-internals` (ISR/high-watermark diagram) | linear chain with one decision diamond |
 | 69% | `coupling-and-cohesion`, `microservices-org` | 2x2 quadrant plane |
 | 72% | `class-loading` | linear chain with one two-node fan-out |
+| 74% | `concepts/index` (the study path) | two disjoint parallel chains, no boxes |
 | 99% | `thread-pools`, `bounded-contexts` | stacked subgraphs via `~~~` |
 | 100% | `generics-erasure`, `conways-law` | plain top-to-bottom chain; stacked subgraphs via `~~~`, each a single-column chain |
 
@@ -3031,7 +3063,7 @@ Content first — and the content now exists: **65 written pages** (30 reference
 `expression-problem`, `conways-law` and `microservices-org` — **all
 twenty-one Core pages, the tier now closed**), 419
 questions,
-**45 diagrams**
+**46 diagrams** — 19 reference, 26 concept, and one on the study path index
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
