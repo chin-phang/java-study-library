@@ -829,8 +829,89 @@ overflow, no "Syntax error" text), and the reverse link was verified on all
 four claimed anchors. It's in the sidebar after `escape-analysis`, closing
 out the JVM run before `btrees-selectivity`.
 
-**Core** — **sixteen of twenty-one drafted**, fifteen as of 2026-09-11 and
-`class-loading` on 2026-09-12, **all sixteen of those now converted** into
+**`query-planning`: converted 2026-09-12**, the seventeenth Core page taken
+to `content/docs/concepts/`, immediately after `class-loading`. Unlike every
+Core conversion before it, the draft was **already sitting untracked in
+`_source/`** at the start of the session rather than written in it, so the
+currency pass was a genuine audit of someone else's prose rather than a
+re-read of this session's own. **Four things needed fixing, and one of them
+was a lab step that could not run:**
+
+- **`SET enable_indexskipscan = off` does not exist.** Lab 7 told the reader
+  to switch off PostgreSQL 18's new B-tree skip scan to compare plans. There
+  is no such GUC — checked against the PG 18 *Query Planning* documentation,
+  whose `enable_*` list has twenty-four entries and no skip-scan member, because
+  skip scan is not a planner method with a toggle of its own. Rewrote the step
+  to force the alternative with `enable_indexscan`/`enable_bitmapscan` instead,
+  and turned the absence into the teaching point, since looking for that GUC
+  mid-incident is the natural mistake. **This is the first converted page whose
+  lab contained an instruction that would error rather than merely age** — the
+  other currency fixes across the corpus have all been stale pins or superseded
+  JEP numbers.
+- **SQL Server's parameter sniffing is no longer the 2019 story.** §7 said the
+  first execution's values are "baked in indefinitely" with `OPTIMIZE FOR
+  UNKNOWN` and `RECOMPILE` as the canonical remedies. Since **SQL Server 2022**,
+  Parameter Sensitive Plan optimization dispatches up to three plan variants for
+  an eligible skewed predicate automatically, so those two are now the fallback
+  for what PSP declines — typically a distribution not skewed enough to qualify.
+  Rewritten to say so, keeping the section's actual point (same symptom as
+  PostgreSQL's, different cause, do not carry either engine's advice into the
+  other).
+- **Oracle's feature has a different name now.** §4 cited "Oracle's cardinality
+  feedback"; that became **statistics feedback** in 12c. Now reads
+  "statistics feedback (cardinality feedback before 12c)", and SQL Server's
+  half is pinned to 2022, where CE feedback actually shipped.
+- **PostgreSQL 19 gives the hints argument a first-party answer.** §10 argued
+  hints are debt, naming only `pg_hint_plan`. PG 19 — **in beta 3 as of
+  2026-09-12, not released; 18.6 is current stable** — ships a `pg_plan_advice`
+  contrib module: `EXPLAIN (PLAN_ADVICE)` emits a plan-shape string, and
+  `pg_plan_advice.advice` asks the planner to repeat those decisions. Added a
+  paragraph, stated with its beta status rather than as shipped, the same
+  discipline `virtual-threads` used for JEP 525. Its own documentation warns
+  that pinned advice stops the planner adapting when the distribution shifts —
+  which is this page's argument, so the paragraph strengthens §10 rather than
+  softening it. A matching primary-source pointer went into "Where to go
+  deeper".
+
+Everything else checked out and was left alone: `default_statistics_target` 100,
+`from_collapse_limit`/`join_collapse_limit` 8, `geqo_threshold` 12, the
+five-execution custom-plan rule and `plan_cache_mode`, CTE inlining since PG 12,
+`BUFFERS` on by default and the `Index Searches` line both new in 18 — all
+verified against the PG 18 documentation rather than assumed. The lab's
+`docker run` already pinned `postgres:18`, matching the other six Postgres labs
+in the corpus, so unlike `isolation-levels` and `cache-invalidation` there was
+no stale tag to fix.
+
+`prerequisites: [btrees-selectivity]` resolves to a built foundational page, no
+conversion-order issue, and it is the graph's twenty-sixth resolving edge. All
+five `questions:` anchors (`data/query-performance#q16`, `#q18`, `#q19`, `#q20`,
+`#q25`) were checked against the built reference page before writing, along with
+the prose cross-references to `#q21`, `#q26` and `#q27`. All five are **first
+claims** — `data/query-performance`'s only prior claims were `#q17`
+(`btrees-selectivity`) and `#q22` (`mvcc`), neither touched — so this is one of
+the few conversions that moves the coverage count. **Carries one diagram**,
+present in the draft rather than added at conversion: a plan tree annotated with
+estimate against actual, showing one wrong leaf estimate propagating into the
+join method, the sort's `work_mem` sizing and the aggregate. Checked against the
+reference bank first: `data/query-performance` carries exactly one diagram, on
+`#q17` (B-tree descent, heap fetch vs index-only scan), and none of the five
+claimed anchors carries one; nothing in the corpus draws estimate-versus-actual
+propagation through a plan tree, so this is a clean **Add a diagram only if it
+shows something the reference bank doesn't already** case, not a
+link-don't-copy judgement. 12 sections, 8 self-check items with `where` pointers
+written at conversion time — item 8 points at two sections of **Leading on
+this**, the `jit`-item-7 pattern. Both `pnpm types:check` and `pnpm build` pass;
+the diagram was verified in the browser at 375px (`viewBox="0 0
+533.4791870117188 526"`, ≈64% rendered scale, no horizontal overflow, no
+"Syntax error" text), and **both link directions** were verified — the concept
+page's "Reference questions this page explains" lists all five with no
+`broken reference`, and `/docs/data/query-performance` renders "The model behind
+this answer" at exactly seven anchors, the five new ones plus the two
+pre-existing. It's in the sidebar after `btrees-selectivity`, ahead of `mvcc`.
+
+**Core** — **seventeen of twenty-one drafted**, fifteen as of 2026-09-11 and
+`class-loading` then `query-planning` on 2026-09-12, **all seventeen of those
+now converted** into
 `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
@@ -858,8 +939,10 @@ not Q47, already claimed three times over) and `prerequisites: []`, a
 deliberate root: nothing in the built graph is a genuine dependency, and
 `thread-pools` is an adjacent cross-reference in §5, not a prerequisite.
 `class-loading` was the sixteenth, drafted and converted 2026-09-12, closing
-the last Core gap in the JVM group — see its entry below. `query-planning` and
-`consistency-models` remain undrafted.
+the last Core gap in the JVM group — see its entry below. `query-planning` was
+the seventeenth, converted 2026-09-12 from a draft already sitting untracked in
+`_source/` — see its entry below. `consistency-models` is the one Core slug
+still undrafted.
 
 **`virtual-threads`: converted 2026-09-12**, the fourth Core page taken to
 `content/docs/concepts/` and the first conversion session to also refresh
@@ -1049,7 +1132,7 @@ underneath the table for the closed record.
 | `kafka-internals` | Partitions, Consumer Groups, ISR and the High Watermark | drafted, converted |
 | `stream-pipelines` | Stream Pipelines: Laziness, Fusion, and Parallel Decomposition | drafted, converted |
 | `class-loading` | Class Loading and Classloader Leaks | drafted, converted |
-| `query-planning` | Query planning and cardinality estimation | |
+| `query-planning` | Query Planning and Cardinality Estimation | drafted, converted |
 | `consistency-models` | Consistency models and choosing per operation | |
 | `expression-problem` | The expression problem: polymorphism vs pattern matching | |
 | `conways-law` | Conway's law and the inverse manoeuvre | |
@@ -1290,6 +1373,18 @@ someone writes the page. Grouped by what promises them:
   the Specialist slug `classloader-leaks` that `jvm-memory` used to promise —
   see **Two more slug collisions**.
 
+- **`query-planning`** (converted 2026-09-12, Core tier) unlocks
+  `statistics-tuning`, `plan-stability`, `composite-indexes`. Two are new slugs,
+  fixed here before either page exists: `statistics-tuning` covers
+  `default_statistics_target`, extended-statistics design and autovacuum's
+  analyze thresholds as a subject in their own right, one level past §10's "own
+  statistics as a platform concern"; `plan-stability` covers pinning and
+  regression-testing a plan — the natural home for PG 19's `pg_plan_advice`
+  once it ships, which §10 introduces and deliberately does not develop.
+  `composite-indexes` is not new — it reuses the slug `btrees-selectivity`, this
+  page's own prerequisite, already promises, the same "multiple promises to one
+  unwritten page is normal" pattern as `locking-and-deadlock`'s `saga-pattern`.
+
 Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
 gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
 
@@ -1305,8 +1400,10 @@ seven more converted the same day or the day after, plus
 `locking-and-deadlock` and `partitioning` closing out the batch, plus
 `class-loading` drafted and converted the same day outside both batches, for
 sixteen in total — all sixteen drafted Core pages now converted).
-**127 questions are claimed — 30%** (re-measured 2026-09-12 after
-`class-loading`), up from 124, up from 119 (28%) before
+**132 questions are claimed — 31.5%** (re-measured 2026-09-12 after
+`query-planning`, which adds five first claims on `data/query-performance` and
+is, with `class-loading`, one of only two conversions in the batch to move this
+number at all), up from 127 after `class-loading`, up from 124, up from 119 (28%) before
 `stream-pipelines`, up from 114 (27%) before `kafka-internals`, up from 108
 (26%) before `broker-semantics`, and up from 93 (22%) before the second batch
 of six drafts. None of `virtual-threads`'s, `cas-and-contention`'s,
@@ -1413,8 +1510,12 @@ Everything else large is already planned and needs no new slug:
 `oop-fundamentals` (12, one now taken by `coupling-and-cohesion`),
 `scaling-operations` (12, two now taken by `partitioning` → `replication`),
 `redis-caching` (19, one now taken by `partitioning` → `caching`, plus
-`hot-keys` from `cache-invalidation`'s `unlocks`), and `query-performance`
-(13, unaffected by this batch → `query-planning`).
+`hot-keys` from `cache-invalidation`'s `unlocks`). **`query-performance` is no
+longer on this list**: `query-planning` converted 2026-09-12 and claims Q16,
+Q18, Q19, Q20 and Q25, which with the pre-existing Q17 (`btrees-selectivity`)
+and Q22 (`mvcc`) leaves eight of its fifteen unclaimed — recall-shaped material
+(pagination, `COUNT(*)`, SQL-level N+1, window functions, hot rows, job queues)
+that mostly belongs to other planned slugs rather than to this one.
 
 Re-run the audit by intersecting every `[#qNN]` anchor under `content/docs/`
 with every concept page's `questions:` list — including drafts in `_source/`,
@@ -2015,7 +2116,16 @@ strong value's thick one. `java/jvm-memory-gc#q81` carries no diagram, and no
 diagram anywhere in the corpus draws a retention path, so nothing existed to
 link to; another clean **Add a diagram only if it shows something the
 reference bank doesn't already** case. It brings the concept-page total to
-**21** and the library to **40**.
+**21** and the library to **40**. **`query-planning` adds the twenty-second** —
+converted 2026-09-12 — a plan tree annotated with estimate against actual,
+tracing one wrong leaf estimate into the join method, the sort's `work_mem`
+sizing and the aggregate. It is the first concept-page diagram that was already
+in the draft rather than added during conversion. `data/query-performance`'s
+only diagram is on `#q17` (B-tree descent), none of the five claimed anchors
+carries one, and nothing in the corpus draws estimate-versus-actual propagation,
+so it is another clean **Add a diagram only if it shows something the reference
+bank doesn't already** case. That takes the concept-page total to **22** and the
+library to **41**.
 
 **Phone-readability, measured on all twelve at 375px.** None overflows; the
 page body never scrolls horizontally. Rendered scale, worst first:
@@ -2030,6 +2140,7 @@ page body never scrolls horizontally. Rendered scale, worst first:
 | 58% | `broker-semantics`, `kafka-internals` (rebalance diagram) | two-branch fork, one loop-back decision diamond |
 | 59% | `the-log` | |
 | 61% | `jit` | |
+| 64% | `query-planning` | plan tree, two-node fan-out into a linear chain |
 | 68% | `kafka-internals` (ISR/high-watermark diagram) | linear chain with one decision diamond |
 | 69% | `coupling-and-cohesion` | 2x2 quadrant plane |
 | 72% | `class-loading` | linear chain with one two-node fan-out |
@@ -2129,33 +2240,33 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **59 pages** (30 reference + 29
+Content first — and the content now exists: **60 pages** (30 reference + 30
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`, `aggregates`, `backpressure`,
 `coupling-and-cohesion`, `escape-analysis`, `locking-and-deadlock`,
-`partitioning` and `class-loading`, the sixteen converted Core pages — all
-sixteen drafted so far), 419 questions,
-**40 diagrams**
+`partitioning`, `class-loading` and `query-planning`, the seventeen converted
+Core pages — all seventeen drafted so far), 419 questions,
+**41 diagrams**
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
-instead), 225 self-check items.
+instead), 233 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has twenty-nine real
-  nodes**, all thirteen foundational plus all sixteen converted Core pages.
+- Concept dependency graph as a study path — **now has thirty real
+  nodes**, all thirteen foundational plus all seventeen converted Core pages.
   Read **The dependency graph — settled conventions** before starting: nine
-  roots (eight foundational plus `stream-pipelines`), **twenty-five**
-  resolving `prerequisites` edges (`class-loading → jvm-memory` is the
+  roots (eight foundational plus `stream-pipelines`), **twenty-six**
+  resolving `prerequisites` edges (`query-planning → btrees-selectivity` is the
   newest), **zero dangling `prerequisites`**, and a large majority of
   `unlocks` targets pointing at unwritten specialist pages. *The edge count
-  was measured 2026-09-12 across all twenty-nine converted pages; it
+  was measured 2026-09-12 across all thirty converted pages; it
   previously read "thirteen", which described the foundational-only graph and
   was never updated as the Core pages converted — thirteen is the count of
   foundational-tier edges, not of the whole graph.* Tolerating dangling
