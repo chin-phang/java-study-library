@@ -388,7 +388,7 @@ hand-maintained, so it cannot drift from the pages it describes:
 
 | File | Does |
 |---|---|
-| `src/lib/graph.ts` | Builds and memoises the graph from `conceptPages()`. Exports `conceptGraph()`, `readingOrderTo()`, `dependantsOf()`, `conceptNodeFor()`, `parseStudyTime()`/`formatStudyTime()`. |
+| `src/lib/graph.ts` | Builds and memoises the graph from `conceptPages()`. Exports `conceptGraph()`, `readingOrderTo()`, `dependantsOf()`, `conceptNodeFor()`, `parseStudyTime()`/`formatStudyTime()`. Each node also carries `stage` (longest chain behind it) and `reach` (transitive count of pages built on it). |
 | **Reading it** | `conceptGraph()` is the whole API — nodes, `stages`, `danglingPrerequisites`, `unresolvedUnlocks`, `cycles`. Any future check on the graph (a lint, a CI step) should call it rather than re-parse frontmatter. |
 | `src/components/StudyPath.tsx` | The whole graph. Registered in `mdx.tsx`, takes no props. |
 | `src/components/ConceptPath.tsx` | One page's slice. Rendered from `page.tsx` beside `RelatedQuestions`, so no concept page can forget it. |
@@ -401,10 +401,30 @@ the ten roots are stage 0 and the deepest pages (`aggregates`,
 **A stage is a floor, not a queue** — stage 2 means *this page has a two-page
 run-up*, not *read all of stage 1 first* — and both the page copy and the
 component's own comment say so, because the obvious misreading turns a
-34-page graph into a 34-page reading list. Tier is shown as a badge and does
-not drive layout: `stream-pipelines` and `expression-problem` are Core pages
-sitting in stage 0, which is correct and would look like a bug if tier drove
-the ordering.
+34-page graph into a 34-page reading list.
+
+**`tier:` is not rendered, and that is deliberate — corrected 2026-09-12.** It
+was shown as a badge beside the stage number until then, where it read as a
+claim about depth that the graph contradicts: foundational `bounded-contexts`
+and `the-log` sit at stage 2, while Core `stream-pipelines` and
+`expression-problem` are roots. Tier records the *writing queue* — which pages
+were drafted first, and which Specialist names are still only planned — which is
+a fact about this file, not about the page a reader is holding.
+
+**`reach` replaced it**: the transitive count of pages that have this one behind
+them, computed in `graph.ts` from the same `prerequisites` edges as the stages,
+and rendered as *"11 pages build on this"*. It is the measurable version of what
+tier was gesturing at, and measuring it is what showed tier was close but not
+right — the two agree on 27 of the 34 and disagree on seven. `btrees-selectivity`
+is behind eleven pages, `mvcc` nine, `dependency-inversion` seven; `isolation-levels`
+is Core and behind three, more than foundational `jmm` or `thread-pools` at two;
+and foundational `generics-erasure` and `idempotency` are behind nothing at all.
+**Eighteen of the thirty-four have a reach of 0 and show no badge**, which is a
+leaf, not a defect.
+
+Keep `tier:` in frontmatter — it is how the Specialist roadmap and the
+conversion record in this file are organised — but do not put it back on the
+page.
 
 **Three defect checks, all empty today, none assumed away.** An unresolved
 `prerequisites`, an unresolved `unlocks`, and a prerequisite *cycle* each

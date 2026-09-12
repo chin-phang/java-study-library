@@ -18,7 +18,7 @@ Both chains below are real, and they share nothing. `locking-and-deadlock` sits
 at stage 3 and costs three pages; `backpressure` sits at stage 2 and costs two —
 and neither reader touches a single page on the other's path, though both pass
 through stage 1. The stage number measures the depth of *one* run-up, never the
-width of a tier.
+width of a stage.
 
 ```mermaid
 flowchart TB
@@ -27,6 +27,15 @@ flowchart TB
   jv["jvm-memory<br/>stage 0 — a root"] --> tp["thread-pools<br/>stage 1"]
   tp --> bp["backpressure<br/>stage 2"]
 ```
+
+**The other number on a card is reach** — how many pages have this one
+somewhere behind them. It is the measurable version of *how load-bearing is
+this*: `btrees-selectivity` is behind eleven pages and `mvcc` behind nine, while
+eighteen pages are behind nothing at all, which is not a defect. A page's own
+`tier:` is deliberately not shown. It records which pages were drafted first,
+and it disagrees with the graph in seven places — `generics-erasure` and
+`idempotency` are foundational with nothing behind them, and core
+`isolation-levels` outranks foundational `jmm`.
 
 **Ten pages have no prerequisites at all.** Some concepts are genuine roots —
 type erasure, B-trees and selectivity, the memory model — so there is no single

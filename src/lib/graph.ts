@@ -35,6 +35,14 @@ export interface ConceptNode {
   slug: string;
   title: string;
   url: string;
+  /**
+   * The declared `tier:`. It records the *writing queue* — which pages were
+   * drafted first — not a claim about the page a reader is holding, so nothing
+   * renders it. `reach` below is the measured version of what it gestures at,
+   * and the two disagree in seven places: `generics-erasure` and `idempotency`
+   * are foundational and nothing is behind them, while core `isolation-levels`
+   * (3) outranks foundational `jmm` and `thread-pools` (2).
+   */
   tier: Tier | null;
   /** Parsed from `estimatedStudyTime` (`3h`, `2h30m`, `90m`); null if absent. */
   studyMinutes: number | null;
@@ -48,6 +56,12 @@ export interface ConceptNode {
   unresolvedUnlocks: string[];
   /** Longest prerequisite chain behind this page. Roots are 0. */
   stage: number;
+  /**
+   * How many pages have this one somewhere behind them — the transitive closure
+   * of the `prerequisites` edges pointing at it. 0 for a page nothing builds
+   * on, which is eighteen of the thirty-four and is not a defect.
+   */
+  reach: number;
 }
 
 export interface DanglingPrerequisite {
@@ -154,6 +168,7 @@ export function conceptGraph(): ConceptGraph {
       unlocks,
       unresolvedUnlocks,
       stage: 0,
+      reach: 0,
     });
   }
 
@@ -191,6 +206,28 @@ export function conceptGraph(): ConceptGraph {
   const nodes = [...bySlug.values()].sort(
     (a, b) => a.stage - b.stage || a.title.localeCompare(b.title),
   );
+
+  // Transitive dependants — how much of the library sits behind each page.
+  // Iterative and guarded by `seen`, so a cycle terminates here too.
+  const dependants = new Map<string, string[]>();
+  for (const node of nodes) {
+    for (const prerequisite of node.prerequisites) {
+      const named = dependants.get(prerequisite);
+      if (named) named.push(node.slug);
+      else dependants.set(prerequisite, [node.slug]);
+    }
+  }
+
+  for (const node of nodes) {
+    const seen = new Set<string>();
+    const stack = [...(dependants.get(node.slug) ?? [])];
+    for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+      if (next === node.slug || seen.has(next)) continue;
+      seen.add(next);
+      stack.push(...(dependants.get(next) ?? []));
+    }
+    node.reach = seen.size;
+  }
 
   const stages: ConceptNode[][] = [];
   for (const node of nodes) {

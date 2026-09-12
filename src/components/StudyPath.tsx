@@ -23,19 +23,14 @@ import { cn } from '@/lib/cn';
  * nothing is drift, and renders as a visible defect rather than being dropped —
  * as does a prerequisite cycle. All three blocks are empty today; they exist
  * because the graph is hand-typed frontmatter.
+ *
+ * `tier:` is deliberately not rendered. It records which pages were drafted
+ * first, and as a badge beside a stage number it read as a claim about depth
+ * that the graph contradicts — foundational `bounded-contexts` and `the-log`
+ * sit at stage 2, while core `stream-pipelines` and `expression-problem` are
+ * roots. `reach` is shown instead: derived, exact, and the thing tier was
+ * reaching for.
  */
-
-const TIER_LABEL: Record<string, string> = {
-  foundational: 'Foundational',
-  core: 'Core',
-  specialist: 'Specialist',
-};
-
-const TIER_CLASS: Record<string, string> = {
-  foundational: 'border-fd-primary/40 text-fd-primary',
-  core: 'border-fd-border text-fd-muted-foreground',
-  specialist: 'border-fd-border text-fd-muted-foreground',
-};
 
 function Tag({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -81,8 +76,10 @@ function NodeCard({ node, graph }: { node: ConceptNode; graph: ConceptGraph }) {
       </Link>
 
       <div className="flex flex-wrap gap-1.5">
-        {node.tier ? (
-          <Tag className={TIER_CLASS[node.tier]}>{TIER_LABEL[node.tier] ?? node.tier}</Tag>
+        {node.reach > 0 ? (
+          <Tag className="border-fd-primary/40 text-fd-primary">
+            {node.reach} page{node.reach === 1 ? ' builds' : 's build'} on this
+          </Tag>
         ) : null}
         {node.studyMinutes ? <Tag>{formatStudyTime(node.studyMinutes)}</Tag> : null}
         {node.questionCount > 0 ? (
@@ -123,7 +120,7 @@ function Stage({
     index === 0 ? 'Stage 0 — no prerequisites, start anywhere' : `Stage ${index}`;
   const subtitle =
     index === 0
-      ? 'Ten roots. Nothing in the library precedes these, so any of them is a legitimate first page.'
+      ? 'Nothing in the library precedes these, so any of them is a legitimate first page.'
       : `Readable once this page's own prerequisites are read — not once the whole of stage ${index - 1} is.`;
 
   return (
