@@ -19,11 +19,17 @@ type erasure, B-trees and selectivity, the memory model — so there is no singl
 entry point and none is needed. Start wherever the problem you are actually
 hitting lives.
 
-**Most `unlocks` targets have no page, and that is the design.** `unlocks` is a
-roadmap rather than a link list: a page may name what should come next long
-before anyone writes it. Those are listed at the bottom as promises, not as
-broken links. A dangling `prerequisites` would be a real defect — it would tell
-you to study something you cannot read — so the graph flags one loudly if it ever
-appears. There are none today.
+**Both fields name written pages only.** `unlocks` used to double as a roadmap,
+naming Specialist pages nobody had written; 84 of those promises were stripped
+out on 2026-09-12, so every edge below is now a link you can follow. An entry in
+either field that resolves to nothing is drift — a renamed page, or a promise
+typed in out of habit — and the graph flags it loudly rather than dropping it.
+There are none today.
+
+One consequence worth knowing: **twenty of the thirty-four pages now declare
+`unlocks: []`**, because everything they pointed at is unwritten. That does not
+mean they are terminal. "Read next" on each page is the union of its `unlocks`
+and every page declaring it as a prerequisite, so a page with an empty `unlocks`
+still shows you where to go if anything builds on it.
 
 <StudyPath />

@@ -8,19 +8,21 @@ import type { DocFrontmatter } from './schema';
  * frontmatter of the pages under `content/docs/concepts/`. Nothing is
  * hand-maintained here: add a page, declare its edges, and it appears.
  *
- * Two rules from CLAUDE.md ("The dependency graph — settled conventions") are
- * load-bearing, and this module exists to honour them rather than to assume
- * them away:
+ * Both edge fields now name written pages only (settled 2026-09-12 — `unlocks`
+ * used to be a roadmap that could name unwritten Specialist pages, and 84 such
+ * promises were stripped from the frontmatter when that was reversed). So:
  *
- *  - `unlocks` may name a page that does not exist yet. It is a roadmap, not a
- *    link list. A dangling `unlocks` target is NORMAL — it must not throw, must
- *    not silently drop the node, and must not render as a broken link. It is
- *    surfaced as `unwritten`, which the renderer shows as a promise. With the
- *    Core tier closed, every remaining one is a Specialist slug, so the
- *    renderer meets dangling edges on day one and always.
  *  - `prerequisites` must resolve to a written page, because it tells a reader
- *    what to study *first*. A dangling one is a dead end, so it is collected
- *    into `danglingPrerequisites` for the renderer to flag visibly.
+ *    what to study *first*. A dangling one is a dead end.
+ *  - `unlocks` must resolve to a written page, because it is now a link list
+ *    rather than a roadmap. A dangling one is drift — a page renamed, or a
+ *    Specialist promise typed into frontmatter out of habit.
+ *
+ * Neither is *assumed* to hold. An unresolved entry in either field is
+ * collected and handed to the renderer to flag: it must never throw, never
+ * silently drop the node, and never render as a working link. The same goes for
+ * a prerequisite cycle. None of the three fires today; all three are hand-typed
+ * frontmatter, which is why the code does not trust them.
  *
  * The two fields are deliberately not mirror images of each other, so no
  * inference runs in either direction.
@@ -42,8 +44,8 @@ export interface ConceptNode {
   prerequisites: string[];
   /** Declared `unlocks` targets that resolve to a written page. */
   unlocks: string[];
-  /** Declared `unlocks` targets with no page — promises, not errors. */
-  unwritten: string[];
+  /** Declared `unlocks` targets naming no page. Should be empty; drift if not. */
+  unresolvedUnlocks: string[];
   /** Longest prerequisite chain behind this page. Roots are 0. */
   stage: number;
 }
@@ -55,10 +57,10 @@ export interface DanglingPrerequisite {
   to: string;
 }
 
-export interface UnwrittenPage {
+export interface UnresolvedUnlock {
   slug: string;
-  /** Slugs of the written pages promising it. */
-  promisedBy: string[];
+  /** Slugs of the pages naming it. */
+  namedBy: string[];
 }
 
 export interface ConceptGraph {
@@ -66,8 +68,8 @@ export interface ConceptGraph {
   bySlug: Map<string, ConceptNode>;
   /** Nodes bucketed by `stage`; index 0 holds the roots. */
   stages: ConceptNode[][];
-  /** Pages named by an `unlocks` and not yet written. Expected, not an error. */
-  unwritten: UnwrittenPage[];
+  /** `unlocks` entries naming nothing. Should be empty; flagged if not. */
+  unresolvedUnlocks: UnresolvedUnlock[];
   /** `prerequisites` entries naming nothing. Should be empty; flagged if not. */
   danglingPrerequisites: DanglingPrerequisite[];
   /**
@@ -118,7 +120,7 @@ export function conceptGraph(): ConceptGraph {
   }
 
   const danglingPrerequisites: DanglingPrerequisite[] = [];
-  const unwrittenBy = new Map<string, string[]>();
+  const unresolvedBy = new Map<string, string[]>();
   const bySlug = new Map<string, ConceptNode>();
 
   for (const [slug, entry] of declared) {
@@ -129,16 +131,16 @@ export function conceptGraph(): ConceptGraph {
     }
 
     const unlocks: string[] = [];
-    const unwritten: string[] = [];
+    const unresolvedUnlocks: string[] = [];
     for (const target of entry.unlocks) {
       if (declared.has(target)) {
         unlocks.push(target);
         continue;
       }
-      unwritten.push(target);
-      const promisers = unwrittenBy.get(target);
-      if (promisers) promisers.push(slug);
-      else unwrittenBy.set(target, [slug]);
+      unresolvedUnlocks.push(target);
+      const namers = unresolvedBy.get(target);
+      if (namers) namers.push(slug);
+      else unresolvedBy.set(target, [slug]);
     }
 
     bySlug.set(slug, {
@@ -150,7 +152,7 @@ export function conceptGraph(): ConceptGraph {
       questionCount: entry.data.questions?.length ?? 0,
       prerequisites,
       unlocks,
-      unwritten,
+      unresolvedUnlocks,
       stage: 0,
     });
   }
@@ -200,9 +202,9 @@ export function conceptGraph(): ConceptGraph {
     nodes,
     bySlug,
     stages,
-    unwritten: [...unwrittenBy.entries()]
-      .map(([slug, promisedBy]) => ({ slug, promisedBy: [...promisedBy].sort() }))
-      .sort((a, b) => b.promisedBy.length - a.promisedBy.length || a.slug.localeCompare(b.slug)),
+    unresolvedUnlocks: [...unresolvedBy.entries()]
+      .map(([slug, namedBy]) => ({ slug, namedBy: [...namedBy].sort() }))
+      .sort((a, b) => a.slug.localeCompare(b.slug)),
     danglingPrerequisites,
     cycles,
     totalStudyMinutes: nodes.reduce((sum, node) => sum + (node.studyMinutes ?? 0), 0),

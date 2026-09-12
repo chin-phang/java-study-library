@@ -29,7 +29,9 @@ export function ConceptPath({ node }: { node: ConceptNode | null }) {
   const runUp = before.reduce((sum, n) => sum + (n.studyMinutes ?? 0), 0);
 
   // `unlocks` and `prerequisites` are deliberately not mirror images, so "what
-  // comes next" is the union: pages this one promises, plus pages that name it.
+  // comes next" is the union: pages this one points at, plus pages that name it
+  // as a prerequisite. `mvcc` lists neither `the-log` nor `persistence-context`,
+  // and both declare it — a reader wants all three.
   const next = new Map<string, ConceptNode>();
   for (const slug of node.unlocks) {
     const target = graph.bySlug.get(slug);
@@ -39,7 +41,7 @@ export function ConceptPath({ node }: { node: ConceptNode | null }) {
     next.set(dependant.slug, dependant);
   }
 
-  if (before.length === 0 && next.size === 0 && node.unwritten.length === 0) return null;
+  if (before.length === 0 && next.size === 0 && node.unresolvedUnlocks.length === 0) return null;
 
   return (
     <section className="not-prose mt-6 rounded-xl border border-fd-border bg-fd-card p-4">
@@ -96,13 +98,11 @@ export function ConceptPath({ node }: { node: ConceptNode | null }) {
           </div>
         ) : null}
 
-        {node.unwritten.length > 0 ? (
+        {node.unresolvedUnlocks.length > 0 ? (
           <div>
-            <dt className="text-xs font-semibold text-fd-muted-foreground">
-              Promised, not written
-            </dt>
-            <dd className="m-0 mt-1 text-xs text-fd-muted-foreground">
-              {node.unwritten.map((slug, i) => (
+            <dt className="text-xs font-semibold text-fd-error">Unresolved unlocks</dt>
+            <dd className="m-0 mt-1 text-xs text-fd-error">
+              {node.unresolvedUnlocks.map((slug, i) => (
                 <span key={slug}>
                   {i > 0 ? ', ' : ''}
                   <code>{slug}</code>

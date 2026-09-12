@@ -19,9 +19,10 @@ import { cn } from '@/lib/cn';
  * moment its single parent is read — the stages are a floor, not a queue, and
  * the copy says so.
  *
- * Dangling edges are a day-one requirement rather than an edge case:
- * an `unlocks` target with no page is a promise and renders as unwritten, while
- * a dangling `prerequisites` is a dead end and renders as a visible defect.
+ * Both edge fields name written pages only. An entry in either that resolves to
+ * nothing is drift, and renders as a visible defect rather than being dropped —
+ * as does a prerequisite cycle. All three blocks are empty today; they exist
+ * because the graph is hand-typed frontmatter.
  */
 
 const TIER_LABEL: Record<string, string> = {
@@ -180,6 +181,30 @@ export function StudyPath() {
         </section>
       ) : null}
 
+      {graph.unresolvedUnlocks.length > 0 ? (
+        <section className="mt-6 rounded-xl border border-fd-error/50 p-3 text-sm text-fd-error">
+          <h3 className="m-0 text-sm font-semibold">Unresolved unlocks</h3>
+          <p className="mt-1 mb-2 text-xs">
+            <code>unlocks</code> names the pages that come next, and every entry must be a written
+            page — it is a link list, not a roadmap. A slug with no page behind it is drift: a page
+            renamed, or a promise typed into frontmatter out of habit.
+          </p>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0 text-xs">
+            {graph.unresolvedUnlocks.map(({ slug, namedBy }) => (
+              <li key={slug}>
+                <code>{slug}</code> — named by{' '}
+                {namedBy.map((namer, i) => (
+                  <span key={namer}>
+                    {i > 0 ? ', ' : ''}
+                    <code>{namer}</code>
+                  </span>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {graph.cycles.length > 0 ? (
         <section className="mt-6 rounded-xl border border-fd-error/50 p-3 text-sm text-fd-error">
           <h3 className="m-0 text-sm font-semibold">Prerequisite cycle</h3>
@@ -200,24 +225,6 @@ export function StudyPath() {
         <Stage key={index} index={index} nodes={nodes} graph={graph} />
       ))}
 
-      <section className="mt-10 rounded-xl border border-dashed border-fd-border p-4">
-        <h3 className="m-0 text-sm font-semibold">Promised, not written ({graph.unwritten.length})</h3>
-        <p className="mt-1 mb-3 text-xs text-fd-muted-foreground">
-          Every slug below is named by some page&rsquo;s <code>unlocks</code> and has no page behind
-          it. That is the field working as designed — it is a roadmap, not a link list — and with the
-          Core tier closed, all of them are Specialist pages. None is a commitment.
-        </p>
-        <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0">
-          {graph.unwritten.map(({ slug, promisedBy }) => (
-            <li key={slug}>
-              <Tag className="text-fd-muted-foreground">
-                <code className="text-[0.95em]">{slug}</code>
-                {promisedBy.length > 1 ? ` ×${promisedBy.length}` : ''}
-              </Tag>
-            </li>
-          ))}
-        </ul>
-      </section>
     </div>
   );
 }

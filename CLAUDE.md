@@ -336,32 +336,49 @@ expensive to reverse once a dozen pages have declared them.
 - **`prerequisites: []` is legitimate.** Some concepts are genuine roots —
   generics and type erasure, B-trees and selectivity — and depend on nothing else
   in the library. Do not invent a parent just to avoid an empty list.
-- **`unlocks` may name pages that do not exist yet.** It is a roadmap, not a link
-  list. `unlocks: [pecs, generic-api-design]` is fine before either page is
-  written.
+- **`unlocks: []` is legitimate too, and now common** — see the reversal below.
 
-The consequence lands on whoever builds the study-path renderer: **it must
-tolerate dangling edges.** An `unlocks` target that resolves to no page is normal
-and must not throw, silently drop the node, or render as a broken link — show it
-as unwritten, or skip it deliberately. Assume nothing resolves.
+**REVERSED 2026-09-12: `unlocks` no longer names unwritten pages.** This rule
+used to read *"`unlocks` may name pages that do not exist yet — it is a roadmap,
+not a link list"*, and the renderer was specified to tolerate dangling edges as
+normal. The user reversed it when the study path was built: **`unlocks` is a
+link list of written pages, exactly like `prerequisites`.** 84 promises to
+unwritten Specialist pages were stripped out of the frontmatter of all 34
+converted pages and all 34 `_source/` drafts in one pass. Do not reintroduce
+one — the Specialist names live in the **Specialist** list below, which is
+where a roadmap belongs, and adding a slug there costs nothing.
 
-**The two fields are not symmetric.** A dangling `unlocks` is a promise; a
-dangling `prerequisites` is a dead end, telling a reader to study something first
-that they cannot read.
+The practical effect: **twenty of the thirty-four pages now carry
+`unlocks: []`**, because everything they pointed at is unwritten. That is
+correct and is not a page missing an edge. Only fourteen pages have anywhere
+written to point at, and there are 21 `unlocks` edges against 32
+`prerequisites` edges.
+
+**A page with `unlocks: []` is not a dead end**, and nothing needs adding to
+make it so: `ConceptPath`'s "Read next" is the *union* of a page's `unlocks`
+and every page naming it as a prerequisite. `hashmap` declares `unlocks: []`
+and still shows `partitioning` as what comes next, because `partitioning`
+declares `hashmap`. Reach for that union before reaching for a new edge.
 
 - `unlocks` — **the pages that come next**, once this page is understood. Not a
-  list of topics this page happens to cover; those are its own sections. May
-  dangle, because the next page may not be written yet. The JMM page originally
-  listed `volatile`, `safe-publication` and `final-field-semantics` here, which
-  are §3 and §5 *of that page* — the wrong meaning, and it would have had the
-  graph drawing edges to nodes that can never exist.
+  list of topics this page happens to cover; those are its own sections. The JMM
+  page originally listed `volatile`, `safe-publication` and
+  `final-field-semantics` here, which are §3 and §5 *of that page* — the wrong
+  meaning, and it would have had the graph drawing edges to nodes that can never
+  exist. **Must now resolve to a written page.**
 - `prerequisites` — **must resolve to a written page.** If the prerequisite is not
   written yet, use `prerequisites: []` and add the edge when the page lands.
 
 The JMM page carried `prerequisites: [threads-and-scheduling]`, which was not
 written and not even on the candidate list. It is now `[]`, since nothing in the
-library precedes it. Any check on the graph should flag a dangling
-`prerequisites` and ignore a dangling `unlocks`.
+library precedes it.
+
+**The renderer still must not assume either field resolves.** The tolerance
+requirement survived the reversal, it only changed how a bad edge is *presented*:
+an unresolved entry in either field is now flagged as drift rather than shown as
+a promise, and must never throw, never silently drop the node, and never render
+as a working link. Same for a prerequisite cycle. All three checks are empty
+today; all three read hand-typed frontmatter, which is why they exist.
 
 ### The study path — built
 
@@ -372,6 +389,7 @@ hand-maintained, so it cannot drift from the pages it describes:
 | File | Does |
 |---|---|
 | `src/lib/graph.ts` | Builds and memoises the graph from `conceptPages()`. Exports `conceptGraph()`, `readingOrderTo()`, `dependantsOf()`, `conceptNodeFor()`, `parseStudyTime()`/`formatStudyTime()`. |
+| **Reading it** | `conceptGraph()` is the whole API — nodes, `stages`, `danglingPrerequisites`, `unresolvedUnlocks`, `cycles`. Any future check on the graph (a lint, a CI step) should call it rather than re-parse frontmatter. |
 | `src/components/StudyPath.tsx` | The whole graph. Registered in `mdx.tsx`, takes no props. |
 | `src/components/ConceptPath.tsx` | One page's slice. Rendered from `page.tsx` beside `RelatedQuestions`, so no concept page can forget it. |
 | `content/docs/concepts/index.mdx` | The page. `/docs/concepts`, first in `concepts/meta.json`. |
@@ -388,14 +406,15 @@ not drive layout: `stream-pipelines` and `expression-problem` are Core pages
 sitting in stage 0, which is correct and would look like a bug if tier drove
 the ordering.
 
-**The dangling-edge contract is implemented as specified, not assumed away.**
-A dangling `unlocks` renders as an unwritten promise (a muted tag, with a
-`×N` when several pages promise the same slug); a dangling `prerequisites`
-renders as a visible red defect block, and a prerequisite *cycle* degrades to
-a flagged warning rather than a stack overflow — `stageOf()` carries a
-`walking` stack and treats a back edge as contributing nothing. Neither
-failure path fires today; both were written because the graph is frontmatter
-and frontmatter is hand-typed.
+**Three defect checks, all empty today, none assumed away.** An unresolved
+`prerequisites`, an unresolved `unlocks`, and a prerequisite *cycle* each
+render as a visible block rather than being dropped; `stageOf()` carries a
+`walking` stack and treats a back edge as contributing nothing, so a cycle
+degrades to a warning instead of a stack overflow. *The `unlocks` check was
+originally the opposite — a muted "promised, not written" tag list — and was
+inverted when the `unlocks` reversal landed the same day. The tolerance did
+not change, only the presentation.* All three exist because the graph is
+hand-typed frontmatter.
 
 **`ConceptPath`'s "Read first" is the transitive closure, not the declared
 parents.** The declared list is one hop, and the useful question is what the
@@ -430,24 +449,18 @@ them cheap to check.
   locking-and-deadlock`, `jmm → virtual-threads`, `partitioning →
   kafka-internals`) are the interesting ones — a page promising a successor
   that does not consider it a prerequisite.
-- **Six Specialist slugs look like duplicate names for one page.** The
-  "Promised, not written" list renders all 84, which makes near-synonyms
-  obvious for the first time: `service-extraction` (`aggregates`) against
-  `service-decomposition` (three pages); `optimistic-locking` (`aggregates`,
-  `persistence-context`) against `optimistic-concurrency` (`isolation-levels`);
-  `caching` (`hashmap`) against `caching-strategy` (`cache-invalidation`);
-  `retries-and-backoff` (two pages) against `retry-design`
-  (`locking-and-deadlock`); `reactive-streams` (two pages) against
-  `reactive-comparison` (`virtual-threads`). And `coupling-and-cohesion`
-  promises **`microservices-boundaries`**, which is the name of a *reference
-  page* (`design/microservices-boundaries`), not a concept slug — and the
-  material is now covered by `conways-law` and `microservices-org`.
-  **Left alone, deliberately.** These are the exact hazard the Specialist list
-  exists to prevent ("a later page cannot invent a second spelling"), but
-  deciding two unwritten slugs are one page is a content judgement, and the
-  precedent for fixing a collision (`jmm`, `jvm-memory`, `bounded-contexts`)
-  covers a *written* page with two names, which is a different case. Resolve
-  them when someone writes one of the pages.
+- **Six Specialist slugs were duplicate names for one page, and twelve were
+  never registered at all.** Rendering all 84 promises in one list made both
+  visible for the first time — `service-extraction` against
+  `service-decomposition`, `caching-strategy` against `caching`,
+  `reactive-comparison` against `reactive-streams`, and
+  `microservices-boundaries`, which is a *reference page* name rather than a
+  concept slug. **All of it is moot now:** the `unlocks` reversal removed every
+  one of the 84 from frontmatter, and the surviving names were folded into the
+  **Specialist** list above. The lesson is the one the Specialist list already
+  states and could not enforce — *a later page cannot invent a second
+  spelling* — and the reversal is what makes it enforceable, because a new
+  `unlocks` entry now has to name a page that exists.
 
 ### Bidirectional linking
 
@@ -535,6 +548,15 @@ for f in glob.glob('content/docs/*/*.mdx'):
 `prerequisites` reference these slugs, not page titles, so they are fixed here
 rather than invented per page. This table is reconciled to the drafts in
 `_source/` — where a draft and this table disagreed, the draft won.
+
+> **Reading the per-page entries below after 2026-09-12.** Many of them record
+> a page's `unlocks` and note that its targets "dangle by design". That was true
+> when written and is no longer: `unlocks` now names written pages only, and all
+> 84 dangling entries were stripped from every page and every draft in one pass
+> — see **The dependency graph — settled conventions**. The entries are left as
+> the historical record of each conversion; read a "dangles by design" remark as
+> *"named a Specialist page, which now lives in the **Specialist** list"*. The
+> `questions:`, diagram and currency notes in those entries are unaffected.
 
 **Foundational** — **all thirteen drafted and converted** into
 `content/docs/concepts/`, one commit per page, finished 2026-09-11. The
@@ -1782,11 +1804,41 @@ no "Syntax error" text). Both `pnpm types:check` and `pnpm build` pass with
 the page in the sidebar. The self-check in `_source/kafka-internals.mdx` is
 a plain numbered list, matching the rest of this table.
 
-**Specialist** — 50 slugs, every one promised by a foundational page's
-`unlocks` and none of them written or planned. (`kafka-internals` was here until
+**Specialist** — none written or planned. (`kafka-internals` was here until
 2026-09-11 and is now Core — see the coverage audit below.) They are listed so the names are
 fixed and a later page cannot invent a second spelling; titles get decided when
-someone writes the page. Grouped by what promises them:
+someone writes the page.
+
+**This list is now the only place the Specialist roadmap lives** (2026-09-12).
+It used to be mirrored in page frontmatter, because `unlocks` doubled as a
+roadmap; that was reversed, and all 84 such entries were stripped — see
+**The dependency graph — settled conventions**. So the groupings below now read
+*"the page that would have promised it"*, not *"the page whose `unlocks`
+contains it"*. **Do not put any of these slugs back into an `unlocks`.** Adding
+a new Specialist name means adding a bullet here and nothing else.
+
+**Twelve of them were only ever in frontmatter and are recorded here for the
+first time**, having been invented by a draft and never registered — exactly the
+second-spelling hazard this list exists to prevent, and invisible until the
+study path rendered all of them at once:
+
+- **`cas-and-contention`** would unlock `false-sharing`, `atomics`, `non-blocking-algorithms`
+- **`spring-proxy`** would unlock `transaction-management`, `aop`, `spring-testing`, `caching-annotations`
+- **`backpressure`** would unlock `load-shedding`, `circuit-breakers`
+- **`coupling-and-cohesion`** would unlock `package-design`, `refactoring-strategy`, `architecture-fitness-functions`
+
+**Five near-duplicate spellings were dropped rather than registered**, because
+each already had a name here: `service-extraction` (use `service-decomposition`),
+`optimistic-concurrency` (use `optimistic-locking`), `caching-strategy` (use
+`caching`), `reactive-comparison` (use `reactive-streams`), and
+`microservices-boundaries`, which was never a concept slug at all — it is the
+name of the *reference page* `design/microservices-boundaries`, and the material
+is covered by `conways-law` and `microservices-org`. A sixth pair,
+`retries-and-backoff` against `retry-design`, is left as two names because both
+were properly registered and they are arguably different pages; decide when one
+is written.
+
+Grouped by the page that would promise them:
 
 - **`generics-erasure`** unlocks `collections-api-design`, `variance`, `reflection`, `serialisation-frameworks`
 - **`hashmap`** unlocks `concurrent-collections`, `equals-hashcode`, `collection-sizing`, `caching`
@@ -2999,9 +3051,9 @@ them, and they are not Claude Code's to fill in. See **The leadership track**.
 - ~~Concept dependency graph as a study path~~ — **built 2026-09-12**, see
   **The study path — built**. Thirty-four nodes, **ten** roots (eight
   foundational plus `stream-pipelines` and `expression-problem`),
-  **thirty-two** resolving `prerequisites` edges, **zero dangling
-  `prerequisites`**, and 84 `unlocks` targets pointing at unwritten Specialist
-  pages. *The edge count was measured 2026-09-12 across all converted pages; it
+  **thirty-two** resolving `prerequisites` edges and **21** `unlocks` edges,
+  with **zero unresolved entries in either field** since the `unlocks` reversal
+  of 2026-09-12. *The edge count was measured 2026-09-12 across all converted pages; it
   previously read "thirteen", which described the foundational-only graph and
   was never updated as the Core pages converted — thirteen is the count of
   foundational-tier edges, not of the whole graph.*
