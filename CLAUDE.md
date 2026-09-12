@@ -909,10 +909,10 @@ page's "Reference questions this page explains" lists all five with no
 this answer" at exactly seven anchors, the five new ones plus the two
 pre-existing. It's in the sidebar after `btrees-selectivity`, ahead of `mvcc`.
 
-**Core** — **nineteen of twenty-one drafted**, fifteen as of 2026-09-11 and
-`class-loading`, `query-planning`, `consistency-models` then
-`expression-problem` on 2026-09-12,
-**all nineteen of those now converted** into
+**Core** — **twenty of twenty-one drafted**, fifteen as of 2026-09-11 and
+`class-loading`, `query-planning`, `consistency-models`, `expression-problem`
+then `conways-law` on 2026-09-12,
+**all twenty of those now converted** into
 `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
@@ -945,8 +945,99 @@ the seventeenth, converted 2026-09-12 from a draft already sitting untracked in
 `_source/` — see its entry below. `consistency-models` was the eighteenth,
 drafted and converted 2026-09-12 — see its entry below. `expression-problem`
 was the nineteenth, drafted and converted 2026-09-12 — see its entry below.
-The two Core slugs still undrafted are `conways-law` and `microservices-org`;
-neither is a mechanism page, which is why they have waited.
+`conways-law` was the twentieth, drafted and converted 2026-09-12 — see its
+entry below. The one Core slug still undrafted is `microservices-org`; it is
+not a mechanism page, which is why it has waited. `conways-law` was in the
+same category and turned out to have a mechanism after all — coordination
+cost — which is what made it writable; whoever takes `microservices-org`
+should look for the same thing before concluding it is an essay.
+
+**`conways-law`: drafted and converted 2026-09-12**, the twentieth Core page
+taken to `content/docs/concepts/`, immediately after `expression-problem`.
+Written fresh rather than converted from a waiting draft, so — like
+`class-loading`, `consistency-models` and `expression-problem` — currency was
+checked at authoring time against primary sources. The theory is timeless
+(Conway 1968; the mirroring hypothesis; socio-technical congruence) but the
+practitioner half moves, and **four items were verified rather than recalled,
+two of which most current writing gets wrong**:
+
+- ***Team Topologies* has a second edition, and it is the one to cite.**
+  Skelton and Pais, IT Revolution, **23 September 2025**. Nearly all writing
+  on this subject still cites the 2019 first edition. The second promotes
+  **cognitive load** from a chapter to the organising principle, and
+  clarifies that a "platform team" is better understood as a **platform
+  grouping** — itself composed of the other team types, because the pattern
+  is fractal. The four team types and three interaction modes are unchanged
+  in name, checked against `teamtopologies.com/key-concepts` rather than
+  assumed.
+- **The Nagappan comparison table was checked digit by digit**, because a
+  half-remembered version of it is the sort of thing that gets repeated in
+  an interview and is wrong. Table 4 of the ICSE 2008 paper: organisational
+  structure 86.2% / 84.0%, code coverage 83.8% / 54.4%, code complexity
+  79.3% / 66.0%, code churn 78.6% / 79.9%, dependencies 74.4% / 69.9%,
+  pre-release bugs 73.8% / 62.9%. The 3,404-binary figure is the paper's own
+  2268 + 1136 train/test split. Note the paper also reports 87% / 84%
+  averaged over 50 random splits earlier in the text — Table 4's numbers are
+  the ones to quote, since they are the comparison.
+- **DORA's most recent report is 2025, not 2026** — checked against
+  `dora.dev/research`, since a 2026 report would normally have landed by
+  late September and had not. Its platform findings are stated from the
+  primary capability page: 90% of organisations report an internal developer
+  platform and 76% run a dedicated platform team, and platforms can
+  *decrease* throughput and change stability when not carefully managed,
+  with a J-curve. **A search result claiming DORA found mandated platforms
+  produce lower developer satisfaction was discarded** — it came from an SEO
+  aggregator, not from DORA — so the page attributes "optional and
+  attractive" to *Team Topologies*, which is where it actually comes from.
+- **Backstage is CNCF Incubating, not graduated** (accepted 2020, incubating
+  since March 2022, security audit underway as of 2026). Checked, then cut:
+  the page argues the platform question in terms of cognitive load and
+  adoption rather than tooling, and naming a product would have dated it for
+  no gain — the same judgement `coupling-and-cohesion` reached the hard way
+  with Structure101.
+
+`prerequisites: [bounded-contexts, coupling-and-cohesion]` resolves to one
+built foundational page and one built Core page — the graph's twenty-ninth
+and thirtieth resolving edges. Both are handoffs the prerequisite pages
+explicitly set up: `bounded-contexts` states Conway's law in one paragraph
+and defers ("a proposed decomposition without a matching ownership model is
+half a design"), and `coupling-and-cohesion` builds the co-change instrument
+this page joins against ownership. **Five `questions:` anchors, all first
+claims and all on one reference page**: `design/microservices-boundaries#q64`,
+`#q66`, `#q69`, `#q70`, `#q72`. That takes `microservices-boundaries` from
+three claimed to eight of eighteen. **Q61, Q62 and Q73 were deliberately left
+unclaimed for `microservices-org`** — they are the "why microservices, and
+what do they cost" questions, which is that page's subject, not this one's.
+All five anchors and the eleven prose cross-references were checked against
+the built pages before writing.
+
+**Carries one diagram** — the communication structure above, the three seams
+below, with the intra-team seam dotted ("free to cross: erodes") against the
+on-the-team-line seam thick ("costs a negotiation: holds"), so the picture
+carries §4's cost argument rather than merely labelling the boundaries.
+Checked against the reference bank first: `design/microservices-boundaries`
+carries two diagrams, on `#q65` (distributed monolith vs properly bounded)
+and `#q68` (strangler fig), and **neither is this picture** — Q65 draws
+runtime and deployment coupling between services, with no team in it at all —
+while none of the five claimed anchors carries a diagram of its own. A clean
+**Add a diagram only if it shows something the reference bank doesn't
+already** case, not a link-don't-copy judgement. 12 sections, ~4,200 words of
+prose — **marginally the longest page in the library**, ahead of
+`expression-problem` (3,807), because it carries three separate pieces of
+empirical evidence and six labs; it was trimmed by ~350 words before
+conversion rather than left at its first length. 8 self-check items with
+`where` pointers written at conversion time; item 8 is the `jit`-item-7
+pattern, pointing at a section plus the lab that measures it. Both `pnpm
+types:check` and `pnpm build` pass; the diagram was verified in the browser
+at 375px (`viewBox="0 0 278.5104064941406 730"`, **100% rendered scale** — it
+is narrow enough to need no scaling at all, joining `generics-erasure` at the
+top of the phone-readability table — no horizontal overflow, no "Syntax
+error" text), and **both link directions** were verified: the concept page
+lists all five with no `broken reference`, and `/docs/design/microservices-boundaries`
+renders "The model behind this answer: Conway's law and the inverse
+manoeuvre" at exactly `#q64`, `#q66`, `#q69`, `#q70` and `#q72` and nowhere
+else. It's in the sidebar between `coupling-and-cohesion` and
+`expression-problem`.
 
 **`consistency-models`: drafted and converted 2026-09-12**, the eighteenth
 Core page taken to `content/docs/concepts/`, immediately after
@@ -1315,7 +1406,7 @@ underneath the table for the closed record.
 | `query-planning` | Query Planning and Cardinality Estimation | drafted, converted |
 | `consistency-models` | Consistency Models and Choosing Per Operation | drafted, converted |
 | `expression-problem` | The expression problem: polymorphism vs pattern matching | drafted, converted |
-| `conways-law` | Conway's law and the inverse manoeuvre | |
+| `conways-law` | Conway's law and the inverse manoeuvre | drafted, converted |
 | `microservices-org` | Why microservices are an organisational answer | |
 
 ### Two more slug collisions
@@ -1359,6 +1450,24 @@ resolves instead of dangling. `_source/jvm-memory.mdx` still reads
 `jmm`'s. Applied without asking, unlike the `jmm` case, because the
 precedent above had already settled the question; reverse it by renaming the
 page if that reading was wrong.
+
+**A fourth collision, `team-topologies` → `conways-law`, closed 2026-09-12
+at that page's conversion.** Same origin as the third: the Specialist list
+fixed `team-topologies` because `content/docs/concepts/bounded-contexts.mdx`
+promised it, while the Core table independently fixed `conways-law` — and
+once `conways-law` was written, a separate `team-topologies` page had
+nothing left to say. The four team types, the three interaction modes and
+cognitive load are §6 of `conways-law`, because they are the *toolkit for
+the inverse manoeuvre* and are unteachable apart from it. Resolved the way
+the third was: **edit the built page's `unlocks`**, so `bounded-contexts`
+now reads `[service-decomposition, anti-corruption-layer, modular-monolith,
+event-design, conways-law]`. That edge now resolves — and it mirrors
+`conways-law`'s own `prerequisites: [bounded-contexts, ...]`, which the
+library does not require but which is a good sign when it happens.
+`_source/bounded-contexts.mdx` still reads `team-topologies`, left alone —
+the same deliberate one-line divergence as `jmm`'s and `jvm-memory`'s.
+Applied without asking, on the same settled precedent; reverse it by
+splitting §6 into its own page if that reading was wrong.
 
 **Audit of the first six drafts** (2026-09-11, measured, the same pass the
 foundational drafts got before conversion): no stray H1s, **zero MDX
@@ -1486,7 +1595,9 @@ someone writes the page. Grouped by what promises them:
 - **`mvcc`** unlocks `vacuum-and-bloat`, `long-transactions`, `replication-lag`, `write-skew`
 - **`the-log`** unlocks `replication`, `cdc-and-outbox`, `event-sourcing`, `kafka-internals` (**now Core**), `crash-recovery`
 - **`idempotency`** unlocks `retries-and-backoff`, `outbox-pattern`, `saga-pattern`, `exactly-once`, `reconciliation`
-- **`bounded-contexts`** unlocks `service-decomposition`, `anti-corruption-layer`, `modular-monolith`, `event-design`, `team-topologies`
+- **`bounded-contexts`** unlocks `service-decomposition`, `anti-corruption-layer`, `modular-monolith`, `event-design`, `conways-law`
+  (**was `team-topologies`** — a fourth slug collision, closed 2026-09-12; see
+  **Two more slug collisions**)
 - **`dependency-inversion`** unlocks `anti-corruption-layer`, `modular-monolith`, `hexagonal-architecture`, `testing-strategy`
 - **`thread-pools`** unlocks `bulkheads`, `capacity-planning`, `cascading-failure`
 - **`kafka-internals`** (drafted 2026-09-11, Core tier) unlocks `multi-region-replication`,
@@ -1594,6 +1705,22 @@ someone writes the page. Grouped by what promises them:
   operating it, and §7's MRSC and Accord material is a sketch of a multi-region
   page rather than the page itself.
 
+- **`conways-law`** (drafted and converted 2026-09-12, Core tier) unlocks
+  `microservices-org`, `platform-engineering`, `service-decomposition`. Only
+  one is a new Specialist slug: `platform-engineering` covers designing,
+  funding and operating an internal developer platform as a product — the
+  subject §6 opens with the "optional and attractive" constraint and the DORA
+  J-curve and then declines to develop. `microservices-org` is **not**
+  Specialist: it is the remaining undrafted Core slug, so this is an `unlocks`
+  edge that will resolve rather than dangle once that page is written, and
+  `conways-law` deliberately left Q61, Q62 and Q73 unclaimed for it.
+  `service-decomposition` is not new — it reuses the slug `bounded-contexts`,
+  this page's own prerequisite, already promises, the same "multiple promises
+  to one unwritten page is normal" pattern as `locking-and-deadlock`'s
+  `saga-pattern`. Note this page **absorbed** the Specialist slug
+  `team-topologies` that `bounded-contexts` used to promise — see **Two more
+  slug collisions**.
+
 Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
 gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
 
@@ -1610,11 +1737,16 @@ seven more converted the same day or the day after, plus
 `class-loading` drafted and converted the same day outside both batches, for
 sixteen in total — all sixteen drafted Core pages now converted). *Re-measured
 2026-09-12 after `query-planning`, `consistency-models` and
-`expression-problem`: 32 concept pages, 19 of them Core, all built.*
-**144 questions are claimed — 34.4%** (re-measured 2026-09-12 after
-`expression-problem`, which adds **six** first claims — the second
+`expression-problem`: 32 concept pages, 19 of them Core, all built. Re-measured
+again after `conways-law`: **33 concept pages, 20 of them Core, all built.***
+**149 questions are claimed — 35.6%** (re-measured 2026-09-12 after
+`conways-law`, which adds **five** first claims, all of them on
+`design/microservices-boundaries` — the third conversion running to move the
+number by five or more, and the first to take a single reference page from
+three claims to eight), up from 144 after
+`expression-problem`, which added **six** first claims — the second
 full-six move in a row, and the first coverage this library has had on
-`design/design-patterns`, whose zero was previously recorded as deliberate),
+`design/design-patterns`, whose zero was previously recorded as deliberate —
 up from 138 after `consistency-models`, which also added **six** first claims —
 tied with `expression-problem` for the largest single-page move in the library,
 because no concept page previously touched replication lag, read replicas, XA,
@@ -1729,8 +1861,13 @@ will find them and should not "fix" them:
 itself a delta summary, added the same day.
 
 Everything else large is already planned and needs no new slug:
-`microservices-boundaries` (15 unclaimed, one now taken by
-`coupling-and-cohesion` → `service-decomposition`, `modular-monolith`),
+**`microservices-boundaries` is no longer on this list**: `conways-law`
+converted 2026-09-12 and claims Q64, Q66, Q69, Q70 and Q72, which with the
+pre-existing Q63 and Q71 (`bounded-contexts`) and Q65 (`coupling-and-cohesion`)
+leaves ten of its eighteen unclaimed — and **three of those ten are reserved**,
+not merely unclaimed: Q61, Q62 and Q73 ("when not to", "monolith first", "the
+real costs") were deliberately left for `microservices-org`, the one remaining
+undrafted Core slug. Also still planned:
 `oop-fundamentals` (12, one now taken by `coupling-and-cohesion`),
 `scaling-operations` (12, two now taken by `partitioning` → `replication`),
 `redis-caching` (19, one now taken by `partitioning` → `caching`, plus
@@ -2369,7 +2506,20 @@ library so far: all four reference pages it touches —
 `design/design-patterns`, `design/solid-principles`, `java/modern-java` and
 `java/core-language` — carry **zero diagrams between them**, so there was
 nothing to link to even in principle. That takes the concept-page total to
-**24** and the library to **43**.
+**24** and the library to **43**. **`conways-law` adds the twenty-fifth** —
+drafted and converted 2026-09-12 — the communication structure above (two
+teams, one costly edge between them) and the three seams below, with the
+intra-team seam dotted ("free to cross: erodes") against the on-the-team-line
+seam thick ("costs a negotiation: holds"), so the picture carries §4's cost
+argument rather than merely labelling boundaries. `design/microservices-boundaries`
+does carry two diagrams — `#q65` (distributed monolith vs properly bounded)
+and `#q68` (strangler fig) — and **neither is this picture**: Q65 draws
+runtime and deployment coupling between services with no team in it at all,
+which is the same subject from the other side. None of the five claimed
+anchors carries a diagram of its own, so this is another clean **Add a diagram
+only if it shows something the reference bank doesn't already** case, not a
+link-don't-copy judgement. That takes the concept-page total to **25** and the
+library to **44**.
 
 **Phone-readability, measured on all twelve at 375px.** None overflows; the
 page body never scrolls horizontally. Rendered scale, worst first:
@@ -2390,7 +2540,7 @@ page body never scrolls horizontally. Rendered scale, worst first:
 | 69% | `coupling-and-cohesion` | 2x2 quadrant plane |
 | 72% | `class-loading` | linear chain with one two-node fan-out |
 | 99% | `thread-pools`, `bounded-contexts` | stacked subgraphs via `~~~` |
-| 100% | `generics-erasure` | plain top-to-bottom chain |
+| 100% | `generics-erasure`, `conways-law` | plain top-to-bottom chain; stacked subgraphs via `~~~`, each a single-column chain |
 
 The two at 99–100% are the ones that stack with invisible links or stay a simple
 chain — that is the technique paying off, and it is worth reaching for. The two
@@ -2459,6 +2609,18 @@ overflow, no "Syntax error" text. Its single fan-out is two siblings — the
 weak key and the strong value — which is inside the "two or three" branching
 rule, so it needed no subgraph or `~~~` stacking.
 
+`conways-law` (Core tier, measured 2026-09-12) carries one diagram, the
+communication-structure-over-three-seams comparison, checked the same way:
+`viewBox="0 0 278.5104064941406 730"` against a 278px rendered width at 375px
+viewport — **100%, the joint-widest margin in the library** alongside
+`generics-erasure`, and the first stacked-subgraph diagram to need no scaling
+at all. It uses the `~~~` technique that got `thread-pools` and
+`bounded-contexts` to 99%, but with only two nodes per subgraph and short
+labels, so nothing forces the width out. No horizontal overflow, no "Syntax
+error" text. **The lesson worth carrying forward: subgraph stacking plus
+two-line edge labels is the cheapest route to a full-scale diagram**, and it
+costs nothing to reach for first.
+
 ### A concept page links to a reference diagram, it does not copy it
 
 Decided on the JMM page when the concept pattern was finished. The
@@ -2494,35 +2656,35 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **62 pages** (30 reference + 32
+Content first — and the content now exists: **63 pages** (30 reference + 33
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`, `aggregates`, `backpressure`,
 `coupling-and-cohesion`, `escape-analysis`, `locking-and-deadlock`,
-`partitioning`, `class-loading`, `query-planning`, `consistency-models` and
-`expression-problem`, the nineteen converted Core pages — all nineteen drafted
-so far), 419
+`partitioning`, `class-loading`, `query-planning`, `consistency-models`,
+`expression-problem` and `conways-law`, the twenty converted Core pages — all
+twenty drafted so far), 419
 questions,
-**43 diagrams**
+**44 diagrams**
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
-instead), 249 self-check items.
+instead), 257 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has thirty-two real
-  nodes**, all thirteen foundational plus all nineteen converted Core pages.
+- Concept dependency graph as a study path — **now has thirty-three real
+  nodes**, all thirteen foundational plus all twenty converted Core pages.
   Read **The dependency graph — settled conventions** before starting: **ten**
   roots (eight foundational plus `stream-pipelines` and `expression-problem`),
-  **twenty-eight**
-  resolving `prerequisites` edges (`consistency-models → the-log` and
-  `→ isolation-levels` are the newest; `expression-problem` adds a node but no
-  edge, being a root), **zero dangling `prerequisites`**, and a
+  **thirty**
+  resolving `prerequisites` edges (`conways-law → bounded-contexts` and
+  `→ coupling-and-cohesion` are the newest; `expression-problem` adds a node but
+  no edge, being a root), **zero dangling `prerequisites`**, and a
   large majority of
   `unlocks` targets pointing at unwritten specialist pages. *The edge count
   was measured 2026-09-12 across all converted pages; it
