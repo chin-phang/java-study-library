@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 const entries = [
   {
-    href: '/docs/concepts/jmm',
+    href: '/docs/concepts',
     eyebrow: 'Start here',
     title: 'Concept pages',
     body: 'Build the model. Each opens with a failure you can reproduce, explains why the mechanism was designed that way, and ends with a lab you run and questions you cannot answer from memory alone.',
@@ -19,6 +19,24 @@ const entries = [
     eyebrow: 'Then test it',
     title: 'Reference questions',
     body: 'Question, model answer, why it matters, follow-ups. Answers are collapsed by default, so use them to self-test once the model is built — not to learn from cold.',
+  },
+];
+
+const ways = [
+  {
+    href: '/docs/concepts',
+    label: 'By dependency',
+    note: 'what to read first',
+  },
+  {
+    href: '/docs/concepts/symptoms',
+    label: 'By symptom',
+    note: 'what you are looking at',
+  },
+  {
+    href: '/docs',
+    label: 'Everything',
+    note: 'the whole library',
   },
 ];
 
@@ -46,12 +64,21 @@ export default function HomePage() {
         ))}
       </div>
 
-      <Link
-        href="/docs"
-        className="mt-8 text-sm font-medium text-fd-muted-foreground underline underline-offset-4 hover:text-fd-foreground"
-      >
-        Browse the whole library
-      </Link>
+      <p className="mt-10 text-xs font-medium tracking-wide text-fd-muted-foreground uppercase">
+        Three ways in
+      </p>
+      <nav className="mt-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+        {ways.map((way) => (
+          <Link
+            key={way.label}
+            href={way.href}
+            className="text-sm text-fd-muted-foreground transition-colors hover:text-fd-foreground"
+          >
+            <span className="font-medium underline underline-offset-4">{way.label}</span>
+            <span className="ml-2">{way.note}</span>
+          </Link>
+        ))}
+      </nav>
     </main>
   );
 }
