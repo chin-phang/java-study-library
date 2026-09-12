@@ -77,7 +77,7 @@ export const SYMPTOM_INDEX: SymptomGroup[] = [
     symptoms: [
       {
         symptom: 'The index is there and the planner ignores it',
-        note: 'At low selectivity, reading the table beats reading most of it through an index. The planner is doing the arithmetic correctly.',
+        note: 'When the predicate matches most of the table, reading it straight through beats reading most of it through an index. The planner is doing the arithmetic correctly.',
         pages: ['btrees-selectivity', 'query-planning'],
       },
       {
@@ -87,13 +87,14 @@ export const SYMPTOM_INDEX: SymptomGroup[] = [
         pages: ['query-planning', 'mvcc'],
       },
       {
-        symptom: 'The table is far bigger than its rows, and count(*) crawls',
+        symptom:
+          'The table takes tens of gigabytes for a few hundred thousand rows, and count(*) crawls',
         note: 'Nothing was deleted, and that is the problem: old row versions are still there because something is still holding them.',
         pages: ['mvcc', 'isolation-levels'],
       },
       {
         symptom: 'Money is missing. Every transaction committed and nothing errored',
-        note: 'Two transactions each read a state the other was about to invalidate. Committed is not the same as serialisable.',
+        note: 'Both read the same balance, both computed from what they read, and the second write erased the first. Committed is not the same as serialisable.',
         pages: ['isolation-levels', 'aggregates', 'locking-and-deadlock'],
       },
       {
@@ -132,8 +133,8 @@ export const SYMPTOM_INDEX: SymptomGroup[] = [
         pages: ['partitioning', 'kafka-internals', 'cache-invalidation'],
       },
       {
-        symptom: 'You need every change that happened, not the current state',
-        note: 'Crash recovery, replication, CDC and a message log are one data structure seen from four angles.',
+        symptom: 'You have the current state, and nobody can say how it got there',
+        note: 'Crash recovery, replication, CDC and a message log are one data structure seen from four angles — and it is the one you did not keep.',
         pages: ['the-log', 'kafka-internals', 'idempotency'],
       },
     ],
@@ -157,10 +158,14 @@ export const SYMPTOM_INDEX: SymptomGroup[] = [
         pages: ['aggregates', 'persistence-context', 'bounded-contexts'],
       },
       {
-        symptom:
-          'One thread never sees another thread’s write — or a parallel stream answers differently each run',
-        note: 'Both are legal, not bugs. Visibility needs a happens-before edge; parallel reduction needs associativity.',
-        pages: ['jmm', 'stream-pipelines', 'cas-and-contention'],
+        symptom: 'One thread never sees a write another thread definitely made',
+        note: 'Not a JVM bug — a legal reordering. Visibility between threads needs a happens-before edge, and nothing in the code creates one.',
+        pages: ['jmm', 'cas-and-contention'],
+      },
+      {
+        symptom: 'A parallel stream gives a different answer on every run',
+        note: 'No exception and no crash, just a different number each time: the reduction is not associative, so the order the splits combine in changes the result.',
+        pages: ['stream-pipelines', 'jmm'],
       },
       {
         symptom: 'Lock-free turned out slower than the lock it replaced',
@@ -201,12 +206,12 @@ export const SYMPTOM_INDEX: SymptomGroup[] = [
       },
       {
         symptom: 'You cannot test a business rule without a database',
-        note: 'The rule depends on the mechanism. Inverting that dependency is what makes it testable, and replaceable after that.',
+        note: 'The rule depends on the mechanism. Inverting that dependency is what makes it testable.',
         pages: ['dependency-inversion', 'coupling-and-cohesion'],
       },
       {
-        symptom: 'Thread-per-request will not scale, and going async rewrites everything',
-        note: 'The trade-off that forced that choice rested on the cost of a platform thread, and that cost changed.',
+        symptom: 'Every thread is parked on I/O and throughput is capped far below the CPU',
+        note: 'The pool is sized for the cost of a platform thread — a constraint that held for twenty years and stopped holding.',
         pages: ['virtual-threads', 'thread-pools'],
       },
       {

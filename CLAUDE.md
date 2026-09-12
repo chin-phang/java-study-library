@@ -492,14 +492,38 @@ which subject you are in. You do not, when you are holding a p99 graph.
 
 | File | Does |
 |---|---|
-| `src/lib/symptoms.ts` | The copy. 30 symptoms in five groups — In an incident, In the data, Across a service boundary, In the code, In the organisation — each with a `note` and an ordered `pages` list of concept slugs. |
+| `src/lib/symptoms.ts` | The copy. 31 symptoms in five groups — In an incident, In the data, Across a service boundary, In the code, In the organisation — each with a `note` and an ordered `pages` list of concept slugs. |
 | `src/components/SymptomIndex.tsx` | Renders it, resolving every slug against `conceptGraph()`. Registered in `mdx.tsx`; takes no props. |
 | `content/docs/concepts/symptoms.mdx` | The page — prose, then `<SymptomIndex />`, nothing else. |
 
 **Every symptom is an existing page's §1 restated as an observation.** The page
 pattern's first rule is to open on a concrete failure rather than a definition,
 so the failures were already written; nothing here invents a scenario. The
-thirty reach all 34 pages.
+thirty-one reach all 34 pages.
+
+**Reviewed against the pages 2026-09-12**, which caught five things and is worth
+repeating whenever an entry is added:
+
+- **One factual error, and it is a trap worth knowing.** The note for *the index
+  is there and the planner ignores it* said "at low selectivity". The word is
+  used in opposite senses by different sources, and
+  `btrees-selectivity` — the page the entry links to — uses it as the **fraction
+  of rows matched** ("5–20% selectivity: below it the index wins"), so under its
+  own vocabulary the table scan wins at *high* selectivity and the note was
+  backwards. Rewritten without the term. **Do not use "selectivity" unqualified
+  anywhere outside that page.**
+- **A note describing the wrong anomaly.** *Money is missing* was explained as
+  write skew; `isolation-levels` §1 is a **lost update** — both jobs read £100,
+  both computed £60, the second write erased the first. Now says that.
+- **Two entries that were not symptoms**, on a page called By symptom: "you need
+  every change that happened" and "thread-per-request will not scale" are a
+  requirement and a design tension. Reframed as things you observe — nobody can
+  say how the state got there; every thread parked on I/O with throughput far
+  below the CPU.
+- **One entry carrying two unrelated observations.** Thread visibility and a
+  non-associative parallel reduction were joined by an "or". Split. The "or" in
+  *ClassCastException in a method you never wrote* stays, because that is one
+  message with two causes, which is the entry's whole point.
 
 **The `note` line is the deliverable, not the links.** It says what the failure
 looks like and is not — *"the planner is doing the arithmetic correctly"*,
@@ -526,7 +550,7 @@ Both are empty today. The second is the one that will fire first: **adding a
 concept page means adding a symptom, or deciding deliberately that it has
 none**, and that block is what tells you which happened.
 
-Verified at 375px — 30 cards, 69 page chips, no card or chip overflowing the
+Verified at 375px — 31 cards, 70 page chips, no card or chip overflowing the
 article, page body does not scroll horizontally — plus `pnpm types:check` and
 `pnpm build`, now 76 doc paths.
 
