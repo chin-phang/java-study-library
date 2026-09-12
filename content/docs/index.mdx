@@ -16,8 +16,10 @@ cold.
 ## Start here
 
 <Cards>
+  <Card title="The study path" href="/docs/concepts"
+        description="All 34 concept pages arranged by dependency rather than by subject — ten roots with no prerequisites, and the run-up each other page needs. Built from frontmatter, so it cannot drift." />
   <Card title="The Java Memory Model" href="/docs/concepts/jmm"
-        description="Foundational. Explains volatile, safe publication, double-checked locking and final field semantics — and the five reference questions that depend on it." />
+        description="Foundational, and a root. Explains volatile, safe publication, double-checked locking and final field semantics — and the five reference questions that depend on it." />
 </Cards>
 
 ## The reference banks
@@ -44,21 +46,28 @@ expand-all control if you'd rather read it straight through.
 - **Numbering restarts per bank**, so `#q1` exists three times. The path is what
   disambiguates: `/docs/java/core-language#q1` and
   `/docs/data/modelling-indexing#q1` are different questions.
-- **34 diagrams** sit inside the pages they illustrate — 19 in the reference
+- **45 diagrams** sit inside the pages they illustrate — 19 in the reference
   answers (the JVM memory areas, G1's mixed collection, MVCC tuple versions,
   Kafka's high watermark, the transactional outbox, hexagonal ports and
-  adapters, and others) plus 15 more built into the concept pages, each
+  adapters, and others) plus 26 more built into the concept pages, each
   showing something the reference bank doesn't already.
+- **Every concept page ends with its own study path** — the full chain to read
+  before it, and what it opens up. The whole graph is on
+  [The study path](/docs/concepts).
 
 ## What's here, and what isn't
 
 The reference conversion is **complete**: all 30 sections, 419 questions, 295
 follow-ups, converted from `_source/` without rewriting a word of the answers.
 
-The concept pages are the point of the library. All 13 foundational pages are
-done, and 4 pages from the next tier (Core) have converted too — 17 in total,
-each explaining 5–15 reference questions in depth rather than restating them.
-11 more Core drafts are queued for conversion. The `leading/` track is empty
-by design; those pages have to come from real experience rather than be
-generated. And the study-path graph that `prerequisites`/`unlocks` is meant to
-drive isn't built yet, so for now the sidebar is the map.
+The concept pages are the point of the library, and both planned tiers are
+**complete**: all 13 foundational pages and all 21 Core pages, 34 in total, each
+explaining 4–6 reference questions in depth rather than restating them. 154 of
+the 419 reference questions are claimed by a concept page, and that number is
+supposed to be low — a small number of deeply understood mechanisms generates
+correct answers to a large number of questions.
+
+What is left is deliberate. The `leading/` track is empty because those pages
+have to come from real experience rather than be generated. And the ~84
+Specialist slugs named by the concept pages' `unlocks` are a roadmap, not a
+backlog — none is a commitment.

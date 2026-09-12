@@ -252,9 +252,8 @@ estimatedStudyTime: 3h
 ```
 
 `questions` drives bidirectional linking between concept pages and the reference
-banks. `prerequisites`/`unlocks` are meant to build a dependency graph rendered as
-a study path on the index — **that part is still not built**; the fields are
-recorded but nothing reads them yet.
+banks. `prerequisites`/`unlocks` build a dependency graph rendered as a study
+path — **built 2026-09-12**; see **The study path — built** below.
 
 **Six core drafts are waiting** (2026-09-11) and will take the graph to
 nineteen nodes when converted, adding the edges `cas-and-contention → jmm`
@@ -363,6 +362,92 @@ The JMM page carried `prerequisites: [threads-and-scheduling]`, which was not
 written and not even on the candidate list. It is now `[]`, since nothing in the
 library precedes it. Any check on the graph should flag a dangling
 `prerequisites` and ignore a dangling `unlocks`.
+
+### The study path — built
+
+**Built 2026-09-12.** The last non-`leading/` item on the study-features list.
+Four files, all derived from frontmatter — nothing about the graph is
+hand-maintained, so it cannot drift from the pages it describes:
+
+| File | Does |
+|---|---|
+| `src/lib/graph.ts` | Builds and memoises the graph from `conceptPages()`. Exports `conceptGraph()`, `readingOrderTo()`, `dependantsOf()`, `conceptNodeFor()`, `parseStudyTime()`/`formatStudyTime()`. |
+| `src/components/StudyPath.tsx` | The whole graph. Registered in `mdx.tsx`, takes no props. |
+| `src/components/ConceptPath.tsx` | One page's slice. Rendered from `page.tsx` beside `RelatedQuestions`, so no concept page can forget it. |
+| `content/docs/concepts/index.mdx` | The page. `/docs/concepts`, first in `concepts/meta.json`. |
+
+**Stages, not tiers.** A node sits one stage past its deepest prerequisite, so
+the ten roots are stage 0 and the deepest pages (`aggregates`,
+`broker-semantics`, `cache-invalidation`, `consistency-models`,
+`kafka-internals`, `locking-and-deadlock`, `microservices-org`) are stage 3.
+**A stage is a floor, not a queue** — stage 2 means *this page has a two-page
+run-up*, not *read all of stage 1 first* — and both the page copy and the
+component's own comment say so, because the obvious misreading turns a
+34-page graph into a 34-page reading list. Tier is shown as a badge and does
+not drive layout: `stream-pipelines` and `expression-problem` are Core pages
+sitting in stage 0, which is correct and would look like a bug if tier drove
+the ordering.
+
+**The dangling-edge contract is implemented as specified, not assumed away.**
+A dangling `unlocks` renders as an unwritten promise (a muted tag, with a
+`×N` when several pages promise the same slug); a dangling `prerequisites`
+renders as a visible red defect block, and a prerequisite *cycle* degrades to
+a flagged warning rather than a stack overflow — `stageOf()` carries a
+`walking` stack and treats a back edge as contributing nothing. Neither
+failure path fires today; both were written because the graph is frontmatter
+and frontmatter is hand-typed.
+
+**`ConceptPath`'s "Read first" is the transitive closure, not the declared
+parents.** The declared list is one hop, and the useful question is what the
+whole run-up costs — `consistency-models` declares two prerequisites and has a
+four-page, 12h run-up. "Read next" is the **union** of this page's resolving
+`unlocks` and the pages naming it in their own `prerequisites`, precisely
+because the two fields are not mirror images: `mvcc` does not list `the-log`
+or `persistence-context` in its `unlocks`, but both declare `mvcc` as a
+prerequisite, and a reader wants all three.
+
+**Placement is deliberate.** `ConceptPath` sits at the *foot* of a concept
+page, not the head. Prerequisites are more useful before reading, but a
+concept page opens with the failure it exists to explain (§1 of the page
+pattern), and burying that opener under a navigation box costs more than the
+box gains.
+
+#### Two measurements the graph corrected
+
+Both were claims in this file that nobody had measured until the renderer made
+them cheap to check.
+
+- **Mirrored edges are the norm, not a first.** This file said
+  `microservices-org → conways-law` was "the first `unlocks` promise in the
+  library to be met by its mirrored `prerequisites`". Measured: **16 of the 32
+  resolving `prerequisites` edges are mirrored** by an `unlocks` in the other
+  direction — `backpressure`/`thread-pools`, `cas-and-contention`/`jmm`,
+  `escape-analysis`/`jit` and `/generational-gc`, `mvcc`/`btrees-selectivity`,
+  and eleven more. Mirroring is common because a parent page usually names the
+  child it hands off to. The claim is struck; do not restate it. The five
+  resolving `unlocks` that are *not* mirrored (`btrees-selectivity →
+  partitioning`, `cache-invalidation → consistency-models`, `jmm →
+  locking-and-deadlock`, `jmm → virtual-threads`, `partitioning →
+  kafka-internals`) are the interesting ones — a page promising a successor
+  that does not consider it a prerequisite.
+- **Six Specialist slugs look like duplicate names for one page.** The
+  "Promised, not written" list renders all 84, which makes near-synonyms
+  obvious for the first time: `service-extraction` (`aggregates`) against
+  `service-decomposition` (three pages); `optimistic-locking` (`aggregates`,
+  `persistence-context`) against `optimistic-concurrency` (`isolation-levels`);
+  `caching` (`hashmap`) against `caching-strategy` (`cache-invalidation`);
+  `retries-and-backoff` (two pages) against `retry-design`
+  (`locking-and-deadlock`); `reactive-streams` (two pages) against
+  `reactive-comparison` (`virtual-threads`). And `coupling-and-cohesion`
+  promises **`microservices-boundaries`**, which is the name of a *reference
+  page* (`design/microservices-boundaries`), not a concept slug — and the
+  material is now covered by `conways-law` and `microservices-org`.
+  **Left alone, deliberately.** These are the exact hazard the Specialist list
+  exists to prevent ("a later page cannot invent a second spelling"), but
+  deciding two unwritten slugs are one page is a content judgement, and the
+  precedent for fixing a collision (`jmm`, `jvm-memory`, `bounded-contexts`)
+  covers a *written* page with two names, which is a different case. Resolve
+  them when someone writes one of the pages.
 
 ### Bidirectional linking
 
@@ -2059,9 +2144,11 @@ src/
     mdx.tsx                  # getMDXComponents() — register components HERE
     Question.tsx FollowUp.tsx Mermaid.tsx
     SelfCheck.tsx RelatedQuestions.tsx
+    StudyPath.tsx ConceptPath.tsx      # the dependency graph — see Frontmatter
   lib/
     source.ts                # defineDocs macro + loader()
     schema.ts                # frontmatter Standard Schema — see Frontmatter
+    graph.ts                 # concept dependency graph — see Frontmatter
     shared.ts layout.shared.tsx cn.ts
 ```
 
@@ -2081,6 +2168,7 @@ content/docs/
   meta.json
   concepts/                  # deep-study pages
     meta.json
+    index.mdx                # the study path — <StudyPath />, nothing else
     jmm.mdx
     ...
   java/                      # reference Q&A (12 files)
@@ -2821,7 +2909,7 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **64 pages** (30 reference + 34
+Content first — and the content now exists: **65 pages** (30 reference + 34
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
@@ -2835,7 +2923,7 @@ questions,
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
-instead), 265 self-check items.
+instead), 265 self-check items, plus the study-path index at `/docs/concepts`.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11; the Core tier closed 2026-09-12). These two are now the front of
 the queue, and with no Core page left to write they are the whole queue —
@@ -2844,25 +2932,15 @@ anything further is a Specialist page, and none is promised as a commitment.
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has thirty-four real
-  nodes**, all thirteen foundational plus all twenty-one Core pages, and the
-  node count is final unless a Specialist page is written.
-  Read **The dependency graph — settled conventions** before starting: **ten**
-  roots (eight foundational plus `stream-pipelines` and `expression-problem`),
-  **thirty-two**
-  resolving `prerequisites` edges (`microservices-org → conways-law` and
-  `→ bounded-contexts` are the newest, the first of which is also the first
-  `unlocks` promise in the library to be met by its mirrored `prerequisites`),
-  **zero dangling `prerequisites`**, and a
-  large majority of
-  `unlocks` targets pointing at unwritten specialist pages. *The edge count
-  was measured 2026-09-12 across all converted pages; it
+- ~~Concept dependency graph as a study path~~ — **built 2026-09-12**, see
+  **The study path — built**. Thirty-four nodes, **ten** roots (eight
+  foundational plus `stream-pipelines` and `expression-problem`),
+  **thirty-two** resolving `prerequisites` edges, **zero dangling
+  `prerequisites`**, and 84 `unlocks` targets pointing at unwritten Specialist
+  pages. *The edge count was measured 2026-09-12 across all converted pages; it
   previously read "thirteen", which described the foundational-only graph and
   was never updated as the Core pages converted — thirteen is the count of
-  foundational-tier edges, not of the whole graph.* Tolerating dangling
-  `unlocks` is a day-one requirement, not an edge case — and with the Core tier
-  closed, every remaining dangling `unlocks` target is a Specialist slug, so
-  **the renderer will meet dangling edges on day one and always**.
+  foundational-tier edges, not of the whole graph.*
 - ~~Self-check questions collapsed by default~~ — built, see **The Question component**
 
 Out of scope: accounts, sync, spaced-repetition scheduling, a backend.

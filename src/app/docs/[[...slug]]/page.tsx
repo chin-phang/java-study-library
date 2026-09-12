@@ -20,6 +20,8 @@ import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { gitConfig } from '@/lib/shared';
 import { QuestionsProvider } from '@/components/Question';
 import { RelatedQuestions } from '@/components/RelatedQuestions';
+import { ConceptPath } from '@/components/ConceptPath';
+import { conceptNodeFor } from '@/lib/graph';
 
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const params = await props.params;
@@ -33,6 +35,9 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   // reference page needs no markup of its own and the two cannot drift.
   const explains = resolveQuestions(page.data.questions);
   const concepts = conceptsForPage(page.slugs);
+
+  // Null on every page without a `concept:` slug, so <ConceptPath> renders nothing.
+  const node = conceptNodeFor(page.data);
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
@@ -54,6 +59,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
             })}
           />
           <RelatedQuestions questions={explains} />
+          <ConceptPath node={node} />
         </QuestionsProvider>
       </DocsBody>
     </DocsPage>

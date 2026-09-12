@@ -1,0 +1,29 @@
+---
+title: The study path
+description: The concept dependency graph — what to read first, and what each page opens up.
+---
+
+The sidebar lists the concept pages by subject. This page lists them by
+**dependency**: every page declares what must be understood before it
+(`prerequisites`) and what it opens up (`unlocks`), and the graph below is built
+from those two fields at build time. Nothing here is hand-maintained, so it
+cannot drift from the pages it describes.
+
+**Stages are a floor, not a queue.** A page sits one stage past its deepest
+prerequisite, so stage 2 means *this page has a two-page run-up*, not *read all
+of stage 1 first*. Pick a page you want, read its "Read first" chain, and stop.
+Each concept page carries that chain at its foot.
+
+**Ten pages have no prerequisites at all.** Some concepts are genuine roots —
+type erasure, B-trees and selectivity, the memory model — so there is no single
+entry point and none is needed. Start wherever the problem you are actually
+hitting lives.
+
+**Most `unlocks` targets have no page, and that is the design.** `unlocks` is a
+roadmap rather than a link list: a page may name what should come next long
+before anyone writes it. Those are listed at the bottom as promises, not as
+broken links. A dangling `prerequisites` would be a real defect — it would tell
+you to study something you cannot read — so the graph flags one loudly if it ever
+appears. There are none today.
+
+<StudyPath />

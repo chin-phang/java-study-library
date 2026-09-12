@@ -4,6 +4,7 @@ import { Question } from '@/components/Question';
 import { FollowUp } from '@/components/FollowUp';
 import { Mermaid } from '@/components/Mermaid';
 import { SelfCheck, SelfCheckItem } from '@/components/SelfCheck';
+import { StudyPath } from '@/components/StudyPath';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -12,6 +13,7 @@ export function getMDXComponents(components?: MDXComponents) {
     FollowUp,
     SelfCheck,
     SelfCheckItem,
+    StudyPath,
     // Emitted by `remarkMdxMermaid` from ```mermaid fenced blocks.
     Mermaid,
     ...components,
