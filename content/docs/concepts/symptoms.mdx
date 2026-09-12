@@ -1,0 +1,35 @@
+---
+title: By symptom
+description: The concept pages entered by the failure you are holding, rather than by subject or by dependency.
+---
+
+The sidebar lists the concept pages by **subject**. [The study path](/docs/concepts)
+lists them by **dependency**. Neither is how you usually arrive. You arrive
+holding a p99 graph that climbed for no reason, a customer charged twice, or an
+index the planner will not use — and the subject is the thing you are trying to
+work out, not the thing you can look up.
+
+So this page lists them by **symptom**: what you observed, before you know what
+caused it.
+
+**The line under each symptom is the point.** It says what the failure looks
+like and is not — the wrong diagnosis that costs the afternoon. A symptom that
+only listed links would be a worse sidebar. Every entry is drawn from the
+opening section of a page, because the pages are written to open on a concrete
+failure rather than a definition, so the failures were already there to index.
+
+**Two or three pages per symptom, and the order matters** — the first is the
+mechanism most likely to be behind it, the rest are the ones that produce the
+same observation by a different route. A `ClassCastException` in a method you
+never wrote is a bridge method or two classloaders, and those have nothing in
+common except the message you are staring at. That is the kind of thing a
+subject index cannot tell you.
+
+**This is the one hand-maintained index in the library.** The sidebar is a list
+of real files and the study path is derived from frontmatter, but the symptom
+text and its page list are typed by hand, so they can drift. Both directions are
+checked below rather than assumed: a slug naming no page renders as a defect,
+and every concept page no symptom reaches is listed. Neither block appears
+today.
+
+<SymptomIndex />

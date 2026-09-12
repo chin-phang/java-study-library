@@ -3,6 +3,7 @@
   "description": "Deep-study pages on the load-bearing ideas.",
   "pages": [
     "index",
+    "symptoms",
 
     "---Language & types---",
     "generics-erasure", "hashmap", "stream-pipelines", "expression-problem",

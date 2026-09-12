@@ -462,6 +462,54 @@ them cheap to check.
   spelling* — and the reversal is what makes it enforceable, because a new
   `unlocks` entry now has to name a page that exists.
 
+### The symptom index — built
+
+**Built 2026-09-12**, at `/docs/concepts/symptoms`, second in
+`content/docs/concepts/meta.json` after the study path. A third way in, and the
+only one that matches how a reader actually arrives: the sidebar orders by
+subject and `/docs/concepts` by dependency, and both assume you already know
+which subject you are in. You do not, when you are holding a p99 graph.
+
+| File | Does |
+|---|---|
+| `src/lib/symptoms.ts` | The copy. 30 symptoms in five groups — In an incident, In the data, Across a service boundary, In the code, In the organisation — each with a `note` and an ordered `pages` list of concept slugs. |
+| `src/components/SymptomIndex.tsx` | Renders it, resolving every slug against `conceptGraph()`. Registered in `mdx.tsx`; takes no props. |
+| `content/docs/concepts/symptoms.mdx` | The page — prose, then `<SymptomIndex />`, nothing else. |
+
+**Every symptom is an existing page's §1 restated as an observation.** The page
+pattern's first rule is to open on a concrete failure rather than a definition,
+so the failures were already written; nothing here invents a scenario. The
+thirty reach all 34 pages.
+
+**The `note` line is the deliverable, not the links.** It says what the failure
+looks like and is not — *"the planner is doing the arithmetic correctly"*,
+*"exit 137 is the kernel, not the JVM"*. Strip those and this is a worse
+sidebar.
+
+**Order within a symptom is a claim**: the first page is the likeliest
+mechanism, the rest produce the same observation by another route. That is what
+a subject index cannot express — *ClassCastException in a method you never
+wrote* is `generics-erasure` **or** `class-loading`, and those two share nothing
+but the message you are staring at.
+
+**It is the only hand-maintained index in the library** — the sidebar is a list
+of real files and the graph is derived from frontmatter, but a slug here is
+checked by nothing at compile time. So it checks both directions of drift and
+renders each as a visible block rather than assuming it away, the same
+discipline as the graph's three checks:
+
+- **a slug naming no page** — a defect, rendered in place of the link;
+- **a concept page no symptom reaches** — not necessarily a defect, since a page
+  can be worth reading with no failure that announces it, but worth a look.
+
+Both are empty today. The second is the one that will fire first: **adding a
+concept page means adding a symptom, or deciding deliberately that it has
+none**, and that block is what tells you which happened.
+
+Verified at 375px — 30 cards, 69 page chips, no card or chip overflowing the
+article, page body does not scroll horizontally — plus `pnpm types:check` and
+`pnpm build`, now 76 doc paths.
+
 ### Bidirectional linking
 
 **Built. One declaration drives both directions**, so they cannot drift:
@@ -2266,10 +2314,12 @@ src/
     Question.tsx FollowUp.tsx Mermaid.tsx
     SelfCheck.tsx RelatedQuestions.tsx
     StudyPath.tsx ConceptPath.tsx      # the dependency graph — see Frontmatter
+    SymptomIndex.tsx                   # the symptom index — see below
   lib/
     source.ts                # defineDocs macro + loader()
     schema.ts                # frontmatter Standard Schema — see Frontmatter
     graph.ts                 # concept dependency graph — see Frontmatter
+    symptoms.ts              # the symptom index's copy — see below
     shared.ts layout.shared.tsx cn.ts
 ```
 
@@ -2290,6 +2340,7 @@ content/docs/
   concepts/                  # deep-study pages
     meta.json
     index.mdx                # the study path — <StudyPath />, nothing else
+    symptoms.mdx             # by symptom — <SymptomIndex />, nothing else
     jmm.mdx
     ...
   java/                      # reference Q&A (12 files)
@@ -3089,6 +3140,8 @@ them, and they are not Claude Code's to fill in. See **The leadership track**.
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
+- ~~A third index, by symptom rather than by subject or dependency~~ — **built
+  2026-09-12**, see **The symptom index — built**
 - ~~Concept dependency graph as a study path~~ — **built 2026-09-12**, see
   **The study path — built**. Thirty-four nodes, **ten** roots (eight
   foundational plus `stream-pipelines` and `expression-problem`),
