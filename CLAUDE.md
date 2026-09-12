@@ -909,9 +909,9 @@ page's "Reference questions this page explains" lists all five with no
 this answer" at exactly seven anchors, the five new ones plus the two
 pre-existing. It's in the sidebar after `btrees-selectivity`, ahead of `mvcc`.
 
-**Core** — **seventeen of twenty-one drafted**, fifteen as of 2026-09-11 and
-`class-loading` then `query-planning` on 2026-09-12, **all seventeen of those
-now converted** into
+**Core** — **eighteen of twenty-one drafted**, fifteen as of 2026-09-11 and
+`class-loading`, `query-planning` then `consistency-models` on 2026-09-12,
+**all eighteen of those now converted** into
 `content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
@@ -941,8 +941,99 @@ deliberate root: nothing in the built graph is a genuine dependency, and
 `class-loading` was the sixteenth, drafted and converted 2026-09-12, closing
 the last Core gap in the JVM group — see its entry below. `query-planning` was
 the seventeenth, converted 2026-09-12 from a draft already sitting untracked in
-`_source/` — see its entry below. `consistency-models` is the one Core slug
-still undrafted.
+`_source/` — see its entry below. `consistency-models` was the eighteenth,
+drafted and converted 2026-09-12 — see its entry below. The three Core slugs
+still undrafted are `expression-problem`, `conways-law` and `microservices-org`;
+none is a mechanism page, which is why they have waited.
+
+**`consistency-models`: drafted and converted 2026-09-12**, the eighteenth
+Core page taken to `content/docs/concepts/`, immediately after
+`query-planning`. Written fresh rather than converted from a waiting draft, so
+— like `class-loading` — currency was checked at authoring time against
+primary sources rather than corrected afterwards. The subject is unusually
+exposed to staleness: its theory is timeless (CAP, PACELC, the session
+guarantees, linearizability) but every system-specific claim in §7 is a moving
+target, and two of them have changed recently enough that most writing about
+them is now wrong.
+
+- **DynamoDB global tables are no longer eventual-only.** "Global tables mean
+  last-writer-wins eventual replication" was true and is now a half-truth:
+  since **30 June 2025** a global table declares a consistency mode at
+  creation — MREC (the default, multi-active, last-writer-wins, publishing
+  `ReplicationLatency`) or **MRSC**, which replicates synchronously to at
+  least one other Region before returning. The page states MRSC's price as a
+  list, all of it from the AWS documentation rather than paraphrase: exactly
+  three Regions, either three full replicas or two plus a *witness* holding
+  only replicated change data; no TTL; no `TransactWriteItems` or
+  `TransactGetItems`; no `ReplicationLatency` metric; same-account only; and
+  the mode is immutable after creation. **That last list is load-bearing, not
+  trivia** — the strong-consistency mode giving up the multi-item transaction
+  API is §8's cleanest evidence that strong-on-one-key and atomic-across-keys
+  are different properties.
+- **PostgreSQL has no built-in replay wait yet, and the obvious search result
+  is wrong about it.** `pg_wal_replay_wait()` is widely written about as a
+  PostgreSQL 18 feature; it was reverted, and **it is not in 18 as released** —
+  checked against 18's own `functions-admin` page, which lists
+  `pg_last_wal_replay_lsn()` and no wait function. The replacement is a
+  top-level SQL command, `WAIT FOR LSN ... WITH (MODE 'standby_replay', ...)`,
+  shipping in **PostgreSQL 19 — in beta as of September 2026, not released**,
+  and the page states it that way with its three real restrictions (top-level
+  only, no snapshot held, `READ COMMITTED` or below) rather than as available.
+  Lab 4 is written against 18's poll loop for that reason, with `WAIT FOR` as
+  the optional variant.
+- **Cassandra.** 5.0 is the current stable line (5.0.9, August 2026). **6.0 is
+  in alpha**, carrying **Accord** — leaderless, strictly serializable,
+  multi-partition, one WAN round trip in the common case, shipped off by
+  default. Stated as alpha, the same "state the current status rather than
+  guess at a moving target" discipline `virtual-threads` used for JEP 525 and
+  `query-planning` for `pg_plan_advice`.
+- **MongoDB.** The implicit default write concern is `majority` (falling to
+  `w: 1` when the voting-member arithmetic cannot support a majority), and
+  causally consistent sessions give all four session guarantees **only** with
+  `majority`/`majority` — checked, because the failure mode is silent: weaker
+  concerns do not error, they just give you less than you configured.
+- **Jepsen's consistency map** at `jepsen.io/consistency` is still live and is
+  the source for §3's lattice and its sticky-availability annotations.
+
+`prerequisites: [the-log, isolation-levels]` resolves to one built
+foundational page and one built Core page — the graph's twenty-seventh and
+twenty-eighth resolving edges, and both are handoffs the prerequisite pages
+explicitly set up: `isolation-levels` §6 defers "read replicas ... no
+isolation level fixes read-your-own-writes across replication lag", and
+`the-log` §7 defers consensus. This page picks up both. **Six `questions:`
+anchors**, one more than the recent Core pages and matching `the-log`,
+`bounded-contexts` and `broker-semantics`: `data/transactions-mvcc#q40`,
+`data/scaling-operations#q46`, `java/distributed-systems#q124`, `#q128`,
+`data/cross-cutting#q138`, `design/microservices-data#q89`. All six were
+checked against the built reference pages before writing, and **all six are
+first claims** — no question in the library was previously claimed by any
+concept page on replication lag, read replicas, XA, distributed locking,
+cross-service ordering or cross-service query, which is why this conversion
+moves the coverage count by a full six. `java/distributed-systems#q128` was
+considered and rejected for `idempotency` when that page was written; it
+belongs here, because the lease-is-not-a-lock argument is a consistency claim
+and the fencing token is the same monotonic-position primitive as the LSN in
+§5.
+
+**Carries one diagram** — the consistency lattice from strict serializable
+down to eventual, with the *edges* rather than the boxes carrying the
+argument: thick above the sticky-availability boundary, dotted across it,
+plain below. Checked against the reference bank first: none of the six
+claimed anchors carries a diagram of its own, and nothing anywhere in the
+corpus draws a consistency hierarchy, so this is a clean **Add a diagram only
+if it shows something the reference bank doesn't already** case, not a
+link-don't-copy judgement. 12 sections, ~3,300 words of prose measured the
+same way as `query-planning` (3,427) and `class-loading` (3,019) — in that
+range, not above it — and 8 self-check items with `where` pointers written at
+conversion time. Item 1 points at two sections and item 8 at a section plus a
+**Leading on this** bullet, the `jit`-item-7 pattern. Both `pnpm types:check`
+and `pnpm build` pass; the diagram was verified in the browser at 375px
+(`viewBox="0 0 586 830"`, ≈59% rendered scale, no horizontal overflow, no
+"Syntax error" text), and **both link directions** were verified — the
+concept page lists all six with no `broken reference`, and each of the four
+reference pages renders "The model behind this answer: Consistency Models and
+Choosing Per Operation" at exactly the claimed anchors. It's in the sidebar
+between `the-log` and `cache-invalidation`.
 
 **`virtual-threads`: converted 2026-09-12**, the fourth Core page taken to
 `content/docs/concepts/` and the first conversion session to also refresh
@@ -1133,7 +1224,7 @@ underneath the table for the closed record.
 | `stream-pipelines` | Stream Pipelines: Laziness, Fusion, and Parallel Decomposition | drafted, converted |
 | `class-loading` | Class Loading and Classloader Leaks | drafted, converted |
 | `query-planning` | Query Planning and Cardinality Estimation | drafted, converted |
-| `consistency-models` | Consistency models and choosing per operation | |
+| `consistency-models` | Consistency Models and Choosing Per Operation | drafted, converted |
 | `expression-problem` | The expression problem: polymorphism vs pattern matching | |
 | `conways-law` | Conway's law and the inverse manoeuvre | |
 | `microservices-org` | Why microservices are an organisational answer | |
@@ -1385,6 +1476,20 @@ someone writes the page. Grouped by what promises them:
   page's own prerequisite, already promises, the same "multiple promises to one
   unwritten page is normal" pattern as `locking-and-deadlock`'s `saga-pattern`.
 
+- **`consistency-models`** (drafted and converted 2026-09-12, Core tier)
+  unlocks `replication-lag`, `multi-region-replication`, `consensus-algorithms`.
+  Only one is new: `consensus-algorithms` covers Raft and Paxos as mechanisms —
+  the thing `the-log` §7 defers ("agreeing on the log's contents across nodes is
+  Raft/Paxos, which is a different problem") and this page names repeatedly
+  without developing, in §8's "consensus is not free availability" and in
+  Cassandra's LWT and Accord. The other two are not new: `replication-lag` is
+  already promised by `mvcc` and `multi-region-replication` by `kafka-internals`
+  — multiple promises to one unwritten page is normal, the same pattern as
+  `locking-and-deadlock`'s `saga-pattern`. Both are the right targets here:
+  this page measures lag and routes around it but does not cover diagnosing or
+  operating it, and §7's MRSC and Accord material is a sketch of a multi-region
+  page rather than the page itself.
+
 Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
 gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
 
@@ -1399,11 +1504,17 @@ plus `cache-invalidation`, `spring-proxy`, `persistence-context`,
 seven more converted the same day or the day after, plus
 `locking-and-deadlock` and `partitioning` closing out the batch, plus
 `class-loading` drafted and converted the same day outside both batches, for
-sixteen in total — all sixteen drafted Core pages now converted).
-**132 questions are claimed — 31.5%** (re-measured 2026-09-12 after
-`query-planning`, which adds five first claims on `data/query-performance` and
-is, with `class-loading`, one of only two conversions in the batch to move this
-number at all), up from 127 after `class-loading`, up from 124, up from 119 (28%) before
+sixteen in total — all sixteen drafted Core pages now converted). *Re-measured
+2026-09-12 after `query-planning` and `consistency-models`: 31 concept pages,
+18 of them Core, all built.*
+**138 questions are claimed — 32.9%** (re-measured 2026-09-12 after
+`consistency-models`, which adds **six** first claims — the largest single-page
+move in the library, because no concept page previously touched replication
+lag, read replicas, XA, distributed locking, cross-service ordering or
+cross-service query), up from 132 after `query-planning`, which added five
+first claims on `data/query-performance` and was, with `class-loading`, one of
+only two conversions in that batch to move this
+number at all, up from 127 after `class-loading`, up from 124, up from 119 (28%) before
 `stream-pipelines`, up from 114 (27%) before `kafka-internals`, up from 108
 (26%) before `broker-semantics`, and up from 93 (22%) before the second batch
 of six drafts. None of `virtual-threads`'s, `cas-and-contention`'s,
@@ -2125,7 +2236,15 @@ only diagram is on `#q17` (B-tree descent), none of the five claimed anchors
 carries one, and nothing in the corpus draws estimate-versus-actual propagation,
 so it is another clean **Add a diagram only if it shows something the reference
 bank doesn't already** case. That takes the concept-page total to **22** and the
-library to **41**.
+library to **41**. **`consistency-models` adds the twenty-third** — drafted and
+converted 2026-09-12 — the consistency lattice from strict serializable down to
+eventual, where the *edges* rather than the boxes carry the argument: thick
+above the sticky-availability boundary, dotted across it, plain below, so the
+picture says where availability is lost rather than merely listing the models.
+None of its six claimed anchors carries a diagram, and no diagram anywhere in
+the corpus draws a consistency hierarchy, so it is another clean **Add a diagram
+only if it shows something the reference bank doesn't already** case. That takes
+the concept-page total to **23** and the library to **42**.
 
 **Phone-readability, measured on all twelve at 375px.** None overflows; the
 page body never scrolls horizontally. Rendered scale, worst first:
@@ -2198,6 +2317,15 @@ subgraphs are each a single-column chain, so they stack vertically under
 Mermaid's own layout without needing the explicit `~~~` link that
 `thread-pools` and `bounded-contexts` required for their wider subgraphs.
 
+`consistency-models` (Core tier, measured 2026-09-12) carries one diagram, the
+consistency lattice, checked the same way: `viewBox="0 0 586 830"` against a
+343px rendered width at 375px viewport (≈59%), no horizontal overflow, no
+"Syntax error" text — the same range as `broker-semantics`, `virtual-threads`
+and `kafka-internals`'s rebalance diagram. Its single fan-out is two siblings,
+inside the "two or three" branching rule, so it needed no subgraph or `~~~`
+stacking; the rest is a straight chain, which is what keeps a seven-node
+hierarchy portrait rather than landscape.
+
 `class-loading` (Core tier, measured 2026-09-12) carries one diagram, the
 path-to-GC-root retention chain, checked the same way: `viewBox="0 0 478.755
 742"` against a 343px rendered width at 375px viewport (≈72%), no horizontal
@@ -2240,33 +2368,35 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **60 pages** (30 reference + 30
+Content first — and the content now exists: **61 pages** (30 reference + 31
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`, `aggregates`, `backpressure`,
 `coupling-and-cohesion`, `escape-analysis`, `locking-and-deadlock`,
-`partitioning`, `class-loading` and `query-planning`, the seventeen converted
-Core pages — all seventeen drafted so far), 419 questions,
-**41 diagrams**
+`partitioning`, `class-loading`, `query-planning` and `consistency-models`,
+the eighteen converted Core pages — all eighteen drafted so far), 419
+questions,
+**42 diagrams**
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
-instead), 233 self-check items.
+instead), 241 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has thirty real
-  nodes**, all thirteen foundational plus all seventeen converted Core pages.
+- Concept dependency graph as a study path — **now has thirty-one real
+  nodes**, all thirteen foundational plus all eighteen converted Core pages.
   Read **The dependency graph — settled conventions** before starting: nine
-  roots (eight foundational plus `stream-pipelines`), **twenty-six**
-  resolving `prerequisites` edges (`query-planning → btrees-selectivity` is the
-  newest), **zero dangling `prerequisites`**, and a large majority of
+  roots (eight foundational plus `stream-pipelines`), **twenty-eight**
+  resolving `prerequisites` edges (`consistency-models → the-log` and
+  `→ isolation-levels` are the newest), **zero dangling `prerequisites`**, and a
+  large majority of
   `unlocks` targets pointing at unwritten specialist pages. *The edge count
-  was measured 2026-09-12 across all thirty converted pages; it
+  was measured 2026-09-12 across all thirty-one converted pages; it
   previously read "thirteen", which described the foundational-only graph and
   was never updated as the Core pages converted — thirteen is the count of
   foundational-tier edges, not of the whole graph.* Tolerating dangling
