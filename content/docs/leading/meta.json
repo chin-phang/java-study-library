@@ -1,5 +1,16 @@
 {
   "title": "Leading",
   "description": "Longer-form essays on technical leadership. Written by hand.",
-  "pages": []
+  "pages": [
+    "setting-conventions",
+    "reviewing-for-design",
+    "one-way-doors",
+    "writing-an-adr",
+    "running-an-incident",
+    "estimating-and-scope",
+    "growing-people",
+    "technical-strategy",
+    "saying-no",
+    "the-boring-option"
+  ]
 }

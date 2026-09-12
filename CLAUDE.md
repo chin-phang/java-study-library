@@ -2107,15 +2107,75 @@ or the six core drafts will read as uncovered.
 
 ## The leadership track
 
-Section 9 of the design bank (Q96–Q107) covers this as reference Q&A. The
-`content/leading/` track is separate, longer-form, and **written by the user, not
-generated**. Claude Code should scaffold the structure and prompt with questions;
-the content must come from real experience or it will read as generic.
+Section 9 of the design bank (Q96–Q107) covers this as reference Q&A, and
+Q138–Q142 of `java/testing-practice` cover five of the same topics. The
+`content/docs/leading/` track is separate, longer-form, and **written by the
+user, not generated**. Claude Code should scaffold the structure and prompt with
+questions; the content must come from real experience or it will read as
+generic.
+
+*(This path was written `content/leading/` here until 2026-09-12. It is
+`content/docs/leading/`, alongside the other four tracks — there is no second
+content root.)*
 
 Topics: setting and defending conventions; reviewing for design not style;
 one-way vs two-way doors; writing an ADR; running an incident; estimating and
 negotiating scope; growing people; two-year technical strategy; saying no with
 reasons that survive scrutiny; knowing when the boring option is correct.
+
+### Scaffolded 2026-09-12 — ten stubs, no essay content
+
+All ten topics now exist as stub pages, in that order, in
+`content/docs/leading/meta.json`:
+
+| File | Topic |
+|---|---|
+| `setting-conventions.mdx` | setting and defending conventions |
+| `reviewing-for-design.mdx` | reviewing for design not style |
+| `one-way-doors.mdx` | one-way vs two-way doors |
+| `writing-an-adr.mdx` | writing an ADR |
+| `running-an-incident.mdx` | running an incident |
+| `estimating-and-scope.mdx` | estimating and negotiating scope |
+| `growing-people.mdx` | growing people |
+| `technical-strategy.mdx` | two-year technical strategy |
+| `saying-no.mdx` | saying no with reasons that survive scrutiny |
+| `the-boring-option.mdx` | knowing when the boring option is correct |
+
+Each holds frontmatter, one prose line saying what the essay should cover, and a
+`## Questions to answer` list of **six** prompts. **Nothing else — writing essay
+prose into one of these is the failure mode this track exists to avoid.** Replace
+the questions with the essay when you write it; they are scaffolding, not a
+permanent section.
+
+**The frontmatter is deliberately minimal: `title`, `description`, `tags`.** No
+`concept:` and no `questions:`, and neither should be added to a stub:
+
+- `page.tsx` derives `<ConceptPath>` from `conceptNodeFor(page.data)`, which is
+  null without a `concept:` slug — so a stub renders no study-path box, and
+  adding one would put an unwritten essay into the dependency graph.
+- `questions:` drives **both** directions of the bidirectional linking. Declaring
+  it on a stub would make reference answers render "The model behind this
+  answer" pointing at a page with no answer in it.
+
+Cross-reference the reference bank from the essay's prose when it is written,
+not from frontmatter.
+
+**The questions are the deliverable, so they are written to resist a generic
+answer.** Each set asks for one case that worked and one that did not, and at
+least one asks the user to state their own test in a form another person could
+apply without them in the room. The last two items in every set ask what they
+got wrong — that is where the non-generic material is. "How do you approach a
+code review?" invites exactly the prose this track exists to avoid; "describe a
+comment you left that you later regretted" does not.
+
+`pnpm types:check` and `pnpm build` pass with the ten in the sidebar — 75 doc
+paths, up from 65.
+
+**`content/docs/index.mdx` still reads "The `leading/` track is empty because
+those pages have to come from real experience rather than be generated."** That
+is now half true: the scaffolding exists, the essays do not. Left as written,
+deliberately — rewording it is the user's call, and the sentence is still
+correct about what matters. Fix it when the first essay lands.
 
 ## Content structure
 
@@ -2174,7 +2234,7 @@ content/docs/
   java/                      # reference Q&A (12 files)
   data/                      # reference Q&A (8 files)
   design/                    # reference Q&A (10 files)
-  leading/                   # leadership essays, user-written
+  leading/                   # leadership essays, user-written (10 stubs)
 ```
 
 The target filenames in the source tables above are relative to this root.
@@ -2909,8 +2969,8 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **65 pages** (30 reference + 34
-concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
+Content first — and the content now exists: **65 written pages** (30 reference
++ 34 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`, `aggregates`, `backpressure`,
@@ -2928,6 +2988,10 @@ instead), 265 self-check items, plus the study-path index at `/docs/concepts`.
 (2026-09-11; the Core tier closed 2026-09-12). These two are now the front of
 the queue, and with no Core page left to write they are the whole queue —
 anything further is a Specialist page, and none is promised as a commitment.
+
+The `leading/` track's ten pages are **not** in that 65. They are stubs —
+frontmatter and six prompts each, scaffolded 2026-09-12, with no essay prose in
+them, and they are not Claude Code's to fill in. See **The leadership track**.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above

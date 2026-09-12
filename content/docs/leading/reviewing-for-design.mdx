@@ -1,0 +1,26 @@
+---
+title: Reviewing for Design, Not Style
+description: What a senior reviewer looks for once formatting is automated and the code compiles.
+tags: [leading, code-review, design]
+---
+
+What this essay should cover: what you actually read a diff for once style is a
+tool's problem — which design problems are worth blocking a merge over, which
+are worth a comment, and which you let through because the cost of being right
+is higher than the cost of being wrong.
+
+## Questions to answer
+
+1. Walk through a review where you rejected code that worked. What was wrong
+   with it, and how did you explain the cost to the author?
+2. What is the first thing you look at in an unfamiliar diff — the tests, the
+   interface, the call sites, the migration? Why that first?
+3. Describe a comment you left that you later regretted. Was it wrong, or was
+   it right and badly delivered?
+4. Where is your line between how you would have written it and it being wrong?
+   Give a case where you consciously stayed on the near side of that line.
+5. Describe a design problem you missed in review that shipped and cost
+   something. What would have caught it — a different reading order, a question
+   you failed to ask, a test that did not exist?
+6. How do you review a change from someone much more junior differently from one
+   by a peer? What changes: the standard, the tone, or the number of comments?
