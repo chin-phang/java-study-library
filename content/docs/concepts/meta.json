@@ -1,5 +1,28 @@
 {
   "title": "Concepts",
   "description": "Deep-study pages on the load-bearing ideas.",
-  "pages": ["index", "jmm", "cas-and-contention", "thread-pools", "backpressure", "virtual-threads", "generics-erasure", "hashmap", "jvm-memory", "generational-gc", "jit", "escape-analysis", "class-loading", "btrees-selectivity", "query-planning", "mvcc", "isolation-levels", "locking-and-deadlock", "the-log", "consistency-models", "cache-invalidation", "broker-semantics", "kafka-internals", "stream-pipelines", "idempotency", "bounded-contexts", "dependency-inversion", "spring-proxy", "persistence-context", "aggregates", "coupling-and-cohesion", "conways-law", "microservices-org", "expression-problem", "partitioning"]
+  "pages": [
+    "index",
+
+    "---Language & types---",
+    "generics-erasure", "hashmap", "stream-pipelines", "expression-problem",
+
+    "---JVM runtime---",
+    "jvm-memory", "generational-gc", "jit", "escape-analysis", "class-loading",
+
+    "---Concurrency---",
+    "jmm", "cas-and-contention", "thread-pools", "virtual-threads", "backpressure",
+
+    "---Relational data---",
+    "btrees-selectivity", "query-planning", "mvcc", "isolation-levels", "locking-and-deadlock",
+
+    "---Distributed data & messaging---",
+    "the-log", "consistency-models", "cache-invalidation", "partitioning", "broker-semantics", "kafka-internals", "idempotency",
+
+    "---Spring & persistence---",
+    "spring-proxy", "persistence-context",
+
+    "---Design & organisation---",
+    "dependency-inversion", "coupling-and-cohesion", "bounded-contexts", "aggregates", "conways-law", "microservices-org"
+  ]
 }

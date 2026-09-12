@@ -581,24 +581,33 @@ deliberate exception recorded under **Conversion rules**.
 | `thread-pools` | Thread Pools and Little's Law |
 
 **This table's order is not the sidebar order.** The sidebar is the explicit
-`pages` list in `content/docs/concepts/meta.json`, which runs language and
-runtime, then data, then distributed and design. The thirteen foundational
-pages went in as:
+`pages` list in `content/docs/concepts/meta.json`, **grouped by subject since
+2026-09-12** into seven headings, in this order: Language & types, JVM runtime,
+Concurrency, Relational data, Distributed data & messaging, Spring &
+persistence, Design & organisation. A `"---Name---"` entry in `pages` renders as
+a group heading — `fumadocs-core` parses
+`^---(?:\[icon])?(?<name>.+)---` — so the pages stay one flat list and this
+costs no folders and no file moves. Read the file for what is actually there.
 
-```json
-["jmm", "thread-pools", "generics-erasure", "hashmap", "jvm-memory",
- "generational-gc", "jit", "btrees-selectivity", "mvcc", "the-log",
- "idempotency", "bounded-contexts", "dependency-inversion"]
-```
+**Why it was grouped.** It had been one hand-ordered list of thirty-four under
+the rule *insert each page next to its neighbour as it converts* — an invariant
+nothing checks, and it had already broken in three places: `stream-pipelines`,
+a language page, sat mid-messaging between `kafka-internals` and `idempotency`,
+and `expression-problem` and `partitioning` were appended at the end, outside
+every run. All three moved into their groups. A misplacement is now visible at
+review rather than invisible.
 
-**That snippet is the foundational-era ordering, kept to show the grouping
-rule — it is not the current list.** Each Core page was inserted next to its
-neighbour as it converted, so the list now holds all thirty-four. Read
-`content/docs/concepts/meta.json` for what is actually there; do not paste this
-snippet over it.
+**Do not derive the grouping from `questions:`.** The obvious automation —
+group each page by the plurality track of its claimed anchors — agrees for
+about thirty of the thirty-four and misplaces exactly the interesting ones:
+`persistence-context` is java5 but a data page, `expression-problem` is design4
+but a language page, `aggregates` is design3+data1+java1. The grouping is a
+judgement; keep it by hand.
 
 The list is explicit, so a page left out of it builds fine and is silently
-missing from the sidebar. Add new concept pages to it deliberately.
+missing from the sidebar — and a page added after the wrong separator lands
+silently in the wrong group. Add new concept pages deliberately, under the
+right heading.
 
 **`aggregates`: converted 2026-09-12**, the tenth Core page taken to
 `content/docs/concepts/`, immediately after `persistence-context`. Checked
