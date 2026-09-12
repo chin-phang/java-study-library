@@ -763,8 +763,75 @@ and fixes two new Specialist slugs, `consistent-hashing` and
 `scaling-strategy`, recorded in the Specialist list below alongside
 `sharding`.
 
-**Core** — **fifteen of twenty-one drafted** in `_source/` as of 2026-09-11,
-**all fifteen of those now converted** into `content/docs/concepts/` —
+**`class-loading`: drafted and converted 2026-09-12**, the sixteenth Core
+page taken to `content/docs/concepts/`, immediately after `partitioning` —
+outside both batches of six, like `broker-semantics`, `kafka-internals` and
+`stream-pipelines` before it, and the last Core gap in the JVM group. Written
+fresh rather than converted from a waiting draft, so currency was checked at
+authoring time rather than corrected afterwards; five moving items were
+verified against primary sources before the prose was written, and all five
+are stated as of September 2026:
+
+- **`sun.misc.Unsafe` memory access** — [JEP
+  471](https://openjdk.org/jeps/471) deprecated it in JDK 23, [JEP
+  498](https://openjdk.org/jeps/498) warns in 24, and
+  `--sun-misc-unsafe-memory-access` **defaults to `deny` in JDK 26**, with
+  removal in JDK 28 or later. The page states the deny default rather than
+  the deprecation, which is the fact that changes behaviour.
+- **Hidden classes** — [JEP 371](https://openjdk.org/jeps/371) (JDK 15);
+  `Unsafe::defineAnonymousClass` was **removed in JDK 17**, not merely
+  deprecated, and `MethodHandles.Lookup::defineHiddenClass` is the
+  replacement.
+- **Project Leyden's AOT cache** — JEP 483 (24), 514 and 515 (25), and **JEP
+  516 (26)** making it GC-agnostic. The load-bearing detail for this page is
+  [JEP 483](https://openjdk.org/jeps/483)'s stated limitation, quoted from
+  the JEP rather than paraphrased: only classes loaded by the JDK's built-in
+  loaders can be cached, and JVMTI agents using `ClassFileLoadHook` are
+  refused. **That makes a custom loader a startup-cost decision, not only an
+  isolation one** — the page's sharpest current claim, and the reason this
+  page reads differently in 2026 than it would have in 2020.
+- **Spring Boot DevTools' `RestartClassLoader`** — still present and still
+  parent-last in Spring Boot 4.1.x, checked rather than assumed, since the
+  page cites it as the live example of child-first delegation now that
+  production hot redeploy is dead.
+- **Tomcat** — 11.0.x is current (11.0.25, August 2026); Tomcat 12 is in
+  development with no release. The "go deeper" link points at the 11.0
+  listener documentation, not a 9.0 URL.
+
+`prerequisites: [jvm-memory]` resolves to a built foundational page, no
+conversion-order issue. All four `questions:` anchors
+(`java/jvm-memory-gc#q81`, `java/core-language#q14`, `java/concurrency#q52`,
+`java/modern-java#q90`) were checked against the built reference pages before
+writing, along with the prose cross-references to
+`java/modern-java-22-25#q148`, `#q150`, `#q153` and `java/modern-java#q91`.
+**Two candidate claims were dropped** on the `locking-and-deadlock`
+"claim only what the page actually teaches" discipline:
+`java/modern-java-22-25#q150` (the AOT cache — the page teaches its
+custom-loader limitation, not the training-run/native-image model Q150 asks
+for) and `java/spring#q104` (auto-configuration — classpath-driven, but its
+model is conditions and ordering, which belongs to `spring-proxy`'s
+territory). Both are prose cross-references instead. `#q81` is also claimed
+by `jvm-memory`, verified in the browser as a two-page reverse link.
+
+**Carries one diagram** — a path-to-GC-root tracing a pooled thread's
+`ThreadLocalMap` entry through its value to the deployment's loader and every
+class it defined, with the weak key drawn as a dotted edge against the strong
+value's thick one. Checked against the reference bank first:
+`java/jvm-memory-gc#q81` carries no diagram (Q71's Metaspace box is a
+different picture, and the page links to `jvm-memory` for it), and no diagram
+anywhere in the corpus draws a retention path, so this is a clean **Add a
+diagram only if it shows something the reference bank doesn't already** case,
+not a link-don't-copy judgement. 12 sections, ~2,700 words of prose, 8
+self-check items with `where` pointers written at conversion time. Both `pnpm
+types:check` and `pnpm build` pass; the diagram was verified in the browser
+at 375px (`viewBox="0 0 478.755 742"`, ≈72% rendered scale, no horizontal
+overflow, no "Syntax error" text), and the reverse link was verified on all
+four claimed anchors. It's in the sidebar after `escape-analysis`, closing
+out the JVM run before `btrees-selectivity`.
+
+**Core** — **sixteen of twenty-one drafted**, fifteen as of 2026-09-11 and
+`class-loading` on 2026-09-12, **all sixteen of those now converted** into
+`content/docs/concepts/` —
 three the same day the drafts landed, `virtual-threads` on 2026-09-12,
 `cas-and-contention` the same day as `virtual-threads`, `isolation-levels`
 immediately after `cas-and-contention`, `cache-invalidation`
@@ -790,7 +857,9 @@ of `java/streams`' eleven questions (Q37, Q38, Q40, Q41, Q44 — deliberately
 not Q47, already claimed three times over) and `prerequisites: []`, a
 deliberate root: nothing in the built graph is a genuine dependency, and
 `thread-pools` is an adjacent cross-reference in §5, not a prerequisite.
-`query-planning`, `class-loading` and `consistency-models` remain undrafted.
+`class-loading` was the sixteenth, drafted and converted 2026-09-12, closing
+the last Core gap in the JVM group — see its entry below. `query-planning` and
+`consistency-models` remain undrafted.
 
 **`virtual-threads`: converted 2026-09-12**, the fourth Core page taken to
 `content/docs/concepts/` and the first conversion session to also refresh
@@ -979,7 +1048,7 @@ underneath the table for the closed record.
 | `broker-semantics` | Broker semantics — acknowledgement, redelivery, and where queues beat logs | drafted, converted |
 | `kafka-internals` | Partitions, Consumer Groups, ISR and the High Watermark | drafted, converted |
 | `stream-pipelines` | Stream Pipelines: Laziness, Fusion, and Parallel Decomposition | drafted, converted |
-| `class-loading` | Class loading and classloader leaks | |
+| `class-loading` | Class Loading and Classloader Leaks | drafted, converted |
 | `query-planning` | Query planning and cardinality estimation | |
 | `consistency-models` | Consistency models and choosing per operation | |
 | `expression-problem` | The expression problem: polymorphism vs pattern matching | |
@@ -1012,6 +1081,21 @@ alone, the same deliberate divergence pattern as the `hashmap` line repair
 below. `jmm → cas-and-contention` is now a real, resolving edge; `jmm →
 locking-and-deadlock` still dangles by design until that page converts, same
 as any other `unlocks` target that's drafted but not yet built.
+
+**A third collision, `classloader-leaks` → `class-loading`, closed
+2026-09-12 at that page's conversion.** Different origin from the two above:
+the Specialist list fixed `classloader-leaks` because
+`content/docs/concepts/jvm-memory.mdx` promised it, while the Core table
+independently fixed `class-loading` for the same page — two slugs for one
+page, from two places in *this* file rather than from a draft disagreeing
+with the table. Resolved the same way the user chose for `jmm`: **edit the
+built page's `unlocks`**, so `jvm-memory` now reads `[generational-gc,
+gc-tuning, memory-leaks, off-heap-memory, class-loading]` and that edge
+resolves instead of dangling. `_source/jvm-memory.mdx` still reads
+`classloader-leaks`, left alone — the same deliberate one-line divergence as
+`jmm`'s. Applied without asking, unlike the `jmm` case, because the
+precedent above had already settled the question; reverse it by renaming the
+page if that reading was wrong.
 
 **Audit of the first six drafts** (2026-09-11, measured, the same pass the
 foundational drafts got before conversion): no stray H1s, **zero MDX
@@ -1130,7 +1214,9 @@ someone writes the page. Grouped by what promises them:
 
 - **`generics-erasure`** unlocks `collections-api-design`, `variance`, `reflection`, `serialisation-frameworks`
 - **`hashmap`** unlocks `concurrent-collections`, `equals-hashcode`, `collection-sizing`, `caching`
-- **`jvm-memory`** unlocks `gc-tuning`, `memory-leaks`, `off-heap-memory`, `classloader-leaks`
+- **`jvm-memory`** unlocks `gc-tuning`, `memory-leaks`, `off-heap-memory`, `class-loading`
+  (**was `classloader-leaks`** — a third slug collision, closed 2026-09-12; see
+  **Two more slug collisions**)
 - **`generational-gc`** unlocks `gc-tuning`, `latency-troubleshooting`, `memory-leaks`
 - **`jit`** unlocks `latency-troubleshooting`, `benchmarking`, `startup-optimisation`
 - **`btrees-selectivity`** unlocks `composite-indexes`, `covering-indexes`
@@ -1190,6 +1276,19 @@ someone writes the page. Grouped by what promises them:
   already promised by `cache-invalidation`. Multiple promises to one
   unwritten page is normal, the same pattern `locking-and-deadlock`'s
   `saga-pattern` reuses from `idempotency`.
+- **`class-loading`** (drafted and converted 2026-09-12, Core tier) unlocks
+  `java-agents`, `plugin-architecture`, `startup-optimisation`. Two are new
+  slugs, fixed here before either page exists: `java-agents` covers
+  instrumentation properly — JVMTI, `ClassFileLoadHook`, premain vs dynamic
+  attach, and the agent/AOT-cache conflict §8 only names; `plugin-architecture`
+  covers *designing* a loader-isolated plugin host, one level up from this
+  page's "here is what a loader is and what it costs". `startup-optimisation`
+  is not new — it reuses the slug `jit` already promises, which is the right
+  target for the Leyden material §8 raises and declines to develop, the same
+  "multiple promises to one unwritten page is normal" pattern as
+  `locking-and-deadlock`'s `saga-pattern`. Note that this page **absorbed**
+  the Specialist slug `classloader-leaks` that `jvm-memory` used to promise —
+  see **Two more slug collisions**.
 
 Two Core titles contain a colon and must be quoted in YAML — see **Frontmatter
 gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
@@ -1197,15 +1296,17 @@ gotchas**. `stream-pipelines`' title is one of them, quoted in the draft above.
 ### Coverage audit — which banks still have no concept page
 
 Measured 2026-09-11 across all 419 questions and all 28 concept pages (13
-foundational, built; plus 15 core drafts — six now converted,
+foundational, built; plus 16 core drafts — six now converted,
 `broker-semantics`, `kafka-internals`, `stream-pipelines` and, as of
 2026-09-12, `virtual-threads`, `cas-and-contention` and `isolation-levels` —
 plus `cache-invalidation`, `spring-proxy`, `persistence-context`,
 `aggregates`, `backpressure`, `coupling-and-cohesion` and `escape-analysis`,
 seven more converted the same day or the day after, plus
-`locking-and-deadlock` and `partitioning` closing out the batch, for
-fifteen in total — all fifteen drafted Core pages now converted).
-**124 questions are claimed — 30%**, up from 119 (28%) before
+`locking-and-deadlock` and `partitioning` closing out the batch, plus
+`class-loading` drafted and converted the same day outside both batches, for
+sixteen in total — all sixteen drafted Core pages now converted).
+**127 questions are claimed — 30%** (re-measured 2026-09-12 after
+`class-loading`), up from 124, up from 119 (28%) before
 `stream-pipelines`, up from 114 (27%) before `kafka-internals`, up from 108
 (26%) before `broker-semantics`, and up from 93 (22%) before the second batch
 of six drafts. None of `virtual-threads`'s, `cas-and-contention`'s,
@@ -1213,7 +1314,14 @@ of six drafts. None of `virtual-threads`'s, `cas-and-contention`'s,
 `persistence-context`'s, `aggregates`'s, `backpressure`'s,
 `coupling-and-cohesion`'s, nor `escape-analysis`'s conversion moves this
 number — their `questions:` were already counted as drafts; converting a
-drafted page changes where a claim lives, not whether it's counted. The
+drafted page changes where a claim lives, not whether it's counted.
+`class-loading` is the exception and does move it, by **three**, not four: it
+was written and converted in one pass with nothing counted in advance, and
+one of its four claims (`java/jvm-memory-gc#q81`) was already held by
+`jvm-memory`. Its other three — `java/core-language#q14`,
+`java/concurrency#q52`, `java/modern-java#q90` — are first claims on
+`core-language`, on `concurrency`'s Q52, and on `modern-java`, which had no
+concept page beyond `virtual-threads`' Q91 before this. The
 counts below in
 **Everything else large is already planned** are the ones that move —
 `coupling-and-cohesion` takes one question each off `oop-fundamentals`,
@@ -1808,7 +1916,7 @@ must still be untouched — only the added fenced blocks may differ.
 **Complete: 19 of 19** — six Java, eight data, five design. Add more only if a
 new concept page needs one.
 
-**Concept pages add 20 more, so the library holds 39.** Of the thirteen
+**Concept pages add 21 more, so the library holds 40.** Of the thirteen
 foundational pages, **ten carry their own diagram** and **three link to a
 reference one instead** — `jmm` → `java/concurrency#q48`, `jvm-memory` →
 `java/jvm-memory-gc#q71`, `dependency-inversion` →
@@ -1899,7 +2007,15 @@ reference anchors (`java/collections#q22`, `data/scaling-operations#q48`,
 its own, and the indirection mechanism the diagram shows isn't drawn
 anywhere else in the corpus; another clean **Add a diagram only if it shows
 something the reference bank doesn't already** case, not a link-don't-copy
-judgement.
+judgement. **`class-loading` adds the twenty-first** — drafted and converted
+2026-09-12, outside both batches — a path-to-GC-root tracing a pooled
+thread's `ThreadLocalMap` entry through its value to the deployment's loader
+and every class it defined, with the weak key as a dotted edge against the
+strong value's thick one. `java/jvm-memory-gc#q81` carries no diagram, and no
+diagram anywhere in the corpus draws a retention path, so nothing existed to
+link to; another clean **Add a diagram only if it shows something the
+reference bank doesn't already** case. It brings the concept-page total to
+**21** and the library to **40**.
 
 **Phone-readability, measured on all twelve at 375px.** None overflows; the
 page body never scrolls horizontally. Rendered scale, worst first:
@@ -1916,6 +2032,7 @@ page body never scrolls horizontally. Rendered scale, worst first:
 | 61% | `jit` | |
 | 68% | `kafka-internals` (ISR/high-watermark diagram) | linear chain with one decision diamond |
 | 69% | `coupling-and-cohesion` | 2x2 quadrant plane |
+| 72% | `class-loading` | linear chain with one two-node fan-out |
 | 99% | `thread-pools`, `bounded-contexts` | stacked subgraphs via `~~~` |
 | 100% | `generics-erasure` | plain top-to-bottom chain |
 
@@ -1970,6 +2087,13 @@ subgraphs are each a single-column chain, so they stack vertically under
 Mermaid's own layout without needing the explicit `~~~` link that
 `thread-pools` and `bounded-contexts` required for their wider subgraphs.
 
+`class-loading` (Core tier, measured 2026-09-12) carries one diagram, the
+path-to-GC-root retention chain, checked the same way: `viewBox="0 0 478.755
+742"` against a 343px rendered width at 375px viewport (≈72%), no horizontal
+overflow, no "Syntax error" text. Its single fan-out is two siblings — the
+weak key and the strong value — which is inside the "two or three" branching
+rule, so it needed no subgraph or `~~~` stacking.
+
 ### A concept page links to a reference diagram, it does not copy it
 
 Decided on the JMM page when the concept pattern was finished. The
@@ -2005,32 +2129,36 @@ That is ~19 diagrams. Do not add decorative ones.
 
 ## Study features (build after content exists)
 
-Content first — and the content now exists: **58 pages** (30 reference + 28
+Content first — and the content now exists: **59 pages** (30 reference + 29
 concept — 13 foundational plus `broker-semantics`, `kafka-internals`,
 `stream-pipelines`, `virtual-threads`, `cas-and-contention`,
 `isolation-levels`, `cache-invalidation`, `spring-proxy`,
 `persistence-context`, `aggregates`, `backpressure`,
-`coupling-and-cohesion`, `escape-analysis`, `locking-and-deadlock` and
-`partitioning`, the fifteen converted Core pages — all fifteen drafted so
-far), 419 questions,
-**39 diagrams**
+`coupling-and-cohesion`, `escape-analysis`, `locking-and-deadlock`,
+`partitioning` and `class-loading`, the sixteen converted Core pages — all
+sixteen drafted so far), 419 questions,
+**40 diagrams**
 (`cas-and-contention`, `isolation-levels`, `cache-invalidation`,
 `spring-proxy`, `aggregates` and `backpressure` carry none — `spring-proxy`
 links to `java/spring#q101` and `aggregates` links to `design/ddd#q48`
-instead), 217 self-check items.
+instead), 225 self-check items.
 **That gate is lifted, and the concept pages that followed it are done too**
 (2026-09-11). These two are now the front of the queue.
 
 - ~~Collapsible answers (self-test mode)~~ — built, with page-level expand-all
 - ~~Search across everything~~ — built, see **Search** above
 - `localStorage` progress: mark a concept page reviewed, with a date
-- Concept dependency graph as a study path — **now has twenty-eight real
-  nodes**, all thirteen foundational plus all fifteen converted Core pages.
+- Concept dependency graph as a study path — **now has twenty-nine real
+  nodes**, all thirteen foundational plus all sixteen converted Core pages.
   Read **The dependency graph — settled conventions** before starting: nine
-  roots (eight foundational plus `stream-pipelines`), thirteen resolving
-  `prerequisites` edges (`partitioning → hashmap` and `partitioning →
-  cas-and-contention` are the newest), and a large majority of `unlocks`
-  targets pointing at unwritten specialist pages. Tolerating dangling
+  roots (eight foundational plus `stream-pipelines`), **twenty-five**
+  resolving `prerequisites` edges (`class-loading → jvm-memory` is the
+  newest), **zero dangling `prerequisites`**, and a large majority of
+  `unlocks` targets pointing at unwritten specialist pages. *The edge count
+  was measured 2026-09-12 across all twenty-nine converted pages; it
+  previously read "thirteen", which described the foundational-only graph and
+  was never updated as the Core pages converted — thirteen is the count of
+  foundational-tier edges, not of the whole graph.* Tolerating dangling
   `unlocks` is a day-one requirement, not an edge case.
 - ~~Self-check questions collapsed by default~~ — built, see **The Question component**
 

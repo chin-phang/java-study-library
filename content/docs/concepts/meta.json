@@ -1,5 +1,5 @@
 {
   "title": "Concepts",
   "description": "Deep-study pages on the load-bearing ideas.",
-  "pages": ["jmm", "cas-and-contention", "thread-pools", "backpressure", "virtual-threads", "generics-erasure", "hashmap", "jvm-memory", "generational-gc", "jit", "escape-analysis", "btrees-selectivity", "mvcc", "isolation-levels", "locking-and-deadlock", "the-log", "cache-invalidation", "broker-semantics", "kafka-internals", "stream-pipelines", "idempotency", "bounded-contexts", "dependency-inversion", "spring-proxy", "persistence-context", "aggregates", "coupling-and-cohesion", "partitioning"]
+  "pages": ["jmm", "cas-and-contention", "thread-pools", "backpressure", "virtual-threads", "generics-erasure", "hashmap", "jvm-memory", "generational-gc", "jit", "escape-analysis", "class-loading", "btrees-selectivity", "mvcc", "isolation-levels", "locking-and-deadlock", "the-log", "cache-invalidation", "broker-semantics", "kafka-internals", "stream-pipelines", "idempotency", "bounded-contexts", "dependency-inversion", "spring-proxy", "persistence-context", "aggregates", "coupling-and-cohesion", "partitioning"]
 }
